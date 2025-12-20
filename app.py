@@ -52,7 +52,7 @@ def save_atm(configs):
     with open(ATM_FILE, 'w') as f: json.dump(configs, f)
 
 def load_data():
-    cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin']
+    cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID']
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
@@ -62,8 +62,8 @@ def load_data():
                 if col not in df.columns: df[col] = 0
             df['Data'] = pd.to_datetime(df['Data']).dt.date
             return df
-        except: return pd.DataFrame(columns=cols + ['ID'])
-    return pd.DataFrame(columns=cols + ['ID'])
+        except: return pd.DataFrame(columns=cols)
+    return pd.DataFrame(columns=cols)
 
 atm_db = load_atm()
 df = load_data()
@@ -90,42 +90,45 @@ if selected == "Dashboard":
         total_trades = len(df)
         wins = df[df['Resultado'] > 0]
         losses = df[df['Resultado'] < 0]
-        
         win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0
         avg_win = wins['Resultado'].mean() if not wins.empty else 0
         avg_loss = losses['Resultado'].mean() if not losses.empty else 0
         total_pnl = df['Resultado'].sum()
         
-        # Métrica linha 1
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("P&L Total", f"${total_pnl:,.2f}")
         m2.metric("Taxa de Acerto", f"{win_rate:.1f}%")
         m3.metric("Ganho Médio", f"${avg_win:,.2f}")
         m4.metric("Perda Média", f"${avg_loss:,.2f}")
         
-        # Métrica linha 2
-        st.write("")
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Total Trades", total_trades)
-        k2.metric("Maior Gain", f"${df['Resultado'].max():,.2f}")
-        k3.metric("Maior Loss", f"${df['Resultado'].min():,.2f}")
-        k4.metric("Lucro Médio/Trade", f"${df['Resultado'].mean():.2f}")
-        
         st.markdown("---")
-        df_sort = df.sort_values('Data')
-        df_sort['Acumulado'] = df_sort['Resultado'].cumsum()
         
-        # Gráfico Curva de Capital
-        st.plotly_chart(px.area(df_sort, x='Data', y='Acumulado', title="Curva de Capital", template="plotly_dark", color_discrete_sequence=['#B20000']), use_container_width=True)
+        # Gráfico de Curva de Capital Suave (Spline)
+        df_grafico = df.sort_values('Data').copy()
+        df_grafico['Acumulado'] = df_grafico['Resultado'].cumsum()
         
-        # Colunas de análise técnica
+        fig = px.area(df_grafico, x='Data', y='Acumulado', title="Curva de Capital", template="plotly_dark")
+        fig.update_traces(
+            line_color='#B20000', 
+            line_shape='spline', 
+            fillcolor='rgba(178, 0, 0, 0.2)', 
+            mode='lines'
+        )
+        fig.update_layout(
+            hovermode="x unified", yaxis_title="Acumulado ($)", xaxis_title="Data",
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='#1E1E1E'),
+            margin=dict(l=0, r=0, t=50, b=0)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
         c1, c2 = st.columns(2)
         with c1:
             st.plotly_chart(px.bar(df, x='Contexto', y='Resultado', color='Resultado', title="Performance por Contexto", template="plotly_dark", color_continuous_scale="RdYlGn"), use_container_width=True)
         with c2:
-            st.plotly_chart(px.pie(df, names='Ativo', values='Lote', title="Volume de Contratos por Ativo", template="plotly_dark"), use_container_width=True)
+            st.plotly_chart(px.pie(df, names='Ativo', values='Lote', title="Volume por Ativo", template="plotly_dark"), use_container_width=True)
     else:
-        st.info("Nenhum dado encontrado. Comece registrando um trade!")
+        st.info("Nenhum dado encontrado.")
 
 # --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
@@ -190,7 +193,6 @@ elif selected == "Registrar Trade":
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco, 'ID': n_id}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.success("🎯 Trade registrado com sucesso!"); time.sleep(1); st.rerun()
-
     with r2:
         if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
             if lote_t > 0 and stop_p > 0:
