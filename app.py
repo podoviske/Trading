@@ -112,12 +112,15 @@ def expand_modal(trade_id):
         p_list = [p.strip() for p in raw_prints.split("|") if p.strip() and os.path.exists(p.strip())]
         
         if p_list:
-            st.info("💡 Passe o mouse sobre a imagem e clique no ícone de setas para tela cheia.")
+            # Dica visual para o usuário
+            st.info("🔍 Passe o mouse sobre a imagem e clique nas 'setas' (canto superior direito) para ver em tela cheia.")
+            
             if len(p_list) > 1:
                 st.subheader(f"📸 Prints da Operação ({len(p_list)})")
                 tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
                 for i, tab in enumerate(tabs):
                     with tab:
+                        # use_container_width habilita nativamente a função de expansão do Streamlit
                         st.image(p_list[i], use_container_width=True)
             else:
                 st.image(p_list[0], use_container_width=True)
@@ -256,7 +259,6 @@ elif selected == "Registrar Trade":
                 pre = -(stop_p * MULTIPLIERS[ativo] * lote_t)
                 n_id = str(uuid.uuid4())
                 
-                # CORREÇÃO: Processar e salvar os prints no registro de Stop também
                 paths = []
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png")
@@ -265,7 +267,6 @@ elif selected == "Registrar Trade":
                 
                 prints_str = "|".join(paths)
                 
-                # Criar o registro garantindo todas as colunas
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': prints_str, 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
