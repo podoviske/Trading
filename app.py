@@ -37,36 +37,36 @@ MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
 def load_atm():
     if os.path.exists(ATM_FILE):
-        with open(ATM_FILE, 'r') as f:
-            return json.load(f)
+        try:
+            with open(ATM_FILE, 'r') as f: return json.load(f)
+        except: pass
     return {"Personalizado": {"lote": 0, "stop": 0.0, "parciais": []}}
 
 def save_atm(configs):
-    with open(ATM_FILE, 'w') as f:
-        json.dump(configs, f)
+    with open(ATM_FILE, 'w') as f: json.dump(configs, f)
 
 def load_data():
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin']
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
-            # Garante que todas as colunas necessárias existam
             for col in cols:
-                if col not in df.columns:
-                    df[col] = 0 if col != 'Data' else datetime.now().date()
+                if col not in df.columns: df[col] = 0
             df['Data'] = pd.to_datetime(df['Data']).dt.date
             return df
-        except:
-            return pd.DataFrame(columns=cols)
+        except: return pd.DataFrame(columns=cols)
     return pd.DataFrame(columns=cols)
 
-# Inicializar bases
 atm_db = load_atm()
 df = load_data()
 
 # --- ESTADO ---
-if 'n_extras' not in st.session_state:
+if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
+if 'atm_atual' not in st.session_state: st.session_state.atm_atual = "Personalizado"
+
+def reset_manual():
     st.session_state.n_extras = 0
+    st.rerun()
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -82,10 +82,10 @@ if selected == "Configurar ATM":
     with st.expander("✨ Criar Novo Template ATM", expanded=True):
         nome_novo = st.text_input("Nome da Estratégia")
         c1, c2 = st.columns(2)
-        l_p = c1.number_input("Lote Total", min_value=1, step=1, key="new_lote")
-        s_p = c2.number_input("Stop (Pts)", min_value=0.0, step=0.25, key="new_stop")
+        l_p = c1.number_input("Lote Total", min_value=1, step=1)
+        s_p = c2.number_input("Stop (Pts)", min_value=0.0, step=0.25)
         
-        n_p = st.number_input("Número de Alvos (Parciais)", 1, 6, 1, key="new_n_p")
+        n_p = st.number_input("Número de Alvos", 1, 6, 1)
         novas_p = []
         for i in range(n_p):
             cp1, cp2 = st.columns(2)
@@ -96,20 +96,16 @@ if selected == "Configurar ATM":
         if st.button("💾 Salvar Estratégia"):
             if nome_novo:
                 atm_db[nome_novo] = {"lote": l_p, "stop": s_p, "parciais": novas_p}
-                save_atm(atm_db)
-                st.success("Salvo com sucesso!")
-                st.rerun()
+                save_atm(atm_db); st.success("Salvo!"); st.rerun()
 
     st.markdown("---")
-    st.subheader("🗑️ Gerenciar Estratégias")
+    st.subheader("🗑️ Excluir Estratégias")
     for nome in list(atm_db.keys()):
         if nome != "Personalizado":
             col_n, col_b = st.columns([4, 1])
             col_n.write(f"**{nome}**")
             if col_b.button("Excluir", key=f"del_{nome}"):
-                del atm_db[nome]
-                save_atm(atm_db)
-                st.rerun()
+                del atm_db[nome]; save_atm(atm_db); st.rerun()
 
 # --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
@@ -117,15 +113,19 @@ elif selected == "Registrar Trade":
     
     c_topo1, c_topo2 = st.columns([3, 1])
     with c_topo1:
-        atm_sel = st.selectbox("🎯 Estratégia ATM", list(atm_db.keys()))
+        atm_sel = st.selectbox("🎯 Estratégia ATM", list(atm_db.keys()), index=0)
+        # Se mudar o ATM, reseta os campos extras
+        if atm_sel != st.session_state.atm_atual:
+            st.session_state.atm_atual = atm_sel
+            st.session_state.n_extras = 0
+            st.rerun()
+            
         config = atm_db[atm_sel]
     with c_topo2:
         st.write("") 
         cb1, cb2 = st.columns(2)
-        if cb1.button("➕"): st.session_state.n_extras += 1
-        if cb2.button("🧹"):
-            st.session_state.n_extras = 0
-            st.rerun()
+        cb1.button("➕", on_click=lambda: st.session_state.update({"n_extras": st.session_state.n_extras + 1}))
+        cb2.button("🧹", on_click=reset_manual)
 
     st.markdown("---")
     c1, c2, c3 = st.columns([1, 1, 2.5])
@@ -137,8 +137,8 @@ elif selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        lote_t = st.number_input("Lote Total", min_value=0, step=1, value=config["lote"])
-        stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=config["stop"])
+        lote_t = st.number_input("Lote Total", min_value=0, step=1, value=int(config["lote"]))
+        stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]))
         risco = stop_p * MULTIPLIERS[ativo] * lote_t
         if lote_t > 0: st.metric("Risco Total", f"${risco:,.2f}")
 
@@ -146,19 +146,24 @@ elif selected == "Registrar Trade":
         st.write("**Saídas Executadas**")
         saidas = []
         alocado = 0
-        total_p = len(config["parciais"]) + st.session_state.n_extras
         
-        for i in range(total_p):
-            def_p = config["parciais"][i][0] if i < len(config["parciais"]) else 0.0
-            def_q = config["parciais"][i][1] if i < len(config["parciais"]) else 0
-            
+        # Parciais vindas do ATM
+        for i, p_config in enumerate(config["parciais"]):
             s1, s2 = st.columns(2)
-            with s1: p = st.number_input(f"Pts P{i+1}", key=f"p_reg_{i}", value=def_p)
-            with s2: q = st.number_input(f"Qtd P{i+1}", key=f"q_reg_{i}", value=def_q, step=1)
+            with s1: p = st.number_input(f"Pts P{i+1}", key=f"p_atm_{i}", value=float(p_config[0]))
+            with s2: q = st.number_input(f"Qtd P{i+1}", key=f"q_atm_{i}", value=int(p_config[1]), step=1)
+            saidas.append((p, q)); alocado += q
+            
+        # Parciais extras manuais
+        for i in range(st.session_state.n_extras):
+            idx = len(config["parciais"]) + i
+            s1, s2 = st.columns(2)
+            with s1: p = st.number_input(f"Pts Extra {i+1}", key=f"p_ext_{idx}", value=0.0)
+            with s2: q = st.number_input(f"Qtd Extra {i+1}", key=f"q_ext_{idx}", value=0, step=1)
             saidas.append((p, q)); alocado += q
         
         if lote_t > 0:
-            resta = lote_t - alocado
+            resta = lote_total = lote_t - alocado
             if resta != 0:
                 msg = f"FALTAM {resta} CONTRATOS" if resta > 0 else f"EXCESSO DE {abs(resta)} CONTRATOS"
                 st.markdown(f'<div class="piscante-erro">{msg}</div>', unsafe_allow_html=True)
@@ -173,19 +178,16 @@ elif selected == "Registrar Trade":
                 res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas])
                 pts_m = sum([s[0] * s[1] for s in saidas]) / lote_t
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco}])
-                df = pd.concat([df, n_t], ignore_index=True)
-                df.to_csv(CSV_FILE, index=False)
-                st.rerun()
+                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
 
     with r2:
         if st.button("🚨 REGISTRAR STOP FULL", type="secondary"):
             if lote_t > 0 and stop_p > 0:
                 pre = -(stop_p * MULTIPLIERS[ativo] * lote_t)
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': risco}])
-                df = pd.concat([df, n_t], ignore_index=True)
-                df.to_csv(CSV_FILE, index=False)
-                st.rerun()
+                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
 
+# (Dashboard e Histórico continuam os mesmos)
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
