@@ -2,114 +2,163 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-import plotly.express as px # Para gráficos mais profissionais
+import plotly.express as px
 
 # Configuração da Página
-st.set_page_config(page_title="Trading Dashboard Pro", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Trading Dashboard NQ/MNQ", layout="wide", page_icon="📈")
 
-CSV_FILE = 'trades_v2.csv'
+CSV_FILE = 'trades_nq_mnq.csv'
+
+# Multiplicadores NQ/MNQ
+MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
 def load_data():
     if os.path.exists(CSV_FILE):
         df = pd.read_csv(CSV_FILE)
         df['Data'] = pd.to_datetime(df['Data']).dt.date
         return df
-    return pd.DataFrame(columns=[
-        'Data', 'Ativo', 'Contexto', 'Direcao', 'Entrada', 'Saida', 
-        'Contratos_Total', 'Parcial_1_Pontos', 'Parcial_1_Contratos',
-        'Risco_Financeiro', 'Risco_Pontos', 'Resultado', 'Notas'
-    ])
+    return pd.DataFrame()
+
+def save_data(df):
+    df.to_csv(CSV_FILE, index=False)
 
 df = load_data()
 
-st.title("📊 Master Trading Analytics")
+# --- LÓGICA DE PARCIAIS DINÂMICAS ---
+if 'n_parciais' not in st.session_state:
+    st.session_state.n_parciais = 1
+
+def adicionar_parcial():
+    if st.session_state.n_parciais < 5: # Limite de 5 parciais
+        st.session_state.n_parciais += 1
+
+def limpar_parciais():
+    st.session_state.n_parciais = 1
+
+st.title("📊 Master Analytics - NQ & MNQ")
 st.markdown("---")
 
-tab1, tab2, tab3 = st.tabs(["🚀 Registrar Operação", "📈 Dashboard de Performance", "📋 Livro de Ordens"])
+tab1, tab2, tab3 = st.tabs(["🚀 Registrar Trade", "📈 Dashboard Avançado", "📋 Histórico"])
 
 with tab1:
-    st.subheader("Novo Registro Detalhado")
-    with st.form("trade_form", clear_on_submit=True):
-        c1, c2, c3 = st.columns(3)
+    with st.form("trade_form"):
+        c1, c2, c3 = st.columns([1, 1, 2])
         
         with c1:
             data = st.date_input("Data", datetime.now())
-            ativo = st.text_input("Ativo").upper()
-            contexto = st.selectbox("Contexto da Operação", ["Contexto A", "Contexto B", "Contexto C"])
+            ativo = st.selectbox("Ativo", ["MNQ", "NQ"])
+            contexto = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
             direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
+            entrada = st.number_input("Preço de Entrada", min_value=0.0, format="%.2f")
 
         with c2:
-            contratos = st.number_input("Total de Contratos", min_value=1)
-            p_parcial = st.number_input("1ª Parcial (Pontos)", min_value=0.0)
-            q_parcial = st.number_input("Contratos na 1ª Parcial", min_value=0)
+            lote_total = st.number_input("Contratos Totais", min_value=1, step=1)
+            stop_pts = st.number_input("Risco em Pontos (Stop)", min_value=0.0, format="%.2f")
+            risco_financeiro = stop_pts * MULTIPLIERS[ativo] * lote_total
+            st.info(f"Risco Calculado: ${risco_financeiro:.2f}")
 
         with c3:
-            risco_fin = st.number_input("Risco Financeiro (R$)", min_value=0.0)
-            risco_pts = st.number_input("Risco em Pontos", min_value=0.0)
-            notas = st.text_area("Notas / Psicológico")
-
-        submit = st.form_submit_button("💾 Salvar no Banco de Dados")
-
-        if submit:
-            # Cálculo de resultado simplificado (ajuste conforme a regra do seu ativo)
-            res = (saida - entrada) * contratos if direcao == "Compra" else (entrada - saida) * contratos
+            st.write("**Saídas / Parciais**")
+            parciais_data = []
+            contratos_alocados = 0
             
-            novo_row = pd.DataFrame([{
+            for i in range(st.session_state.n_parciais):
+                col_pts, col_qtd = st.columns(2)
+                with col_pts:
+                    pts = st.number_input(f"Pts Parcial {i+1}", min_value=0.0, key=f"pts_{i}", help="Pontos a favor da entrada")
+                with col_qtd:
+                    qtd = st.number_input(f"Contratos P{i+1}", min_value=1, key=f"qtd_{i}")
+                parciais_data.append((pts, qtd))
+                contratos_alocados += qtd
+            
+            restante = lote_total - contratos_alocados
+            if restante > 0:
+                st.warning(f"Restam {restante} contratos sem saída definida.")
+            elif restante < 0:
+                st.error(f"Erro: Você alocou {abs(restante)} contratos a mais do que a entrada!")
+
+        notas = st.text_area("Notas do Trade")
+        
+        # Botões do formulário
+        col_btn1, col_btn2 = st.columns(2)
+        submit = st.form_submit_button("💾 Salvar Trade")
+    
+    st.button("➕ Adicionar Parcial", on_click=adicionar_parcial)
+    st.button("🧹 Resetar Parciais", on_click=limpar_parciais)
+
+    if submit:
+        if contratos_alocados != lote_total:
+            st.error("A soma dos contratos das parciais deve ser igual ao Lote Total!")
+        else:
+            # Cálculo do Resultado Final
+            # Resultado = Soma de (Pontos de cada parcial * multiplicador * qtd da parcial)
+            lucro_total = 0
+            pontos_ponderados = 0
+            for pts, qtd in parciais_data:
+                lucro_total += (pts * MULTIPLIERS[ativo] * qtd)
+                pontos_ponderados += (pts * qtd)
+            
+            media_pontos_saida = pontos_ponderados / lote_total
+            
+            # Definir faixa de contratos
+            if lote_total <= 10: faixa = "Até 10"
+            elif lote_total <= 20: faixa = "11 a 20"
+            else: faixa = "Acima de 20"
+
+            novo_trade = pd.DataFrame([{
                 'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao,
-                'Entrada': entrada, 'Saida': saida, 'Contratos_Total': contratos,
-                'Parcial_1_Pontos': p_parcial, 'Parcial_1_Contratos': q_parcial,
-                'Risco_Financeiro': risco_fin, 'Risco_Pontos': risco_pts, 'Resultado': res, 'Notas': notas
+                'Lote': lote_total, 'Faixa_Lote': faixa, 'Stop_Pts': stop_pts,
+                'Risco_Fin': risco_financeiro, 'Resultado': lucro_total,
+                'Pts_Medio_Saida': media_pontos_saida, 'RR': lucro_total / risco_financeiro if risco_financeiro > 0 else 0,
+                'Notas': notas
             }])
             
-            df = pd.concat([df, novo_row], ignore_index=True)
-            df.to_csv(CSV_FILE, index=False)
-            st.success(f"Trade registrado! Lucro/Prejuízo: R$ {res:.2f}")
+            df = pd.concat([df, novo_trade], ignore_index=True)
+            save_data(df)
+            st.success("Trade registrado com sucesso!")
             st.rerun()
 
 with tab2:
     if not df.empty:
-        # --- INDICADORES (KPIs) ---
-        total_ganho = df['Resultado'].sum()
-        win_rate = (len(df[df['Resultado'] > 0]) / len(df)) * 100
+        # --- FILTROS ---
+        st.subheader("🔍 Filtros de Análise")
+        f_faixa = st.multiselect("Filtrar por Faixa de Contratos", df['Faixa_Lote'].unique(), default=df['Faixa_Lote'].unique())
+        f_contexto = st.multiselect("Filtrar por Contexto", df['Contexto'].unique(), default=df['Contexto'].unique())
         
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric("P&L Total Acumulado", f"R$ {total_ganho:.2f}", delta=f"{total_ganho:.2f}")
-        kpi2.metric("Taxa de Acerto", f"{win_rate:.1f}%")
-        kpi3.metric("Total de Trades", len(df))
+        dff = df[(df['Faixa_Lote'].isin(f_faixa)) & (df['Contexto'].isin(f_contexto))]
+
+        # --- KPIs ---
+        m1, m2, m3, m4 = st.columns(4)
+        total_pnl = dff['Resultado'].sum()
+        m1.metric("P&L Total", f"${total_pnl:.2f}")
+        m2.metric("Risco Médio Fin.", f"${dff['Risco_Fin'].mean():.2f}")
+        m3.metric("Média Pontos Saída", f"{dff['Pts_Medio_Saida'].mean():.2f} pts")
+        m4.metric("Risco:Retorno Médio", f"1:{dff['RR'].mean():.2f}")
 
         st.markdown("---")
+
+        # --- GRÁFICOS ---
+        c_graf1, c_graf2 = st.columns(2)
         
-        # --- ANÁLISE DE RISCO POR CONTEXTO ---
-        st.subheader("🎯 Inteligência por Contexto")
-        col_risk1, col_risk2 = st.columns(2)
+        with c_graf1:
+            st.write("**Performance por Faixa de Contratos**")
+            fig_lote = px.bar(dff.groupby('Faixa_Lote')['Resultado'].sum().reset_index(), 
+                              x='Faixa_Lote', y='Resultado', color='Faixa_Lote', template="plotly_dark")
+            st.plotly_chart(fig_lote, use_container_width=True)
+
+        with c_graf2:
+            st.write("**Risco Médio por Contexto**")
+            fig_ctx = px.box(dff, x='Contexto', y='Risco_Fin', color='Contexto', template="plotly_dark")
+            st.plotly_chart(fig_ctx, use_container_width=True)
+
+        st.write("**Curva de Capital (Patrimônio)**")
+        dff['Acumulado'] = dff['Resultado'].cumsum()
+        st.line_chart(dff['Acumulado'])
         
-        # Agrupamento para média de risco
-        stats_contexto = df.groupby('Contexto').agg({
-            'Risco_Financeiro': 'mean',
-            'Risco_Pontos': 'mean',
-            'Resultado': 'sum'
-        }).reset_index()
-
-        with col_risk1:
-            st.write("**Risco Médio Financeiro por Tipo**")
-            fig_risco = px.bar(stats_contexto, x='Contexto', y='Risco_Financeiro', color='Contexto', template="plotly_dark")
-            st.plotly_chart(fig_risco, use_container_width=True)
-
-        with col_risk2:
-            st.write("**Risco Médio em Pontos por Tipo**")
-            fig_pts = px.line(stats_contexto, x='Contexto', y='Risco_Pontos', markers=True, template="plotly_dark")
-            st.plotly_chart(fig_pts, use_container_width=True)
-
-        # --- CURVA DE PATRIMÔNIO ---
-        st.subheader("📈 Evolução da Conta")
-        df['Acumulado'] = df['Resultado'].cumsum()
-        fig_evolucao = px.area(df, x=df.index, y='Acumulado', title="Curva de Capital", template="plotly_dark")
-        st.plotly_chart(fig_evolucao, use_container_width=True)
     else:
-        st.info("Aguardando dados para gerar o Dashboard...")
+        st.info("Adicione trades para visualizar a análise.")
 
 with tab3:
-    st.subheader("Histórico Completo")
     st.dataframe(df, use_container_width=True)
-    if st.button("Limpar Histórico"):
+    if st.button("Limpar Tudo"):
         if os.path.exists(CSV_FILE): os.remove(CSV_FILE); st.rerun()
