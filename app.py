@@ -144,7 +144,7 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD (NOVAS MÉTRICAS ADICIONADAS) ---
+# --- DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
@@ -162,24 +162,24 @@ if selected == "Dashboard":
             al = abs(losses['Resultado'].mean()) if not losses.empty else 0
             rr = (aw/al) if al > 0 else 0
             
-            # Novas métricas solicitadas
             avg_pts_gain = wins['Pts_Medio'].mean() if not wins.empty else 0
             avg_pts_loss = abs(losses['Pts_Medio'].mean()) if not losses.empty else 0
             avg_lote = df_f['Lote'].mean() if total > 0 else 0
             
-            # Linha 1 de Métricas
+            # Linha 1 de Métricas (Incluso Trades Total e Risco:Retorno)
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("P&L Total", f"${df_f['Resultado'].sum():,.2f}")
             m2.metric("Win Rate", f"{wr:.1f}%")
             m3.metric("Trades Total", total)
             m4.metric("Risco:Retorno", f"1:{rr:.2f}")
             
-            # Linha 2 de Métricas
-            m5, m6, m7, m8 = st.columns(4)
+            # Linha 2 de Métricas (Incluso as Médias de Pontos, Lote e Médias Financeiras)
+            m5, m6, m7, m8, m9 = st.columns(5)
             m5.metric("Lote Médio", f"{avg_lote:.1f}")
             m6.metric("Pts Méd Gain", f"{avg_pts_gain:.2f}")
             m7.metric("Pts Méd Loss", f"{avg_pts_loss:.2f}")
-            m8.metric("Loss Médio ($)", f"$-{al:,.2f}")
+            m8.metric("Gain Médio ($)", f"${aw:,.2f}") # Métrica Adicionada
+            m9.metric("Loss Médio ($)", f"$-{al:,.2f}")
             
             st.markdown("---")
             tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
