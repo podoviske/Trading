@@ -33,7 +33,6 @@ st.markdown("""
     .stButton > button[kind="secondary"] {
         color: #FF4B4B !important; border: 1px solid #FF4B4B !important; background: transparent !important;
     }
-    /* Estilização para o segmented_control para parecer com a imagem */
     div[data-testid="stSegmentedControl"] button {
         background-color: #1E1E1E !important;
         color: #FFFFFF !important;
@@ -97,7 +96,7 @@ with st.sidebar:
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
-        # 1. SELETOR ESTILO SEGMENTADO (Filtrar Visão)
+        # Seletor Segmentado (Visão)
         filtro_view = st.segmented_control(
             "Visualizar:",
             options=["Capital", "Contexto A", "Contexto B", "Contexto C"],
@@ -108,44 +107,40 @@ if selected == "Dashboard":
         if filtro_view != "Capital":
             df_filtrado = df[df['Contexto'] == filtro_view]
 
-        # 2. MÉTRICAS BASEADAS NO FILTRO
+        # Métricas Avançadas
         total_trades = len(df_filtrado)
         wins = df_filtrado[df_filtrado['Resultado'] > 0]
         losses = df_filtrado[df_filtrado['Resultado'] < 0]
         win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0
         avg_win = wins['Resultado'].mean() if not wins.empty else 0
-        avg_loss = losses['Resultado'].mean() if not losses.empty else 0
+        avg_loss = abs(losses['Resultado'].mean()) if not losses.empty else 0
+        
+        # Cálculo Risco:Retorno (RR)
+        rr_ratio = (avg_win / avg_loss) if avg_loss > 0 else 0
         total_pnl = df_filtrado['Resultado'].sum()
         
-        m1, m2, m3, m4 = st.columns(4)
+        # Linha 1: Métricas Principais
+        m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("P&L Total", f"${total_pnl:,.2f}")
-        m2.metric("Taxa de Acerto", f"{win_rate:.1f}%")
-        m3.metric("Ganho Médio", f"${avg_win:,.2f}")
-        m4.metric("Perda Média", f"${avg_loss:,.2f}")
+        m2.metric("Win Rate", f"{win_rate:.1f}%")
+        m3.metric("Risco:Retorno", f"1:{rr_ratio:.2f}")
+        m4.metric("Ganho Médio", f"${avg_win:,.2f}")
+        m5.metric("Perda Média", f"$-{avg_loss:,.2f}")
         
         st.markdown("---")
 
-        # 3. SELETOR DE EVOLUÇÃO (Tempo vs Trade)
+        # Seletores de Gráfico
         col_tipo, _ = st.columns([1, 2])
-        tipo_grafico = col_tipo.radio("Visualizar evolução por:", ["Tempo (Data)", "Trade a Trade"], horizontal=True)
+        tipo_grafico = col_tipo.radio("Evolução por:", ["Tempo (Data)", "Trade a Trade"], horizontal=True)
 
-        # Preparação do gráfico suave (Spline)
         df_grafico = df_filtrado.sort_values('Data').reset_index(drop=True)
         df_grafico['Acumulado'] = df_grafico['Resultado'].cumsum()
-        
-        if tipo_grafico == "Tempo (Data)":
-            x_axis = 'Data'
-        else:
-            df_grafico['Trade_Num'] = df_grafico.index + 1
-            x_axis = 'Trade_Num'
+        x_axis = 'Data' if tipo_grafico == "Tempo (Data)" else 'Trade_Num'
+        if tipo_grafico != "Tempo (Data)": df_grafico['Trade_Num'] = df_grafico.index + 1
 
+        # Gráfico Suave (Spline)
         fig = px.area(df_grafico, x=x_axis, y='Acumulado', title=f"Curva de Capital - {filtro_view}", template="plotly_dark")
-        fig.update_traces(
-            line_color='#B20000', 
-            line_shape='spline', 
-            fillcolor='rgba(178, 0, 0, 0.2)', 
-            mode='lines'
-        )
+        fig.update_traces(line_color='#B20000', line_shape='spline', fillcolor='rgba(178, 0, 0, 0.2)', mode='lines')
         fig.update_layout(
             hovermode="x unified", yaxis_title="Acumulado ($)", xaxis_title=x_axis,
             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
@@ -153,9 +148,8 @@ if selected == "Dashboard":
             margin=dict(l=0, r=0, t=50, b=0)
         )
         st.plotly_chart(fig, use_container_width=True)
-        
     else:
-        st.info("Nenhum dado encontrado para análise.")
+        st.info("Nenhum dado encontrado.")
 
 # --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
@@ -219,7 +213,7 @@ elif selected == "Registrar Trade":
                 n_id = f"ID_{int(time.time())}"
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco, 'ID': n_id}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.success("🎯 Trade registrado com sucesso!"); time.sleep(1); st.rerun()
+                st.success("🎯 Trade registrado!"); time.sleep(1); st.rerun()
     with r2:
         if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
             if lote_t > 0 and stop_p > 0:
@@ -227,12 +221,12 @@ elif selected == "Registrar Trade":
                 n_id = f"ID_{int(time.time())}"
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': risco, 'ID': n_id}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.error("🚨 Stop registrado com sucesso!"); time.sleep(1); st.rerun()
+                st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
 
 # --- PÁGINA: CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
     st.title("⚙️ Editor de Estratégias ATM")
-    with st.expander("✨ Criar Novo Template ATM", expanded=True):
+    with st.expander("✨ Criar Novo Template", expanded=True):
         nome_novo = st.text_input("Nome da Estratégia")
         ca1, ca2 = st.columns(2)
         l_p = ca1.number_input("Lote Total", min_value=1, step=1)
@@ -244,25 +238,25 @@ elif selected == "Configurar ATM":
             pt = cp1.number_input(f"Alvo P{i+1} (Pts)", key=f"conf_pts_{i}", value=0.0)
             qt = cp2.number_input(f"Contratos P{i+1}", key=f"conf_qtd_{i}", min_value=1, step=1)
             novas_p.append([pt, qt])
-        if st.button("💾 Salvar Estratégia"):
+        if st.button("💾 Salvar ATM"):
             if nome_novo:
                 atm_db[nome_novo] = {"lote": l_p, "stop": s_p, "parciais": novas_p}
-                save_atm(atm_db); st.success("Estratégia salva!"); st.rerun()
+                save_atm(atm_db); st.success("Salvo!"); st.rerun()
     st.markdown("---")
     for nome in list(atm_db.keys()):
         if nome != "Personalizado":
             col_n, col_b = st.columns([4, 1])
             col_n.write(f"**{nome}**")
-            if col_b.button("Excluir Estratégia", key=f"del_{nome}"):
+            if col_b.button("Excluir", key=f"del_{nome}"):
                 del atm_db[nome]; save_atm(atm_db); st.rerun()
 
 # --- PÁGINA: HISTÓRICO ---
 elif selected == "Histórico":
-    st.title("📜 Histórico de Trades")
+    st.title("📜 Histórico")
     if not df.empty:
         col_export, col_limpar = st.columns([4, 1])
         csv_data = df.to_csv(index=False).encode('utf-8')
-        col_export.download_button("📥 Backup Completo (CSV)", data=csv_data, file_name="backup_trades.csv")
+        col_export.download_button("📥 Backup (CSV)", data=csv_data, file_name="backup_trades.csv")
         
         if not st.session_state.confirmar_limpeza:
             if col_limpar.button("🗑️ LIMPAR TUDO", type="secondary"):
@@ -270,7 +264,7 @@ elif selected == "Histórico":
                 st.rerun()
         else:
             with col_limpar:
-                st.warning("Timer de Segurança...")
+                st.warning("Segurança...")
                 ph = st.empty()
                 for i in range(10, 0, -1):
                     ph.button(f"Confirmar em {i}s...", disabled=True, key=f"t_{i}")
@@ -291,11 +285,11 @@ elif selected == "Histórico":
             with st.expander(f"📅 {row['Data']} | {row['Ativo']} | {row['Direcao']} | Resultado: ${row['Resultado']:,.2f}"):
                 c_info, c_del = st.columns([4, 1])
                 with c_info:
-                    st.write(f"**Lote:** {row['Lote']} | **ATM:** {row['ATM']} | **Contexto:** {row['Contexto']} | **Risco:** ${row['Risco_Fin']:,.2f}")
+                    st.write(f"**Lote:** {row['Lote']} | **ATM:** {row['ATM']} | **Contexto:** {row['Contexto']}")
                 with c_del:
-                    if st.button("Deletar Trade", key=f"del_trade_{row['ID']}"):
+                    if st.button("Deletar", key=f"del_trade_{row['ID']}"):
                         df = df[df['ID'] != row['ID']]
                         df.to_csv(CSV_FILE, index=False)
-                        st.warning("Operação removida!"); time.sleep(1); st.rerun()
+                        st.rerun()
     else:
-        st.info("Histórico vazio.")
+        st.info("Vazio.")
