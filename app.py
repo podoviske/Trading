@@ -55,7 +55,7 @@ st.markdown("""
     /* ESTILO DO HISTÓRICO - ISOLADO */
     .trade-card {
         background-color: #161616; border: 1px solid #333; border-radius: 12px;
-        margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px;
+        margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 380px;
     }
     .trade-card:hover { border-color: #B20000; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); }
     .img-container {
@@ -121,14 +121,13 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD (RESTAURADO COMPLETO) ---
+# --- DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
         f_v = st.segmented_control("Visualizar:", options=["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
         df_f = df[df['Contexto'] == f_v] if f_v != "Capital" else df.copy()
         
-        # Cálculos avançados restaurados
         total_trades = len(df_f)
         wins = df_f[df_f['Resultado'] > 0]
         losses = df_f[df_f['Resultado'] < 0]
@@ -155,7 +154,7 @@ if selected == "Dashboard":
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("Sem dados.")
 
-# --- REGISTRAR TRADE --- (Igual à versão recuperada)
+# --- REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
@@ -243,7 +242,7 @@ elif selected == "Configurar ATM":
             cn, cb = st.columns([4, 1]); cn.write(f"**{nome}**")
             if cb.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
-# --- ABA: HISTÓRICO (PERFEITO E ISOLADO) ---
+# --- ABA: HISTÓRICO (IMAGEM NO TOPO, BOTÃO E INFO ABAIXO) ---
 elif selected == "Histórico":
     st.title("📜 Galeria de Operações")
     if 'to_delete' in st.session_state:
@@ -262,6 +261,9 @@ elif selected == "Histórico":
                 if i + j < num_trades:
                     row = df_disp.iloc[i + j]
                     with cols[j]:
+                        st.markdown('<div class="trade-card">', unsafe_allow_html=True)
+                        
+                        # --- PARTE SUPERIOR: IMAGEM/PRINT ---
                         p_list = str(row['Prints']).split("|") if row['Prints'] else []
                         img_html = ""
                         if p_list and os.path.exists(p_list[0]):
@@ -269,9 +271,29 @@ elif selected == "Histórico":
                             img_html = f'<div class="img-container"><img src="data:image/png;base64,{b64}"></div>'
                         else:
                             img_html = '<div class="img-container" style="color:#444; font-size:12px">Sem Print</div>'
+                        st.markdown(img_html, unsafe_allow_html=True)
+
+                        # --- PARTE INFERIOR: BOTÃO "OLHO" E INFO LADO A LADO ---
+                        st.markdown('<div class="card-footer">', unsafe_allow_html=True)
+                        ci1, ci2 = st.columns([1, 2])
+                        with ci1:
+                            if st.button("👁️", key=f"v_{row['ID']}_{i+j}", help="Ver detalhes"):
+                                expand_modal(row['ID'])
+                        with ci2:
+                            st.markdown(f'''
+                                <div style="text-align: left; line-height: 1.2;">
+                                    <b style="color:white; font-size:0.85rem">Trade #{row["Num"]}</b><br>
+                                    <small style="color:#888; font-size:0.7rem">{row["Contexto"]}</small>
+                                </div>
+                            ''', unsafe_allow_html=True)
                         
+                        # Resultado Financeiro na Base
                         color = "#00FF88" if row['Resultado'] > 0 else "#FF4B4B"
-                        st.markdown(f'<div class="trade-card">{img_html}<div class="card-footer"><div><b style="color:white">Trade #{row["Num"]}</b><br><small style="color:#888">{row["Contexto"]}</small></div><div style="color:{color}; font-weight:bold; font-size:1.1rem">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
-                        if st.button("Ver", key=f"v_{row['ID']}_{i+j}"): expand_modal(row['ID'])
+                        st.markdown(f'''
+                            <div style="color:{color}; font-weight:bold; font-size:1.1rem; margin-top:10px; border-top:1px solid #222; padding-top:5px;">
+                                ${row["Resultado"]:,.2f}
+                            </div>
+                        ''', unsafe_allow_html=True)
+                        
                         st.markdown('</div></div>', unsafe_allow_html=True)
     else: st.info("Vazio.")
