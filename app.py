@@ -79,7 +79,39 @@ st.markdown("""
         object-position: center !important;
     }
 
-    .trade-footer { 
+    /* CSS DO BALÃO DE PRÉVIA */
+        .image-preview-container {
+            position: relative;
+            display: inline-block;
+        }
+        .image-preview-tooltip {
+            visibility: hidden;
+            width: 200px; /* Largura fixa para alinhamento */
+            background-color: #1E1E1E;
+            color: white;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 10;
+            bottom: 100%; /* Aparece acima */
+            left: 50%;
+            margin-left: -100px; /* Centraliza o balão */
+            opacity: 0;
+            transition: opacity 0.3s;
+            border: 1px solid #B20000;
+        }
+        .image-preview-tooltip img {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        .image-preview-container:hover .image-preview-tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        .trade-footer { 
         padding: 15px; 
         text-align: center; 
         display: flex; 
@@ -320,24 +352,39 @@ elif selected == "Histórico":
         df_disp = df.copy(); df_disp['Num'] = range(1, len(df_disp) + 1)
         df_disp = df_disp.iloc[::-1]
         
-        cols = st.columns(5)
-        for i, (_, row) in enumerate(df_disp.iterrows()):
-            with cols[i % 5]:
-                st.markdown('<div class="trade-window">', unsafe_allow_html=True)
-                p_list = str(row['Prints']).split("|") if row['Prints'] else []
-                if p_list and os.path.exists(p_list[0]):
-                    st.markdown('<div class="image-crop-container">', unsafe_allow_html=True)
-                    st.image(p_list[0])
-                    st.markdown('</div>', unsafe_allow_html=True)
-                else: st.markdown('<div class="image-crop-container"><span style="color:#444">Sem Print</span></div>', unsafe_allow_html=True)
-                
-                st.markdown(f'<div class="trade-footer"><div><b>Trade #{row["Num"]}</b><br><small>{row["Contexto"]}</small></div>', unsafe_allow_html=True)
-                color = "green" if row['Resultado'] > 0 else "red"
-                st.markdown(f'<div style="color:{"#00FF88" if row["Resultado"]>0 else "#FF4B4B"}; font-weight:bold">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
-                
-                # CHAVE ÚNICA GARANTIDA: row['ID'] + índice i para evitar colisão total
-                if st.button("Ver", key=f"btn_{row['ID']}_{i}"): 
-                    expand_trade_modal(row['ID'])
-                
-                st.markdown('</div></div>', unsafe_allow_html=True)
-    else: st.info("Vazio.")
+	        cols = st.columns(5)
+        	        for i, (_, row) in enumerate(df_disp.iterrows()):
+        	            with cols[i % 5]:
+        	                # 1. Estrutura da Janela de Trade
+        	                st.markdown('<div class="trade-window">', unsafe_allow_html=True)
+        	                
+        	                p_list = str(row['Prints']).split("|") if row['Prints'] else []
+        	                print_path = p_list[0] if p_list and os.path.exists(p_list[0]) else None
+        	                
+        	                # 2. Container da Imagem (com ou sem print)
+        	                if print_path:
+        	                    # Se houver print, usa o container de corte e adiciona o balão de prévia
+        	                    st.markdown(f'''
+        	                        <div class="image-crop-container image-preview-container">
+        	                            <img src="file/{print_path}" alt="Print do Trade" />
+        	                            <div class="image-preview-tooltip">
+        	                                <img src="file/{print_path}" alt="Prévia do Print" />
+        	                            </div>
+        	                        </div>
+        	                    ''', unsafe_allow_html=True)
+        	                else: 
+        	                    # Se não houver print, usa o placeholder simples para manter o alinhamento
+        	                    st.markdown('<div class="image-crop-container"><span style="color:#444">Sem Print</span></div>', unsafe_allow_html=True)
+        	                
+        	                # 3. Rodapé do Trade
+        	                st.markdown(f'<div class="trade-footer"><div><b>Trade #{row["Num"]}</b><br><small>{row["Contexto"]}</small></div>', unsafe_allow_html=True)
+        	                color = "green" if row['Resultado'] > 0 else "red"
+        	                st.markdown(f'<div style="color:{"#00FF88" if row["Resultado"]>0 else "#FF4B4B"}; font-weight:bold">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
+        	                
+        	                # 4. Botão de Ação
+        	                # O botão é mantido fora do markdown para usar a funcionalidade do Streamlit (st.button)
+        	                if st.button("Ver Detalhes", key=f"btn_{row['ID']}_{i}"): 
+        	                    expand_trade_modal(row['ID'])
+        	                
+        	                st.markdown('</div>', unsafe_allow_html=True) # Fecha trade-window
+        	    else: st.info("Vazio.")
