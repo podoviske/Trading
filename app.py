@@ -21,11 +21,27 @@ CSV_FILE = 'evotrade_data.csv'
 ATM_FILE = 'atm_configs.json'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-# --- ESTILO CSS GERAL (PROTEGIDO) ---
+# --- ESTILO CSS GERAL (DESIGN PREMIUM) ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
     .stApp { background-color: #0F0F0F; }
+    
+    /* Grid de Métricas Premium */
+    .metric-container {
+        background-color: #161616;
+        border: 1px solid #262626;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        transition: transform 0.2s;
+    }
+    .metric-container:hover {
+        border-color: #B20000;
+        transform: translateY(-2px);
+    }
+    .metric-label { color: #888; font-size: 14px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+    .metric-value { color: white; font-size: 24px; font-weight: bold; }
     
     @keyframes blinking {
         0% { background-color: #440000; }
@@ -42,9 +58,6 @@ st.markdown("""
     .logo-sub { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; }
     
     .stButton > button { width: 100%; border-radius: 8px; font-weight: 600; }
-    .stButton > button[kind="secondary"] {
-        color: #FF4B4B !important; border: 1px solid #FF4B4B !important; background: transparent !important;
-    }
     div[data-testid="stSegmentedControl"] button {
         background-color: #1E1E1E !important; color: #FFFFFF !important; border: none !important;
     }
@@ -52,7 +65,6 @@ st.markdown("""
         background-color: #B20000 !important; font-weight: bold !important;
     }
 
-    /* ESTILO DO HISTÓRICO */
     .trade-card {
         background-color: #161616; border: 1px solid #333; border-radius: 12px;
         margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px;
@@ -67,7 +79,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES ---
+# --- FUNÇÕES AUXILIARES ---
 def load_atm():
     if os.path.exists(ATM_FILE):
         try:
@@ -99,6 +111,15 @@ def get_base64(path):
 atm_db = load_atm()
 df = load_data()
 
+# --- COMPONENTE DE MÉTRICA CUSTOMIZADO ---
+def card_metric(label, value, color="white"):
+    st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value" style="color: {color};">{value}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 # --- MODAL ---
 @st.dialog("Detalhes do Trade", width="large")
 def expand_modal(trade_id):
@@ -109,14 +130,11 @@ def expand_modal(trade_id):
     with c1:
         raw_prints = str(row['Prints']) if pd.notna(row['Prints']) else ""
         p_list = [p.strip() for p in raw_prints.split("|") if p.strip() and os.path.exists(p.strip())]
-        
         if p_list:
             tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
             for i, tab in enumerate(tabs):
-                with tab:
-                    st.image(p_list[i], use_container_width=True)
+                with tab: st.image(p_list[i], use_container_width=True)
         else: st.info("Sem print disponível.")
-        
         st.markdown("---")
         st.subheader("📝 Observações")
         notas_input = st.text_area("Notas:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
@@ -130,10 +148,9 @@ def expand_modal(trade_id):
         dir_color = "cyan" if row['Direcao'] == "Compra" else "orange"
         st.markdown(f"↕️ **Direção:** :{dir_color}[{row['Direcao']}]")
         st.write(f"🏗️ **Contexto:** {row['Contexto']} | 🔢 **Lote:** {row['Lote']}")
-        st.write(f"🎯 **ATM:** {row['ATM']}")
         st.divider()
-        res_c = "green" if row['Resultado'] > 0 else "red"
-        st.markdown(f"💰 **P&L:** :{res_c}[${row['Resultado']:,.2f}]")
+        res_c = "#00FF88" if row['Resultado'] > 0 else "#FF4B4B"
+        st.markdown(f"💰 **P&L:** <span style='color:{res_c}; font-weight:bold;'>${row['Resultado']:,.2f}</span>", unsafe_allow_html=True)
         st.write(f"📊 **Média Pts:** {row['Pts_Medio']:.2f}")
         if st.button("🗑️ Deletar Trade", type="primary"):
             st.session_state.to_delete = trade_id; st.rerun()
@@ -144,12 +161,11 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD ---
+# --- DASHBOARD (DESIGN 3x3) ---
 if selected == "Dashboard":
-    st.title("📊 EvoTrade Analytics")
+    st.markdown("## 📊 EvoTrade Analytics")
     if not df.empty:
-        opcoes = ["Capital", "Contexto A", "Contexto B", "Contexto C"]
-        f_v = st.segmented_control("Ver:", opcoes, default="Capital")
+        f_v = st.segmented_control("Filtrar Visão:", ["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
         df_f = df.copy() if f_v == "Capital" else df[df['Contexto'] == f_v].copy()
         
         if not df_f.empty:
@@ -157,30 +173,32 @@ if selected == "Dashboard":
             wins = df_f[df_f['Resultado'] > 0]
             losses = df_f[df_f['Resultado'] < 0]
             
+            # Cálculos
             wr = (len(wins)/total*100) if total > 0 else 0
             aw = wins['Resultado'].mean() if not wins.empty else 0
             al = abs(losses['Resultado'].mean()) if not losses.empty else 0
             rr = (aw/al) if al > 0 else 0
-            
             avg_pts_gain = wins['Pts_Medio'].mean() if not wins.empty else 0
             avg_pts_loss = abs(losses['Pts_Medio'].mean()) if not losses.empty else 0
             avg_lote = df_f['Lote'].mean() if total > 0 else 0
-            
-            # Linha 1 de Métricas (Incluso Trades Total e Risco:Retorno)
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("P&L Total", f"${df_f['Resultado'].sum():,.2f}")
-            m2.metric("Win Rate", f"{wr:.1f}%")
-            m3.metric("Trades Total", total)
-            m4.metric("Risco:Retorno", f"1:{rr:.2f}")
-            
-            # Linha 2 de Métricas (Incluso as Médias de Pontos, Lote e Médias Financeiras)
-            m5, m6, m7, m8, m9 = st.columns(5)
-            m5.metric("Lote Médio", f"{avg_lote:.1f}")
-            m6.metric("Pts Méd Gain", f"{avg_pts_gain:.2f}")
-            m7.metric("Pts Méd Loss", f"{avg_pts_loss:.2f}")
-            m8.metric("Gain Médio ($)", f"${aw:,.2f}") # Métrica Adicionada
-            m9.metric("Loss Médio ($)", f"$-{al:,.2f}")
-            
+            total_pl = df_f['Resultado'].sum()
+
+            # GRID 3x3
+            r1c1, r1c2, r1c3 = st.columns(3)
+            with r1c1: card_metric("P&L TOTAL", f"${total_pl:,.2f}", "#00FF88" if total_pl > 0 else "#FF4B4B")
+            with r1c2: card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
+            with r1c3: card_metric("TRADES TOTAL", total)
+
+            r2c1, r2c2, r2c3 = st.columns(3)
+            with r2c1: card_metric("RISCO:RETORNO", f"1:{rr:.2f}")
+            with r2c2: card_metric("LOTE MÉDIO", f"{avg_lote:.1f}")
+            with r2c3: card_metric("GAIN MÉDIO ($)", f"${aw:,.2f}", "#00FF88")
+
+            r3c1, r3c2, r3c3 = st.columns(3)
+            with r3c1: card_metric("PTS MÉD GAIN", f"{avg_pts_gain:.2f}")
+            with r3c2: card_metric("PTS MÉD LOSS", f"{avg_pts_loss:.2f}")
+            with r3c3: card_metric("LOSS MÉDIO ($)", f"$-{al:,.2f}", "#FF4B4B")
+
             st.markdown("---")
             tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
             df_g = df_f.sort_values('Data').reset_index(drop=True)
@@ -191,7 +209,7 @@ if selected == "Dashboard":
             fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
             st.plotly_chart(fig, use_container_width=True)
         else: st.warning(f"Sem trades para {f_v}")
-    else: st.info("Sem dados.")
+    else: st.info("Aguardando dados para análise...")
 
 # --- REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
@@ -234,7 +252,6 @@ elif selected == "Registrar Trade":
             p = s1.number_input(f"Pts Ex {i+1}", key=f"pe_{i}"); q = s2.number_input(f"Qtd Ex {i+1}", key=f"qe_{i}")
             saidas.append((p, q)); alocado += q
         if lote_t > 0 and lote_t != alocado: st.markdown(f'<div class="piscante-erro">FALTAM {lote_t-alocado}</div>', unsafe_allow_html=True)
-        elif lote_t == alocado and lote_t > 0: st.success("✅ OK")
     
     r1, r2 = st.columns(2)
     with r1:
@@ -285,11 +302,8 @@ elif selected == "Histórico":
     if 'to_delete' in st.session_state:
         df = df[df['ID'] != st.session_state.to_delete]
         df.to_csv(CSV_FILE, index=False); del st.session_state.to_delete; st.rerun()
-    
     if not df.empty:
-        df_disp = df.iloc[::-1].copy()
-        df_disp['Num'] = range(len(df_disp), 0, -1)
-        
+        df_disp = df.iloc[::-1].copy(); df_disp['Num'] = range(len(df_disp), 0, -1)
         for i in range(0, len(df_disp), 5):
             cols = st.columns(5)
             for j in range(5):
@@ -297,15 +311,9 @@ elif selected == "Histórico":
                     row = df_disp.iloc[i + j]
                     with cols[j]:
                         p_list = str(row['Prints']).split("|") if row['Prints'] else []
-                        img_html = ""
-                        if p_list and os.path.exists(p_list[0]):
-                            b64 = get_base64(p_list[0])
-                            img_html = f'<div class="img-container"><img src="data:image/png;base64,{b64}"></div>'
-                        else:
-                            img_html = '<div class="img-container" style="color:#444">Sem Print</div>'
-                        
+                        img_html = f'<div class="img-container"><img src="data:image/png;base64,{get_base64(p_list[0])}"></div>' if p_list and os.path.exists(p_list[0]) else '<div class="img-container" style="color:#444">Sem Print</div>'
                         color = "#00FF88" if row['Resultado'] > 0 else "#FF4B4B"
                         st.markdown(f'<div class="trade-card">{img_html}<div class="card-footer"><div><b style="color:white">Trade #{row["Num"]}</b><br><small style="color:#888">{row["Contexto"]}</small></div><div style="color:{color}; font-weight:bold; font-size:1.1rem">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
                         if st.button("Ver", key=f"v_{row['ID']}_{i+j}"): expand_modal(row['ID'])
                         st.markdown('</div></div>', unsafe_allow_html=True)
-    else: st.info("Vazio.")
+    else: st.info("Histórico vazio.")
