@@ -21,7 +21,7 @@ CSV_FILE = 'evotrade_data.csv'
 ATM_FILE = 'atm_configs.json'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-# --- ESTILO CSS GERAL ---
+# --- ESTILO CSS GERAL (PROTEGIDO) ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
@@ -52,23 +52,18 @@ st.markdown("""
         background-color: #B20000 !important; font-weight: bold !important;
     }
 
-    /* ESTILO DO HISTÓRICO - IMAGEM EM CIMA, INFO EMBAIXO */
+    /* ESTILO DO HISTÓRICO - ISOLADO */
     .trade-card {
         background-color: #161616; border: 1px solid #333; border-radius: 12px;
-        margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 380px;
+        margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px;
     }
     .trade-card:hover { border-color: #B20000; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); }
-    
-    .img-container-top {
+    .img-container {
         width: 100%; height: 180px; overflow: hidden; background-color: #000;
         display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #333;
     }
-    .img-container-top img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
-    
-    .card-info-bottom { 
-        padding: 12px; text-align: center; display: flex; flex-direction: column; 
-        justify-content: space-between; flex-grow: 1;
-    }
+    .img-container img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+    .card-footer { padding: 15px; text-align: center; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -104,21 +99,19 @@ atm_db = load_atm()
 df = load_data()
 
 # --- MODAL ---
-@st.dialog("Detalhes do Trade", width="large")
+@st.dialog("Detalhes", width="large")
 def expand_modal(trade_id):
     row = df[df['ID'] == trade_id].iloc[0]
     c1, c2 = st.columns([2, 1])
     with c1:
         p = str(row['Prints']).split("|")[0] if row['Prints'] else ""
         if p and os.path.exists(p): st.image(p, use_container_width=True)
-        else: st.info("Sem print disponível.")
+        else: st.info("Sem print.")
     with c2:
-        st.write(f"📅 **Data:** {row['Data']} | **Ativo:** {row['Ativo']}")
-        st.write(f"🏗️ **Contexto:** {row['Contexto']}")
-        color = "green" if row['Resultado'] > 0 else "red"
-        st.markdown(f"💰 **Resultado:** :{color}[${row['Resultado']:,.2f}]")
-        st.divider()
-        if st.button("🗑️ Deletar Registro", type="secondary"):
+        st.write(f"📅 {row['Data']} | {row['Ativo']}")
+        res_c = "green" if row['Resultado'] > 0 else "red"
+        st.markdown(f"💰 **Resultado:** :{res_c}[${row['Resultado']:,.2f}]")
+        if st.button("🗑️ Deletar"):
             st.session_state.to_delete = trade_id
             st.rerun()
 
@@ -128,13 +121,14 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD ---
+# --- DASHBOARD (RESTAURADO COMPLETO) ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
         f_v = st.segmented_control("Visualizar:", options=["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
         df_f = df[df['Contexto'] == f_v] if f_v != "Capital" else df.copy()
         
+        # Cálculos avançados restaurados
         total_trades = len(df_f)
         wins = df_f[df_f['Resultado'] > 0]
         losses = df_f[df_f['Resultado'] < 0]
@@ -159,9 +153,9 @@ if selected == "Dashboard":
         fig = px.area(df_g, x=x_axis, y='Acumulado', template="plotly_dark")
         fig.update_traces(line_color='#B20000', line_shape='spline', fillcolor='rgba(178, 0, 0, 0.2)', mode='lines')
         st.plotly_chart(fig, use_container_width=True)
-    else: st.info("Nenhum dado encontrado.")
+    else: st.info("Sem dados.")
 
-# --- REGISTRAR TRADE ---
+# --- REGISTRAR TRADE --- (Igual à versão recuperada)
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
@@ -226,9 +220,9 @@ elif selected == "Registrar Trade":
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
 
-# --- CONFIGURAR ATM ---
+# --- ABA: CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
-    st.title("⚙️ Editor de ATM")
+    st.title("⚙️ Editor de Estratégias ATM")
     with st.expander("✨ Criar Novo Template", expanded=True):
         n = st.text_input("Nome da Estratégia")
         ca1, ca2 = st.columns(2)
@@ -238,7 +232,9 @@ elif selected == "Configurar ATM":
         novas_p = []
         for i in range(n_p):
             cp1, cp2 = st.columns(2)
-            novas_p.append([cp1.number_input(f"Pts {i+1}", key=f"ap_{i}"), cp2.number_input(f"Qtd {i+1}", key=f"aq_{i}", min_value=1)])
+            pt = cp1.number_input(f"Alvo P{i+1} (Pts)", key=f"cpt_{i}")
+            qt = cp2.number_input(f"Contratos P{i+1}", key=f"cqt_{i}", min_value=1)
+            novas_p.append([pt, qt])
         if st.button("💾 Salvar ATM"):
             atm_db[n] = {"lote": l_p, "stop": s_p, "parciais": novas_p}
             save_atm(atm_db); st.success("Salvo!"); st.rerun()
@@ -247,7 +243,7 @@ elif selected == "Configurar ATM":
             cn, cb = st.columns([4, 1]); cn.write(f"**{nome}**")
             if cb.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
-# --- HISTÓRICO (IMAGEM NO TOPO, INFO EMBAIXO) ---
+# --- ABA: HISTÓRICO (PERFEITO E ISOLADO) ---
 elif selected == "Histórico":
     st.title("📜 Galeria de Operações")
     if 'to_delete' in st.session_state:
@@ -266,37 +262,16 @@ elif selected == "Histórico":
                 if i + j < num_trades:
                     row = df_disp.iloc[i + j]
                     with cols[j]:
-                        st.markdown('<div class="trade-card">', unsafe_allow_html=True)
-                        
-                        # --- PARTE SUPERIOR: IMAGEM/PRINT ---
                         p_list = str(row['Prints']).split("|") if row['Prints'] else []
+                        img_html = ""
                         if p_list and os.path.exists(p_list[0]):
                             b64 = get_base64(p_list[0])
-                            st.markdown(f'<div class="img-container-top"><img src="data:image/png;base64,{b64}"></div>', unsafe_allow_html=True)
+                            img_html = f'<div class="img-container"><img src="data:image/png;base64,{b64}"></div>'
                         else:
-                            st.markdown('<div class="img-container-top" style="color:#444; font-size:12px">Sem Print</div>', unsafe_allow_html=True)
-
-                        # --- PARTE CENTRAL: BOTÃO "OLHO" E INFO DO TRADE ---
-                        st.markdown('<div class="card-info-bottom">', unsafe_allow_html=True)
-                        ci1, ci2 = st.columns([1, 2])
-                        with ci1:
-                            if st.button("👁️", key=f"v_{row['ID']}_{i+j}", help="Ver detalhes"):
-                                expand_modal(row['ID'])
-                        with ci2:
-                            st.markdown(f'''
-                                <div style="text-align: left; line-height: 1.2;">
-                                    <b style="color:white; font-size:0.85rem">Trade #{row["Num"]}</b><br>
-                                    <small style="color:#888; font-size:0.7rem">{row["Contexto"]}</small>
-                                </div>
-                            ''', unsafe_allow_html=True)
+                            img_html = '<div class="img-container" style="color:#444; font-size:12px">Sem Print</div>'
                         
-                        # Resultado Financeiro Centralizado Abaixo das Info
                         color = "#00FF88" if row['Resultado'] > 0 else "#FF4B4B"
-                        st.markdown(f'''
-                            <div style="color:{color}; font-weight:bold; font-size:1.1rem; margin-top:10px; border-top:1px solid #222; padding-top:5px;">
-                                ${row["Resultado"]:,.2f}
-                            </div>
-                        ''', unsafe_allow_html=True)
-                        
+                        st.markdown(f'<div class="trade-card">{img_html}<div class="card-footer"><div><b style="color:white">Trade #{row["Num"]}</b><br><small style="color:#888">{row["Contexto"]}</small></div><div style="color:{color}; font-weight:bold; font-size:1.1rem">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
+                        if st.button("Ver", key=f"v_{row['ID']}_{i+j}"): expand_modal(row['ID'])
                         st.markdown('</div></div>', unsafe_allow_html=True)
     else: st.info("Vazio.")
