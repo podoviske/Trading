@@ -2,4 +2,3 @@ streamlit
 pandas
 plotly
 streamlit-option_menu
-st.markdown
