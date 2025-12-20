@@ -21,7 +21,7 @@ CSV_FILE = 'evotrade_data.csv'
 ATM_FILE = 'atm_configs.json'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-# --- ESTILO CSS GERAL (PROTEGIDO) ---
+# --- ESTILO CSS GERAL ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
@@ -52,7 +52,6 @@ st.markdown("""
         background-color: #B20000 !important; font-weight: bold !important;
     }
 
-    /* ESTILO DO HISTÓRICO - ISOLADO */
     .trade-card {
         background-color: #161616; border: 1px solid #333; border-radius: 12px;
         margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px;
@@ -144,38 +143,47 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD ---
+# --- DASHBOARD (CORREÇÃO CONTEXTO C) ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
-        f_v = st.segmented_control("Ver:", ["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
-        df_f = df[df['Contexto'] == f_v] if f_v != "Capital" else df.copy()
+        opcoes_filtro = ["Capital", "Contexto A", "Contexto B", "Contexto C"]
+        f_v = st.segmented_control("Ver:", opcoes_filtro, default="Capital")
         
-        total_trades = len(df_f)
-        wins = df_f[df_f['Resultado'] > 0]
-        losses = df_f[df_f['Resultado'] < 0]
-        wr = (len(wins)/total_trades*100) if total_trades > 0 else 0
-        aw = wins['Resultado'].mean() if not wins.empty else 0
-        al = abs(losses['Resultado'].mean()) if not losses.empty else 0
-        rr = (aw/al) if al > 0 else 0
+        # Filtro robusto ignorando espaços extras
+        if f_v == "Capital":
+            df_f = df.copy()
+        else:
+            df_f = df[df['Contexto'].str.strip() == f_v.strip()].copy()
         
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("P&L Total", f"${df_f['Resultado'].sum():,.2f}")
-        m2.metric("Win Rate", f"{wr:.1f}%")
-        m3.metric("Risco:Retorno", f"1:{rr:.2f}")
-        m4.metric("Ganho Méd", f"${aw:,.2f}")
-        m5.metric("Perda Méd", f"$-{al:,.2f}")
-        
-        st.markdown("---")
-        tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
-        df_g = df_f.sort_values('Data').reset_index(drop=True)
-        df_g['Acumulado'] = df_g['Resultado'].cumsum()
-        x_axis = df_g.index + 1 if tipo_g == "Trade a Trade" else 'Data'
-        
-        fig = px.area(df_g, x=x_axis, y='Acumulado', template="plotly_dark")
-        fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
-        st.plotly_chart(fig, use_container_width=True)
-    else: st.info("Sem dados.")
+        if not df_f.empty:
+            total_trades = len(df_f)
+            wins = df_f[df_f['Resultado'] > 0]
+            losses = df_f[df_f['Resultado'] < 0]
+            wr = (len(wins)/total_trades*100) if total_trades > 0 else 0
+            aw = wins['Resultado'].mean() if not wins.empty else 0
+            al = abs(losses['Resultado'].mean()) if not losses.empty else 0
+            rr = (aw/al) if al > 0 else 0
+            
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("P&L Total", f"${df_f['Resultado'].sum():,.2f}")
+            m2.metric("Win Rate", f"{wr:.1f}%")
+            m3.metric("Risco:Retorno", f"1:{rr:.2f}")
+            m4.metric("Ganho Méd", f"${aw:,.2f}")
+            m5.metric("Perda Méd", f"$-{al:,.2f}")
+            
+            st.markdown("---")
+            tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
+            df_g = df_f.sort_values('Data').reset_index(drop=True)
+            df_g['Acumulado'] = df_g['Resultado'].cumsum()
+            x_axis = df_g.index + 1 if tipo_g == "Trade a Trade" else 'Data'
+            
+            fig = px.area(df_g, x=x_axis, y='Acumulado', template="plotly_dark")
+            fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning(f"Ainda não existem trades registrados para o filtro: {f_v}")
+    else: st.info("Sem dados registrados.")
 
 # --- REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
