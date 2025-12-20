@@ -91,9 +91,9 @@ if selected == "Registrar Trade":
 
     with c2:
         # Lote zerado (Inteiro)
-        lote_total = st.number_input("Lote Total (Contratos)", min_value=0, step=1, value=0)
+        lote_total = st.number_input("Contratos", min_value=0, step=1, value=0)
         # Stop zerado (Visual limpo, mas aceita vírgula)
-        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25, value=0.0)
+        stop_pts = st.number_input("Stop (Pontos)", min_value=0, step=0.25, value=0.0)
         
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
         if lote_total > 0 and stop_pts > 0:
@@ -108,10 +108,10 @@ if selected == "Registrar Trade":
             s1, s2 = st.columns(2)
             with s1: 
                 # Pontos da parcial (Visual limpo, mas aceita vírgula)
-                p = st.number_input(f"Pontos P{i+1}", key=f"pts_real_{i}", step=0.25, value=0.0)
+                p = st.number_input(f"Pontos Parcial{i+1}", key=f"pts_real_{i}", step=0.25, value=0.0)
             with s2: 
                 # Contratos (Inteiro)
-                q = st.number_input(f"Contratos P{i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
+                q = st.number_input(f"Contratos Parcial{i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
             saidas_list.append((p, q))
             contratos_alocados += q
         
