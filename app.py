@@ -95,18 +95,10 @@ def get_base64(path):
         with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
     except: return None
 
-# Função auxiliar para abrir imagem em tela cheia via Link
-def make_fullscreen_link(img_path):
-    if os.path.exists(img_path):
-        with open(img_path, "rb") as f:
-            data = base64.b64encode(f.read()).decode()
-            return f"data:image/png;base64,{data}"
-    return ""
-
 atm_db = load_atm()
 df = load_data()
 
-# --- MODAL (MELHORADO COM TELA CHEIA REAL) ---
+# --- MODAL ---
 @st.dialog("Detalhes do Trade", width="large")
 def expand_modal(trade_id):
     current_df = load_data()
@@ -120,13 +112,13 @@ def expand_modal(trade_id):
         
         if p_list:
             st.write("🖼️ **Galeria de Prints**")
-            tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
+            # Correção Final: Streamlit nativo gerencia o zoom melhor sem links externos
+            st.info("💡 Para tela cheia: Passe o mouse na imagem e clique nas setas no canto superior direito.")
+            tabs = st.tabs([f"Foto {i+1}" for i in range(len(p_list))])
             for i, tab in enumerate(tabs):
                 with tab:
+                    # O segredo é o use_container_width=True que habilita o botão de zoom nativo
                     st.image(p_list[i], use_container_width=True)
-                    # Link para abrir a imagem original em tela cheia na aba do navegador
-                    full_link = make_fullscreen_link(p_list[i])
-                    st.markdown(f'<a href="{full_link}" target="_blank" style="text-decoration:none;"><button style="width:100%; background-color:#1E1E1E; color:white; border:1px solid #333; padding:5px; border-radius:5px; cursor:pointer;">📂 Abrir em Tela Cheia (Nova Aba)</button></a>', unsafe_allow_html=True)
         else: 
             st.info("Sem print disponível.")
             
@@ -165,7 +157,7 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- ABAS (Dashboard, Registrar Trade, Configurar ATM) ---
+# --- DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
