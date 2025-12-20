@@ -21,7 +21,7 @@ st.markdown("""
     }
     .piscante-erro {
         padding: 15px; border-radius: 5px; color: white; font-weight: bold;
-        text-align: center; animation: blinking 1.2s infinite; border: 1px solid #FF0000;
+        text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000;
     }
     .logo-container { padding: 20px 15px; display: flex; flex-direction: column; }
     .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
