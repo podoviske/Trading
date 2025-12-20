@@ -56,7 +56,6 @@ def load_data():
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
-            # Garante que o ID exista para deletar linhas específicas
             if 'ID' not in df.columns:
                 df['ID'] = [f"ID_{int(time.time())}_{i}" for i in range(len(df))]
             for col in cols:
@@ -97,18 +96,36 @@ if selected == "Dashboard":
         avg_loss = losses['Resultado'].mean() if not losses.empty else 0
         total_pnl = df['Resultado'].sum()
         
+        # Métrica linha 1
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("P&L Total", f"${total_pnl:,.2f}")
         m2.metric("Taxa de Acerto", f"{win_rate:.1f}%")
         m3.metric("Ganho Médio", f"${avg_win:,.2f}")
         m4.metric("Perda Média", f"${avg_loss:,.2f}")
         
+        # Métrica linha 2
+        st.write("")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total Trades", total_trades)
+        k2.metric("Maior Gain", f"${df['Resultado'].max():,.2f}")
+        k3.metric("Maior Loss", f"${df['Resultado'].min():,.2f}")
+        k4.metric("Lucro Médio/Trade", f"${df['Resultado'].mean():.2f}")
+        
         st.markdown("---")
         df_sort = df.sort_values('Data')
         df_sort['Acumulado'] = df_sort['Resultado'].cumsum()
+        
+        # Gráfico Curva de Capital
         st.plotly_chart(px.area(df_sort, x='Data', y='Acumulado', title="Curva de Capital", template="plotly_dark", color_discrete_sequence=['#B20000']), use_container_width=True)
+        
+        # Colunas de análise técnica
+        c1, c2 = st.columns(2)
+        with c1:
+            st.plotly_chart(px.bar(df, x='Contexto', y='Resultado', color='Resultado', title="Performance por Contexto", template="plotly_dark", color_continuous_scale="RdYlGn"), use_container_width=True)
+        with c2:
+            st.plotly_chart(px.pie(df, names='Ativo', values='Lote', title="Volume de Contratos por Ativo", template="plotly_dark"), use_container_width=True)
     else:
-        st.info("Nenhum trade registrado.")
+        st.info("Nenhum dado encontrado. Comece registrando um trade!")
 
 # --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
@@ -172,8 +189,7 @@ elif selected == "Registrar Trade":
                 n_id = f"ID_{int(time.time())}"
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco, 'ID': n_id}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.success("🎯 Trade registrado com sucesso!")
-                time.sleep(1); st.rerun()
+                st.success("🎯 Trade registrado com sucesso!"); time.sleep(1); st.rerun()
 
     with r2:
         if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
@@ -182,8 +198,7 @@ elif selected == "Registrar Trade":
                 n_id = f"ID_{int(time.time())}"
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': risco, 'ID': n_id}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.error("🚨 Stop registrado com sucesso!")
-                time.sleep(1); st.rerun()
+                st.error("🚨 Stop registrado com sucesso!"); time.sleep(1); st.rerun()
 
 # --- PÁGINA: CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
@@ -242,7 +257,6 @@ elif selected == "Histórico":
                     st.rerun()
 
         st.markdown("---")
-        # Listagem com opção de deletar linha específica
         df_display = df.sort_values('Data', ascending=False)
         for index, row in df_display.iterrows():
             with st.expander(f"📅 {row['Data']} | {row['Ativo']} | {row['Direcao']} | Resultado: ${row['Resultado']:,.2f}"):
@@ -253,7 +267,6 @@ elif selected == "Histórico":
                     if st.button("Deletar Trade", key=f"del_trade_{row['ID']}"):
                         df = df[df['ID'] != row['ID']]
                         df.to_csv(CSV_FILE, index=False)
-                        st.warning("Operação removida!")
-                        time.sleep(1); st.rerun()
+                        st.warning("Operação removida!"); time.sleep(1); st.rerun()
     else:
         st.info("Histórico vazio.")
