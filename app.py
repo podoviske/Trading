@@ -115,13 +115,19 @@ def expand_modal(trade_id):
                 with tab:
                     st.image(p_list[i], use_container_width=True)
                     b64 = get_base64(p_list[i])
-                    # BOTÃO TELA CHEIA (Injeção de JS para abrir em nova aba sem bloqueio)
-                    st.markdown(f"""
-                        <button onclick="var w=window.open('','_blank');w.document.write('<img src=\\'data:image/png;base64,{b64}\\' style=\\'width:100%\\'>');" 
-                        style="width:100%; background-color:#B20000; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold; margin-top:5px;">
-                        📂 ABRIR EM TELA CHEIA (NOVA ABA)
+                    # Script JS robusto para abrir em nova aba
+                    html_btn = f"""
+                        <script>
+                        function openFull{i}() {{
+                            var newWindow = window.open();
+                            newWindow.document.write('<img src="data:image/png;base64,{b64}" style="width:100%;">');
+                        }}
+                        </script>
+                        <button onclick="openFull{i}()" style="width:100%; background-color:#B20000; color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:bold; margin-top:10px;">
+                            📂 ABRIR EM TELA CHEIA (NOVA ABA)
                         </button>
-                    """, unsafe_allow_html=True)
+                    """
+                    st.markdown(html_btn, unsafe_allow_html=True)
         else: st.info("Sem print disponível.")
         
         st.markdown("---")
@@ -151,7 +157,7 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD (RESTAURADO) ---
+# --- DASHBOARD (RESTAURADO COM FILTRO TRADE PADRÃO) ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
@@ -173,9 +179,18 @@ if selected == "Dashboard":
         m4.metric("Ganho Méd", f"${aw:,.2f}")
         m5.metric("Perda Méd", f"$-{al:,.2f}")
         
+        st.markdown("---")
+        # FILTRO DATA/TRADE ADICIONADO (TRADE COMO PADRÃO)
+        tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
         df_g = df_f.sort_values('Data').reset_index(drop=True)
         df_g['Acumulado'] = df_g['Resultado'].cumsum()
-        st.plotly_chart(px.area(df_g, x=df_g.index + 1, y='Acumulado', template="plotly_dark").update_traces(line_color='#B20000'), use_container_width=True)
+        
+        x_axis = df_g.index + 1 if tipo_g == "Trade a Trade" else 'Data'
+        
+        fig = px.area(df_g, x=x_axis, y='Acumulado', template="plotly_dark")
+        fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
+        st.plotly_chart(fig, use_container_width=True)
+    else: st.info("Sem dados.")
 
 # --- REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
@@ -199,7 +214,7 @@ elif selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
     with c2:
         lote_t = st.number_input("Contratos", min_value=0, value=int(config["lote"]))
-        stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]))
+        stop_p = st.number_input("Stop (Pts)", min_value=0.0)
         up_files = st.file_uploader("📸 Prints", accept_multiple_files=True)
     with c3:
         st.write("**Saídas**")
