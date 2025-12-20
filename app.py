@@ -8,7 +8,7 @@ from streamlit_option_menu import option_menu
 # Configuração da Página
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
 
-# --- ESTILO CSS CUSTOMIZADO ---
+# --- ESTILO CSS CUSTOMIZADO (COM EFEITO PISCANTE EVO) ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] {
@@ -38,31 +38,30 @@ st.markdown("""
         color: white !important;
         border: none !important;
         border-radius: 4px;
-        transition: 0.3s;
     }
-    .stButton>button:hover {
-        background-color: #FF0000 !important;
-        box-shadow: 0px 0px 10px rgba(255, 0, 0, 0.4);
-    }
-    /* Estilização da Logo EvoTrade no Topo */
     .logo-container {
         padding: 20px 15px;
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
     }
-    .logo-main {
-        color: #B20000;
-        font-size: 26px;
-        font-weight: 900;
-        line-height: 1;
-        letter-spacing: -1px;
+    .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
+    .logo-sub { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; }
+
+    /* ANIMAÇÃO PISCANTE EVO */
+    @keyframes blinking {
+        0% { background-color: #440000; }
+        50% { background-color: #B20000; }
+        100% { background-color: #440000; }
     }
-    .logo-sub {
+    .piscante-erro {
+        padding: 12px;
+        border-radius: 5px;
         color: white;
-        font-size: 22px;
-        font-weight: 700;
-        margin-top: -5px;
+        font-weight: bold;
+        text-align: center;
+        animation: blinking 1s infinite;
+        margin-top: 10px;
+        border: 1px solid #FF0000;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -79,8 +78,7 @@ def load_data():
             if 'Data' in df.columns:
                 df['Data'] = pd.to_datetime(df['Data']).dt.date
                 return df
-        except:
-            pass
+        except: pass
     return pd.DataFrame(columns=cols)
 
 def save_data(df):
@@ -88,7 +86,7 @@ def save_data(df):
 
 df = load_data()
 
-# --- LÓGICA DE ESTADO ---
+# --- ESTADO ---
 if 'n_parciais' not in st.session_state:
     st.session_state.n_parciais = 1
 
@@ -99,34 +97,13 @@ def limpar_parciais():
 
 # --- SIDEBAR ---
 with st.sidebar:
-    # Logo EVO TRADE centralizada no topo da sidebar
-    st.markdown("""
-        <div class="logo-container">
-            <div class="logo-main">EVO</div>
-            <div class="logo-sub">TRADE</div>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('<p class="sidebar-category">Menu</p>', unsafe_allow_html=True)
-    selected = option_menu(
-        menu_title=None,
-        options=["Dashboard", "Registrar Trade", "Histórico"],
-        icons=["grid-1x2", "currency-dollar", "clock-history"],
-        menu_icon="cast",
-        default_index=0,
-        styles={
-            "container": {"padding": "0!important", "background-color": "transparent"},
-            "icon": {"color": "#666", "font-size": "16px"}, 
-            "nav-link": {"font-size": "14px", "text-align": "left", "color": "#AAA", "padding": "10px"},
-            "nav-link-selected": {"background-color": "#B20000", "color": "white", "border-radius": "5px"},
-        }
-    )
-    
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown('<div style="position: fixed; bottom: 20px; left: 20px; color: #555; font-size: 14px; cursor: pointer;">📤 Sair</div>', unsafe_allow_html=True)
+    st.markdown('<div class="logo-container"><div class="logo-main">EVO</div><div class="logo-sub">TRADE</div></div>', unsafe_allow_html=True)
+    selected = option_menu(menu_title=None, options=["Dashboard", "Registrar Trade", "Histórico"], 
+        icons=["grid-1x2", "currency-dollar", "clock-history"], styles={
+            "nav-link-selected": {"background-color": "#B20000", "color": "white"}
+        })
 
 # --- PÁGINAS ---
-
 if selected == "Registrar Trade":
     st.title("Registro de Trade")
     
@@ -139,9 +116,9 @@ if selected == "Registrar Trade":
     with st.form("trade_form"):
         c1, c2, c3 = st.columns([1, 1, 2])
         with c1:
-            data = st.date_input("Data da Operação", datetime.now())
-            ativo = st.selectbox("Ativo/Servidor", ["MNQ", "NQ"])
-            contexto = st.selectbox("Contexto/Tipo", ["Contexto A", "Contexto B", "Contexto C"])
+            data = st.date_input("Data", datetime.now())
+            ativo = st.selectbox("Ativo", ["MNQ", "NQ"])
+            contexto = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
             direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
             entrada = st.number_input("Preço de Entrada", step=0.25, format="%.2f")
         with c2:
@@ -155,47 +132,47 @@ if selected == "Registrar Trade":
             alocado = 0
             for i in range(st.session_state.n_parciais):
                 s1, s2 = st.columns(2)
-                with s1: p = st.number_input(f"Pts Parcial {i+1}", key=f"p_{i}")
-                with s2: q = st.number_input(f"Contratos P{i+1}", min_value=0, key=f"q_{i}")
-                saidas.append((p, q)); alocado += q
+                with s1: p = st.number_input(f"Pts P{i+1}", key=f"p_{i}", step=0.25)
+                with s2: q = st.number_input(f"Contratos P{i+1}", min_value=0, key=f"q_{i}", step=1)
+                saidas.append((p, q))
+                alocado += q
             
-            if lote_total - alocado != 0:
-                st.warning(f"Faltam {lote_total - alocado} contratos.")
+            # MENSAGEM DINÂMICA PISCANTE
+            resta = lote_total - alocado
+            if resta > 0:
+                st.markdown(f'<div class="piscante-erro">FALTAM {resta} CONTRATOS PARA FECHAR A POSIÇÃO</div>', unsafe_allow_html=True)
+            elif resta < 0:
+                st.markdown(f'<div class="piscante-erro">ERRO: EXCESSO DE {abs(resta)} CONTRATOS!</div>', unsafe_allow_html=True)
+            else:
+                st.success("✅ Posição completa.")
 
         if st.form_submit_button("REGISTRAR TRADE"):
             if alocado == lote_total:
                 res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas])
                 pts_m = sum([s[0] * s[1] for s in saidas]) / lote_total
                 faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
-                
                 novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco_calc}])
                 df = pd.concat([df, novo], ignore_index=True)
                 save_data(df)
-                st.success("Registrado com sucesso!")
+                st.success("Registrado!")
                 st.rerun()
             else:
-                st.error("A soma das parciais deve bater com o lote!")
+                st.error("Corrija a quantidade de contratos antes de salvar.")
 
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
         k1, k2, k3 = st.columns(3)
         k1.metric("P&L Total", f"${df['Resultado'].sum():.2f}")
-        k2.metric("Taxa de Acerto", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
+        k2.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
         k3.metric("Risco Médio", f"${df['Risco_Fin'].mean():.2f}")
-        
         st.markdown("---")
         df_ev = df.sort_values('Data').copy()
         df_ev['Acumulado'] = df_ev['Resultado'].cumsum()
-        fig = px.area(df_ev, x='Data', y='Acumulado', title="Curva de Capital", template="plotly_dark", color_discrete_sequence=['#B20000'])
+        fig = px.area(df_ev, x='Data', y='Acumulado', template="plotly_dark", color_discrete_sequence=['#B20000'])
         fig.update_traces(line_shape='spline', fillcolor='rgba(178, 0, 0, 0.1)')
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Sem dados para exibir.")
 
 elif selected == "Histórico":
     st.title("Histórico de Trades")
-    if not df.empty:
-        st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
-    else:
-        st.write("Histórico vazio.")
+    st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
