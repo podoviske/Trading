@@ -89,13 +89,13 @@ def limpar_parciais():
 # --- SIDEBAR (ESTILO EVOCONTROL) ---
 with st.sidebar:
     # Logo EvoTrade no topo esquerdo
-    st.markdown('<div class="logo-text"><span style="color:#B20000">EVO</span>TRADE</div>', unsafe_allow_html=True)
+    st.markdown('<div class="logo-text"><span style="color:#B20000">Evo</span>Trade</div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     
     st.markdown('<p class="sidebar-category">Menu</p>', unsafe_allow_html=True)
     selected = option_menu(
         menu_title=None,
-        options=["Vendas Analytics", "Registrar Trade", "Histórico"],
+        options=["Analytics Trade", "Registrar Trade", "Histórico"],
         icons=["graph-up", "plus-square", "list-check"],
         menu_icon="cast",
         default_index=0,
