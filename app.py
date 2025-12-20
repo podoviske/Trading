@@ -8,7 +8,7 @@ from streamlit_option_menu import option_menu
 # Configuração da Página
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
 
-# --- ESTILO CSS (ALERTA PISCANTE EVO) ---
+# --- ESTILO CSS (ALERTA PISCANTE EVO SUAVE) ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
@@ -21,7 +21,9 @@ st.markdown("""
     }
     .piscante-erro {
         padding: 15px; border-radius: 5px; color: white; font-weight: bold;
-        text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000;
+        text-align: center; 
+        animation: blinking 2.4s infinite;
+        border: 1px solid #FF0000;
     }
     .logo-container { padding: 20px 15px; display: flex; flex-direction: column; }
     .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
@@ -34,6 +36,7 @@ CSV_FILE = 'evotrade_data.csv'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
 def load_data():
+    # Removido 'Entrada' das colunas
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'Faixa', 'Resultado', 'Pts_Medio', 'Risco_Fin']
     if os.path.exists(CSV_FILE):
         try:
@@ -66,13 +69,11 @@ with st.sidebar:
 if selected == "Registrar Trade":
     st.title("Registro de Trade")
     
-    # Botões fora do form para atualizar o estado
     c_btn1, c_btn2 = st.columns([4, 1])
     with c_btn2:
         st.button("➕ Parcial", on_click=adicionar_parcial, use_container_width=True)
         st.button("🧹 Reset", on_click=limpar_parciais, use_container_width=True)
 
-    # Inputs principais FORA do st.form para permitir cálculo em tempo real
     c1, c2, c3 = st.columns([1, 1, 2])
     
     with c1:
@@ -80,18 +81,15 @@ if selected == "Registrar Trade":
         ativo = st.selectbox("Ativo", ["MNQ", "NQ"])
         contexto = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-        entrada = st.number_input("Preço de Entrada", step=0.25, format="%.2f")
 
     with c2:
         lote_total = st.number_input("Lote Total (Contratos)", min_value=1, step=1, value=1)
         stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25)
-        
-        # CORREÇÃO DO CÁLCULO DE RISCO
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
         st.metric("Risco Financeiro", f"${risco_calc:.2f}")
 
     with c3:
-        st.write("**Saídas / Parciais**")
+        st.write("**Saídas / Parciais (em Pontos)**")
         saidas_list = []
         contratos_alocados = 0
         
@@ -104,7 +102,6 @@ if selected == "Registrar Trade":
             saidas_list.append((p, q))
             contratos_alocados += q
         
-        # MENSAGEM DINÂMICA PISCANTE (ATUALIZA NA HORA)
         resta = lote_total - contratos_alocados
         if resta > 0:
             st.markdown(f'<div class="piscante-erro">FALTAM {resta} CONTRATOS PARA FECHAR A POSIÇÃO</div>', unsafe_allow_html=True)
@@ -113,9 +110,9 @@ if selected == "Registrar Trade":
         else:
             st.success("✅ Posição completa. Pronto para registrar.")
 
-    # Botão de Salvar (agora fora do st.form para evitar conflito de atualização)
     if st.button("💾 REGISTRAR OPERAÇÃO FINAL", use_container_width=True):
         if contratos_alocados == lote_total:
+            # Cálculo do resultado baseado apenas nos pontos das parciais
             res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas_list])
             pts_m = sum([s[0] * s[1] for s in saidas_list]) / lote_total
             faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
@@ -128,12 +125,12 @@ if selected == "Registrar Trade":
         else:
             st.error("A quantidade de contratos das parciais não bate com o Lote Total.")
 
-# (Restante do código: Dashboard e Histórico permanecem iguais)
+# (Dashboard e Histórico seguem abaixo...)
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
         k1, k2, k3 = st.columns(3)
-        k1.metric("Faturamento Líquido", f"${df['Resultado'].sum():.2f}")
+        k1.metric("P&L Total", f"${df['Resultado'].sum():.2f}")
         k2.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
         k3.metric("Risco Médio", f"${df['Risco_Fin'].mean():.2f}")
         st.markdown("---")
@@ -144,5 +141,5 @@ elif selected == "Dashboard":
         st.plotly_chart(fig, use_container_width=True)
 
 elif selected == "Histórico":
-    st.title("Histórico de Operações")
+    st.title("Histórico de Trades")
     st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
