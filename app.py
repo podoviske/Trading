@@ -115,19 +115,27 @@ def expand_modal(trade_id):
                 with tab:
                     st.image(p_list[i], use_container_width=True)
                     b64 = get_base64(p_list[i])
-                    # Script JS robusto para abrir em nova aba
-                    html_btn = f"""
+                    # SOLUÇÃO DEFINITIVA: BLOB URL VIA JAVASCRIPT
+                    js_code = f"""
                         <script>
-                        function openFull{i}() {{
-                            var newWindow = window.open();
-                            newWindow.document.write('<img src="data:image/png;base64,{b64}" style="width:100%;">');
+                        function openImage{i}() {{
+                            const base64Data = "{b64}";
+                            const byteCharacters = atob(base64Data);
+                            const byteNumbers = new Array(byteCharacters.length);
+                            for (let i = 0; i < byteCharacters.length; i++) {{
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                            }}
+                            const byteArray = new Uint8Array(byteNumbers);
+                            const blob = new Blob([byteArray], {{type: 'image/png'}});
+                            const blobUrl = URL.createObjectURL(blob);
+                            window.open(blobUrl, '_blank');
                         }}
                         </script>
-                        <button onclick="openFull{i}()" style="width:100%; background-color:#B20000; color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:bold; margin-top:10px;">
+                        <button onclick="openImage{i}()" style="width:100%; background-color:#B20000; color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:bold; margin-top:10px;">
                             📂 ABRIR EM TELA CHEIA (NOVA ABA)
                         </button>
                     """
-                    st.markdown(html_btn, unsafe_allow_html=True)
+                    st.markdown(js_code, unsafe_allow_html=True)
         else: st.info("Sem print disponível.")
         
         st.markdown("---")
@@ -157,7 +165,7 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD (RESTAURADO COM FILTRO TRADE PADRÃO) ---
+# --- DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
@@ -180,11 +188,9 @@ if selected == "Dashboard":
         m5.metric("Perda Méd", f"$-{al:,.2f}")
         
         st.markdown("---")
-        # FILTRO DATA/TRADE ADICIONADO (TRADE COMO PADRÃO)
         tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
         df_g = df_f.sort_values('Data').reset_index(drop=True)
         df_g['Acumulado'] = df_g['Resultado'].cumsum()
-        
         x_axis = df_g.index + 1 if tipo_g == "Trade a Trade" else 'Data'
         
         fig = px.area(df_g, x=x_axis, y='Acumulado', template="plotly_dark")
@@ -253,7 +259,7 @@ elif selected == "Registrar Trade":
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
 
-# --- ABA: CONFIGURAR ATM (RESTAURADA) ---
+# --- ABA: CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
     st.title("⚙️ Editor de ATM")
     with st.expander("✨ Criar Novo Template", expanded=True):
