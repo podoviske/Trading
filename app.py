@@ -8,7 +8,7 @@ from streamlit_option_menu import option_menu
 # Configuração da Página
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
 
-# --- ESTILO CSS (ALERTA PISCANTE EVO SUAVE) ---
+# --- ESTILO CSS ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
@@ -90,15 +90,14 @@ if selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        # Lote zerado por padrão
+        # Lote zerado (Inteiro)
         lote_total = st.number_input("Lote Total (Contratos)", min_value=0, step=1, value=0)
-        # Stop em pontos (aceita decimal/vírgula)
-        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25, value=0.0, format="%.2f")
+        # Stop zerado (Visual limpo, mas aceita vírgula)
+        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25, value=0.0)
         
-        # CÁLCULO DE RISCO ATIVO
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
         if lote_total > 0 and stop_pts > 0:
-            st.metric("Risco Financeiro Total", f"${risco_calc:.2f}")
+            st.metric("Risco Financeiro Total", f"${risco_calc:,.2f}")
 
     with c3:
         st.write("**Saídas / Parciais (em Pontos)**")
@@ -108,13 +107,14 @@ if selected == "Registrar Trade":
         for i in range(st.session_state.n_parciais):
             s1, s2 = st.columns(2)
             with s1: 
-                p = st.number_input(f"Pontos P{i+1}", key=f"pts_real_{i}", step=0.25, value=0.0, format="%.2f")
+                # Pontos da parcial (Visual limpo, mas aceita vírgula)
+                p = st.number_input(f"Pontos P{i+1}", key=f"pts_real_{i}", step=0.25, value=0.0)
             with s2: 
+                # Contratos (Inteiro)
                 q = st.number_input(f"Contratos P{i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
             saidas_list.append((p, q))
             contratos_alocados += q
         
-        # Alerta piscante condicional
         if lote_total > 0:
             resta = lote_total - contratos_alocados
             if resta > 0:
@@ -153,6 +153,7 @@ if selected == "Registrar Trade":
             else:
                 st.warning("Defina Lote e Stop antes de registrar.")
 
+# (Dashboard e Histórico continuam os mesmos)
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
@@ -160,7 +161,7 @@ elif selected == "Dashboard":
         total_pnl = df['Resultado'].sum()
         k1.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
         k2.metric("Total Trades", len(df))
-        k3.metric("P&L Total", f"${total_pnl:.2f}")
+        k3.metric("P&L Total", f"${total_pnl:,.2f}")
         st.markdown("---")
         df_ev = df.sort_values('Data').copy()
         df_ev['Acumulado'] = df_ev['Resultado'].cumsum()
