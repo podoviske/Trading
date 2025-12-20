@@ -108,11 +108,12 @@ def expand_modal(trade_id):
     c1, c2 = st.columns([1.5, 1])
     
     with c1:
-        p_list = str(row['Prints']).split("|") if row['Prints'] else []
-        p_list = [p for p in p_list if p and os.path.exists(p)]
+        # CORREÇÃO: Lógica robusta para múltiplos prints
+        raw_prints = str(row['Prints']) if pd.notna(row['Prints']) else ""
+        p_list = [p.strip() for p in raw_prints.split("|") if p.strip() and os.path.exists(p.strip())]
         
         if p_list:
-            st.info("💡 Passe o mouse sobre a imagem e clique no ícone de setas (canto superior direito) para ver em tela cheia.")
+            st.info("💡 Passe o mouse sobre a imagem e clique no ícone de setas para tela cheia.")
             if len(p_list) > 1:
                 st.subheader(f"📸 Prints da Operação ({len(p_list)})")
                 tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
@@ -245,7 +246,11 @@ elif selected == "Registrar Trade":
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
-                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
+                
+                # CORREÇÃO: Salvando múltiplos prints com o separador correto
+                prints_str = "|".join(paths)
+                
+                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': prints_str, 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.success("🎯 Trade registrado!"); time.sleep(1); st.rerun()
     with r2:
@@ -299,7 +304,10 @@ elif selected == "Histórico":
                 if i + j < num_trades:
                     row = df_disp.iloc[i + j]
                     with cols[j]:
-                        p_list = str(row['Prints']).split("|") if row['Prints'] else []
+                        # CORREÇÃO: Mostrando apenas o primeiro print como capa no card
+                        raw_prints = str(row['Prints']) if pd.notna(row['Prints']) else ""
+                        p_list = [p.strip() for p in raw_prints.split("|") if p.strip()]
+                        
                         img_html = ""
                         if p_list and os.path.exists(p_list[0]):
                             b64 = get_base64(p_list[0])
