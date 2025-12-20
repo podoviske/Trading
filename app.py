@@ -99,7 +99,7 @@ def get_base64(path):
 atm_db = load_atm()
 df = load_data()
 
-# --- MODAL (SUPORTE A MÚLTIPLOS PRINTS) ---
+# --- MODAL ---
 @st.dialog("Detalhes do Trade", width="large")
 def expand_modal(trade_id):
     current_df = load_data()
@@ -108,11 +108,11 @@ def expand_modal(trade_id):
     c1, c2 = st.columns([1.5, 1])
     
     with c1:
-        # Lógica para múltiplos prints
         p_list = str(row['Prints']).split("|") if row['Prints'] else []
-        p_list = [p for p in p_list if p and os.path.exists(p)] # Filtra apenas caminhos válidos
+        p_list = [p for p in p_list if p and os.path.exists(p)]
         
         if p_list:
+            st.markdown("💡 *Clique no ícone de expansão no canto da imagem para tela cheia.*")
             if len(p_list) > 1:
                 st.subheader(f"📸 Prints da Operação ({len(p_list)})")
                 tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
