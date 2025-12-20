@@ -35,7 +35,12 @@ def get_folder_id():
     query = f"name = '{FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     results = DRIVE.files().list(q=query, fields="files(id)").execute()
     items = results.get('files', [])
-    return items[0]['id'] if items else None
+    if items:
+        return items[0]['id']
+    else:
+        file_metadata = {'name': FOLDER_NAME, 'mimeType': 'application/vnd.google-apps.folder'}
+        folder = DRIVE.files().create(body=file_metadata, fields='id').execute()
+        return folder.get('id')
 
 FOLDER_ID = get_folder_id()
 
@@ -43,14 +48,12 @@ def save_to_drive(file_name, content, mime_type='application/octet-stream'):
     query = f"name = '{file_name}' and '{FOLDER_ID}' in parents and trashed = false"
     results = DRIVE.files().list(q=query, fields="files(id)").execute()
     items = results.get('files', [])
-    
     fh = io.BytesIO(content)
     media = MediaIoBaseUpload(fh, mimetype=mime_type, resumable=True)
-    file_metadata = {'name': file_name, 'parents': [FOLDER_ID]}
-    
     if items:
         DRIVE.files().update(fileId=items[0]['id'], media_body=media).execute()
     else:
+        file_metadata = {'name': file_name, 'parents': [FOLDER_ID]}
         DRIVE.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
 def load_from_drive(file_name):
@@ -58,7 +61,6 @@ def load_from_drive(file_name):
     results = DRIVE.files().list(q=query, fields="files(id)").execute()
     items = results.get('files', [])
     if not items: return None
-    
     request = DRIVE.files().get_media(fileId=items[0]['id'])
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
@@ -103,16 +105,17 @@ if check_password():
     ATM_FILE = 'atm_configs.json'
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-    # Carregamento Cloud
-    csv_data = load_from_drive(CSV_FILE)
-    if csv_data:
-        df = pd.read_csv(io.BytesIO(csv_data))
+    # Carregar Banco de Dados do Drive
+    csv_bytes = load_from_drive(CSV_FILE)
+    if csv_bytes:
+        df = pd.read_csv(io.BytesIO(csv_bytes))
         df['Data'] = pd.to_datetime(df['Data']).dt.date
     else:
         df = pd.DataFrame(columns=['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID', 'Prints', 'Notas'])
 
-    atm_data = load_from_drive(ATM_FILE)
-    atm_db = json.loads(atm_data.decode('utf-8')) if atm_data else {"Personalizado": {"lote": 1, "stop": 0.0, "parciais": []}}
+    # Carregar ATMs do Drive
+    atm_bytes = load_from_drive(ATM_FILE)
+    atm_db = json.loads(atm_bytes.decode()) if atm_bytes else {"Personalizado": {"lote": 1, "stop": 0.0, "parciais": []}}
 
     # --- ESTILO CSS GERAL PREMIUM ---
     st.markdown("""
@@ -158,7 +161,7 @@ if check_password():
             notas_input = st.text_area("Notas:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
             if st.button("💾 Salvar Notas"):
                 df.loc[df['ID'] == trade_id, 'Notas'] = notas_input
-                save_to_drive(CSV_FILE, df.to_csv(index=False).encode('utf-8'))
+                save_to_drive(CSV_FILE, df.to_csv(index=False).encode())
                 st.success("Salvo!"); time.sleep(1); st.rerun()
         with c2:
             st.markdown(f"### Trade Info")
@@ -170,8 +173,8 @@ if check_password():
             st.markdown(f"💰 **P&L:** <span style='color:{res_c}; font-weight:bold; font-size:20px'>${row['Resultado']:,.2f}</span>", unsafe_allow_html=True)
             st.write(f"📊 **Média Pts:** {row['Pts_Medio']:.2f}")
             if st.button("🗑️ Deletar Trade", type="primary"):
-                df_upd = df[df['ID'] != trade_id]
-                save_to_drive(CSV_FILE, df_upd.to_csv(index=False).encode('utf-8'))
+                df_new = df[df['ID'] != trade_id]
+                save_to_drive(CSV_FILE, df_new.to_csv(index=False).encode())
                 st.rerun()
 
     with st.sidebar:
@@ -243,6 +246,7 @@ if check_password():
             for i in range(st.session_state.n_extras):
                 sc1, sc2 = st.columns(2); p = sc1.number_input(f"Pts Ex {i+1}", key=f"pe_{i}"); q = sc2.number_input(f"Qtd Ex {i+1}", key=f"qe_{i}"); saidas.append((p, q)); alocado += q
             if lote_t > 0 and lote_t != alocado: st.markdown(f'<div class="piscante-erro">FALTAM {lote_t-alocado} CONTRATOS</div>', unsafe_allow_html=True)
+            elif lote_t == alocado and lote_t > 0: st.success("✅ Posição Completa")
         r_b1, r_b2 = st.columns(2)
         with r_b1:
             if st.button("💾 REGISTRAR GAIN", use_container_width=True):
@@ -250,25 +254,17 @@ if check_password():
                     res = sum([s[0]*MULTIPLIERS[ativo]*s[1] for s in saidas]); pts_m = sum([s[0]*s[1] for s in saidas]) / lote_t
                     n_id = str(uuid.uuid4()); paths = []
                     for i, f in enumerate(up_files):
-                        p_name = f"{n_id}_{i}.png"
-                        save_to_drive(p_name, f.getvalue(), 'image/png')
-                        paths.append(p_name)
+                        p_name = f"{n_id}_{i}.png"; save_to_drive(p_name, f.getvalue(), 'image/png'); paths.append(p_name)
                     new_trade = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                    df = pd.concat([df, new_trade], ignore_index=True)
-                    save_to_drive(CSV_FILE, df.to_csv(index=False).encode('utf-8'))
-                    st.success("🎯 Registrado!"); time.sleep(1); st.rerun()
+                    df = pd.concat([df, new_trade], ignore_index=True); save_to_drive(CSV_FILE, df.to_csv(index=False).encode()); st.success("🎯 Registrado!"); time.sleep(1); st.rerun()
         with r_b2:
             if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
                 if lote_t > 0 and stop_p > 0:
                     pre = -(stop_p * MULTIPLIERS[ativo] * lote_t); n_id = str(uuid.uuid4()); paths = []
                     for i, f in enumerate(up_files):
-                        p_name = f"{n_id}_{i}.png"
-                        save_to_drive(p_name, f.getvalue(), 'image/png')
-                        paths.append(p_name)
+                        p_name = f"{n_id}_{i}.png"; save_to_drive(p_name, f.getvalue(), 'image/png'); paths.append(p_name)
                     new_trade = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                    df = pd.concat([df, new_trade], ignore_index=True)
-                    save_to_drive(CSV_FILE, df.to_csv(index=False).encode('utf-8'))
-                    st.error("🚨 Stop!"); time.sleep(1); st.rerun()
+                    df = pd.concat([df, new_trade], ignore_index=True); save_to_drive(CSV_FILE, df.to_csv(index=False).encode()); st.error("🚨 Stop!"); time.sleep(1); st.rerun()
 
     elif selected == "Configurar ATM":
         st.title("⚙️ Editor de ATM")
@@ -277,17 +273,12 @@ if check_password():
             for i in range(n_p):
                 cp1, cp2 = st.columns(2); novas_p.append([cp1.number_input(f"Pts {i+1}", key=f"ap_{i}"), cp2.number_input(f"Qtd {i+1}", key=f"aq_{i}", min_value=1)])
             if st.button("💾 Salvar ATM"):
-                atm_db[n] = {"lote": l_p, "stop": s_p, "parciais": novas_p}
-                save_to_drive(ATM_FILE, json.dumps(atm_db).encode('utf-8'))
-                st.rerun()
+                atm_db[n] = {"lote": l_p, "stop": s_p, "parciais": novas_p}; save_to_drive(ATM_FILE, json.dumps(atm_db).encode()); st.rerun()
         st.markdown("---")
         for nome, cfg in list(atm_db.items()):
             if nome != "Personalizado":
                 c_n, c_d = st.columns([4, 1]); c_n.write(f"**{nome}** (Lote: {cfg['lote']})")
-                if c_d.button("Excluir", key=f"del_{nome}"):
-                    del atm_db[nome]
-                    save_to_drive(ATM_FILE, json.dumps(atm_db).encode('utf-8'))
-                    st.rerun()
+                if c_d.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_to_drive(ATM_FILE, json.dumps(atm_db).encode()); st.rerun()
 
     elif selected == "Histórico":
         st.title("📜 Galeria")
