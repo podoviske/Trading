@@ -255,8 +255,18 @@ elif selected == "Registrar Trade":
             if lote_t > 0 and stop_p > 0:
                 pre = -(stop_p * MULTIPLIERS[ativo] * lote_t)
                 n_id = str(uuid.uuid4())
-                # ADICIONADO: 'Notas': "" para evitar erro de colunas faltantes no CSV
-                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "", 'Notas': ""}])
+                
+                # CORREÇÃO: Processar e salvar os prints no registro de Stop também
+                paths = []
+                for i, f in enumerate(up_files):
+                    p = os.path.join(IMG_DIR, f"{n_id}_{i}.png")
+                    with open(p, "wb") as bf: bf.write(f.getbuffer())
+                    paths.append(p)
+                
+                prints_str = "|".join(paths)
+                
+                # Criar o registro garantindo todas as colunas
+                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': prints_str, 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
 
