@@ -85,27 +85,44 @@ with st.sidebar:
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
+        total_trades = len(df)
+        wins = df[df['Resultado'] > 0]
+        losses = df[df['Resultado'] < 0]
+        
+        win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0
+        avg_win = wins['Resultado'].mean() if not wins.empty else 0
+        avg_loss = losses['Resultado'].mean() if not losses.empty else 0
         total_pnl = df['Resultado'].sum()
+        
+        # Primeira linha de métricas
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("P&L Total", f"${total_pnl:,.2f}")
+        m2.metric("Taxa de Acerto", f"{win_rate:.1f}%")
+        m3.metric("Ganho Médio", f"${avg_win:,.2f}", delta_color="normal")
+        m4.metric("Perda Média", f"${avg_loss:,.2f}", delta_color="inverse")
+        
+        # Segunda linha de métricas
+        st.write("")
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
-        k2.metric("P&L Total", f"${total_pnl:,.2f}")
-        k3.metric("Total Trades", len(df))
+        k1.metric("Total Trades", total_trades)
+        k2.metric("Maior Gain", f"${df['Resultado'].max():,.2f}")
+        k3.metric("Maior Loss", f"${df['Resultado'].min():,.2f}")
         k4.metric("Lucro Médio/Trade", f"${df['Resultado'].mean():.2f}")
         
         st.markdown("---")
         df_sort = df.sort_values('Data')
         df_sort['Acumulado'] = df_sort['Resultado'].cumsum()
         
-        fig = px.area(df_sort, x='Data', y='Acumulado', title="Curva de Capital",
+        fig = px.area(df_sort, x='Data', y='Acumulado', title="Curva de Capital (Equity)",
                       template="plotly_dark", color_discrete_sequence=['#B20000'])
         fig.update_traces(line_shape='spline', fillcolor='rgba(178, 0, 0, 0.2)')
         st.plotly_chart(fig, use_container_width=True)
         
         c1, c2 = st.columns(2)
         c1.plotly_chart(px.bar(df, x='Contexto', y='Resultado', color='Resultado', title="Performance por Contexto", template="plotly_dark"), use_container_width=True)
-        c2.plotly_chart(px.pie(df, names='Ativo', values='Lote', title="Distribuição por Ativo", template="plotly_dark"), use_container_width=True)
+        c2.plotly_chart(px.pie(df, names='Ativo', values='Lote', title="Volume por Ativo", template="plotly_dark"), use_container_width=True)
     else:
-        st.info("Nenhum trade registrado.")
+        st.info("Nenhum trade registrado ainda para análise.")
 
 # --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
