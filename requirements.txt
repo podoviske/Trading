@@ -1,4 +1,6 @@
 streamlit
 pandas
 plotly
-streamlit-option_menu
+streamlit-option-menu
+google-api-python-client
+google-auth
