@@ -7,15 +7,12 @@ from streamlit_option_menu import option_menu
 import json
 import time
 import uuid # Novo para IDs únicos
-
 # Configuração da Página
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
-
 # --- NOVO: DIRETÓRIO DE IMAGENS (Necessário para a Galeria) ---
 IMG_DIR = "trade_prints"
 if not os.path.exists(IMG_DIR):
     os.makedirs(IMG_DIR)
-
 # --- ESTILO CSS ---
 st.markdown("""
     <style>
@@ -34,7 +31,7 @@ st.markdown("""
     .logo-container { padding: 20px 15px; display: flex; flex-direction: column; }
     .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
     .logo-sub { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; }
-    
+   
     .stButton > button { width: 100%; }
     .stButton > button[kind="secondary"] {
         color: #FF4B4B !important; border: 1px solid #FF4B4B !important; background: transparent !important;
@@ -48,7 +45,6 @@ st.markdown("""
         background-color: #B20000 !important;
         font-weight: bold !important;
     }
-
     /* CSS DA GALERIA (O PRÉDIO) */
     .trade-window {
         background-color: #161616;
@@ -61,7 +57,6 @@ st.markdown("""
         height: 340px;
     }
     .trade-window:hover { border-color: #B20000; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); }
-
     .image-crop-container {
         width: 100%;
         height: 180px;
@@ -71,40 +66,35 @@ st.markdown("""
         align-items: center;
         justify-content: center;
     }
-    
+   
     .image-crop-container img {
         width: 100% !important;
         height: 180px !important;
         object-fit: cover !important;
         object-position: center !important;
     }
-
-    .trade-footer { 
-        padding: 15px; 
-        text-align: center; 
-        display: flex; 
-        flex-direction: column; 
+    .trade-footer {
+        padding: 15px;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
         justify-content: space-between;
         height: 160px;
     }
     </style>
     """, unsafe_allow_html=True)
-
 # --- PERSISTÊNCIA ---
 CSV_FILE = 'evotrade_data.csv'
 ATM_FILE = 'atm_configs.json'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
-
 def load_atm():
     if os.path.exists(ATM_FILE):
         try:
             with open(ATM_FILE, 'r') as f: return json.load(f)
         except: pass
     return {"Personalizado": {"lote": 0, "stop": 0.0, "parciais": []}}
-
 def save_atm(configs):
     with open(ATM_FILE, 'w') as f: json.dump(configs, f)
-
 def load_data():
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID', 'Prints']
     if os.path.exists(CSV_FILE):
@@ -120,17 +110,13 @@ def load_data():
             return df
         except: return pd.DataFrame(columns=cols)
     return pd.DataFrame(columns=cols)
-
 atm_db = load_atm()
 df = load_data()
-
 # --- ESTADO ---
 if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
 if 'confirmar_limpeza' not in st.session_state: st.session_state.confirmar_limpeza = False
-
 def on_atm_change():
     st.session_state.n_extras = 0
-
 # --- NOVO: POP-UP DE EXPANSÃO (MODAL) ---
 @st.dialog("Visão Detalhada do Trade", width="large")
 def expand_trade_modal(trade_id):
@@ -141,7 +127,7 @@ def expand_trade_modal(trade_id):
         st.error("Trade não encontrado.")
         return
     row = row_list.iloc[0]
-    
+   
     c_img, c_det = st.columns([2, 1])
     with c_img:
         p_list = str(row['Prints']).split("|") if row['Prints'] else []
@@ -159,15 +145,13 @@ def expand_trade_modal(trade_id):
         if st.button("🗑️ Excluir Operação", type="secondary", key=f"modal_del_{trade_id}"):
             st.session_state.to_delete = trade_id
             st.rerun()
-
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown('<div class="logo-container"><div class="logo-main">EVO</div><div class="logo-sub">TRADE</div></div>', unsafe_allow_html=True)
-    selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
+    selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"],
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={
             "nav-link-selected": {"background-color": "#B20000", "color": "white"}
         })
-
 # --- PÁGINA: DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
@@ -201,7 +185,6 @@ if selected == "Dashboard":
         fig.update_traces(line_color='#B20000', line_shape='spline', fillcolor='rgba(178, 0, 0, 0.2)', mode='lines')
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("Nenhum dado encontrado.")
-
 # --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
@@ -210,7 +193,7 @@ elif selected == "Registrar Trade":
         atm_sel_nome = st.selectbox("🎯 Estratégia ATM", options=list(atm_db.keys()), key='atm_selecionado', on_change=on_atm_change)
         config = atm_db[atm_sel_nome]
     with c_topo2:
-        st.write("") 
+        st.write("")
         cb1, cb2 = st.columns(2)
         cb1.button("➕", on_click=lambda: st.session_state.update({"n_extras": st.session_state.n_extras + 1}))
         cb2.button("🧹", on_click=lambda: st.rerun())
@@ -272,7 +255,6 @@ elif selected == "Registrar Trade":
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': risco, 'ID': n_id, 'Prints': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
-
 # --- PÁGINA: CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
     st.title("⚙️ Editor de Estratégias ATM")
@@ -295,31 +277,30 @@ elif selected == "Configurar ATM":
             c_n, c_b = st.columns([4, 1])
             c_n.write(f"**{nome}**")
             if c_b.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
-
 # --- PÁGINA: HISTÓRICO ---
 elif selected == "Histórico":
     st.title("📜 Galeria do Prédio")
     if 'to_delete' in st.session_state:
         df = df[df['ID'] != st.session_state.to_delete]
         df.to_csv(CSV_FILE, index=False); del st.session_state.to_delete; st.rerun()
-    
+   
     if not df.empty:
         col_export, col_limpar = st.columns([4, 1])
         csv_data = df.to_csv(index=False).encode('utf-8')
         col_export.download_button("📥 Backup (CSV)", data=csv_data, file_name="backup_trades.csv")
-        
+       
         if not st.session_state.confirmar_limpeza:
-            if col_limpar.button("🗑️ LIMPAR TUDO", type="secondary"): 
+            if col_limpar.button("🗑️ LIMPAR TUDO", type="secondary"):
                 st.session_state.confirmar_limpeza = True; st.rerun()
         else:
             if st.button("✅ CONFIRMAR LIMPEZA TOTAL"):
                 if os.path.exists(CSV_FILE): os.remove(CSV_FILE)
                 st.session_state.confirmar_limpeza = False; st.rerun()
-        
+       
         st.markdown("---")
         df_disp = df.copy(); df_disp['Num'] = range(1, len(df_disp) + 1)
         df_disp = df_disp.iloc[::-1]
-        
+       
         cols = st.columns(5)
         for i, (_, row) in enumerate(df_disp.iterrows()):
             with cols[i % 5]:
@@ -330,14 +311,14 @@ elif selected == "Histórico":
                     st.image(p_list[0])
                     st.markdown('</div>', unsafe_allow_html=True)
                 else: st.markdown('<div class="image-crop-container"><span style="color:#444">Sem Print</span></div>', unsafe_allow_html=True)
-                
+               
                 st.markdown(f'<div class="trade-footer"><div><b>Trade #{row["Num"]}</b><br><small>{row["Contexto"]}</small></div>', unsafe_allow_html=True)
                 color = "green" if row['Resultado'] > 0 else "red"
                 st.markdown(f'<div style="color:{"#00FF88" if row["Resultado"]>0 else "#FF4B4B"}; font-weight:bold">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
-                
+               
                 # CHAVE ÚNICA GARANTIDA: row['ID'] + índice i para evitar colisão total
-                if st.button("Ver", key=f"btn_{row['ID']}_{i}"): 
+                if st.button("Ver", key=f"btn_{row['ID']}_{i}"):
                     expand_trade_modal(row['ID'])
-                
+               
                 st.markdown('</div></div>', unsafe_allow_html=True)
     else: st.info("Vazio.")
