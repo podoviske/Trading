@@ -33,6 +33,16 @@ st.markdown("""
     .stButton > button[kind="secondary"] {
         color: #FF4B4B !important; border: 1px solid #FF4B4B !important; background: transparent !important;
     }
+    /* Estilização para o segmented_control para parecer com a imagem */
+    div[data-testid="stSegmentedControl"] button {
+        background-color: #1E1E1E !important;
+        color: #FFFFFF !important;
+        border: none !important;
+    }
+    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+        background-color: #B20000 !important;
+        font-weight: bold !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -87,13 +97,25 @@ with st.sidebar:
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
-        total_trades = len(df)
-        wins = df[df['Resultado'] > 0]
-        losses = df[df['Resultado'] < 0]
+        # 1. SELETOR ESTILO SEGMENTADO (Filtrar Visão)
+        filtro_view = st.segmented_control(
+            "Visualizar:",
+            options=["Capital", "Contexto A", "Contexto B", "Contexto C"],
+            default="Capital"
+        )
+
+        df_filtrado = df.copy()
+        if filtro_view != "Capital":
+            df_filtrado = df[df['Contexto'] == filtro_view]
+
+        # 2. MÉTRICAS BASEADAS NO FILTRO
+        total_trades = len(df_filtrado)
+        wins = df_filtrado[df_filtrado['Resultado'] > 0]
+        losses = df_filtrado[df_filtrado['Resultado'] < 0]
         win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0
         avg_win = wins['Resultado'].mean() if not wins.empty else 0
         avg_loss = losses['Resultado'].mean() if not losses.empty else 0
-        total_pnl = df['Resultado'].sum()
+        total_pnl = df_filtrado['Resultado'].sum()
         
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("P&L Total", f"${total_pnl:,.2f}")
@@ -102,12 +124,22 @@ if selected == "Dashboard":
         m4.metric("Perda Média", f"${avg_loss:,.2f}")
         
         st.markdown("---")
-        
-        # Gráfico de Curva de Capital Suave (Spline)
-        df_grafico = df.sort_values('Data').copy()
+
+        # 3. SELETOR DE EVOLUÇÃO (Tempo vs Trade)
+        col_tipo, _ = st.columns([1, 2])
+        tipo_grafico = col_tipo.radio("Visualizar evolução por:", ["Tempo (Data)", "Trade a Trade"], horizontal=True)
+
+        # Preparação do gráfico suave (Spline)
+        df_grafico = df_filtrado.sort_values('Data').reset_index(drop=True)
         df_grafico['Acumulado'] = df_grafico['Resultado'].cumsum()
         
-        fig = px.area(df_grafico, x='Data', y='Acumulado', title="Curva de Capital", template="plotly_dark")
+        if tipo_grafico == "Tempo (Data)":
+            x_axis = 'Data'
+        else:
+            df_grafico['Trade_Num'] = df_grafico.index + 1
+            x_axis = 'Trade_Num'
+
+        fig = px.area(df_grafico, x=x_axis, y='Acumulado', title=f"Curva de Capital - {filtro_view}", template="plotly_dark")
         fig.update_traces(
             line_color='#B20000', 
             line_shape='spline', 
@@ -115,20 +147,15 @@ if selected == "Dashboard":
             mode='lines'
         )
         fig.update_layout(
-            hovermode="x unified", yaxis_title="Acumulado ($)", xaxis_title="Data",
+            hovermode="x unified", yaxis_title="Acumulado ($)", xaxis_title=x_axis,
             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
             xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='#1E1E1E'),
             margin=dict(l=0, r=0, t=50, b=0)
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        c1, c2 = st.columns(2)
-        with c1:
-            st.plotly_chart(px.bar(df, x='Contexto', y='Resultado', color='Resultado', title="Performance por Contexto", template="plotly_dark", color_continuous_scale="RdYlGn"), use_container_width=True)
-        with c2:
-            st.plotly_chart(px.pie(df, names='Ativo', values='Lote', title="Volume por Ativo", template="plotly_dark"), use_container_width=True)
     else:
-        st.info("Nenhum dado encontrado.")
+        st.info("Nenhum dado encontrado para análise.")
 
 # --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
