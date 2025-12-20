@@ -27,7 +27,6 @@ st.markdown("""
     .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
     .logo-sub { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; }
     
-    /* Estilo Especial para Botão de Stop */
     .stButton > button[kind="secondary"] {
         background-color: transparent !important;
         color: #FF4B4B !important;
@@ -80,7 +79,7 @@ if selected == "Registrar Trade":
     c_btn1, c_btn2 = st.columns([4, 1])
     with c_btn2:
         st.button("➕ Parcial", on_click=adicionar_parcial, use_container_width=True)
-        st.button("🧹 Reset", on_click=limpar_parciais, use_container_width=True)
+        st.button("🧹 Limpar Campos", on_click=limpar_parciais, use_container_width=True)
 
     c1, c2, c3 = st.columns([1, 1, 2])
     
@@ -91,10 +90,12 @@ if selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        lote_total = st.number_input("Lote Total (Contratos)", min_value=1, step=1, value=1)
+        # LOTE INICIANDO EM ZERO
+        lote_total = st.number_input("Lote Total (Contratos)", min_value=0, step=1, value=0)
         stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25)
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
-        st.metric("Prejuízo em caso de Stop", f"${risco_calc:.2f}")
+        if lote_total > 0:
+            st.metric("Risco em caso de Stop", f"${risco_calc:.2f}")
 
     with c3:
         st.write("**Saídas / Parciais (em Pontos)**")
@@ -110,13 +111,15 @@ if selected == "Registrar Trade":
             saidas_list.append((p, q))
             contratos_alocados += q
         
-        resta = lote_total - contratos_alocados
-        if resta > 0:
-            st.markdown(f'<div class="piscante-erro">FALTAM {resta} CONTRATOS PARA FECHAR A POSIÇÃO</div>', unsafe_allow_html=True)
-        elif resta < 0:
-            st.markdown(f'<div class="piscante-erro">ERRO: EXCESSO DE {abs(resta)} CONTRATOS!</div>', unsafe_allow_html=True)
-        else:
-            st.success("✅ Posição completa.")
+        # ALERTA SÓ APARECE SE O LOTE FOR MAIOR QUE ZERO
+        if lote_total > 0:
+            resta = lote_total - contratos_alocados
+            if resta > 0:
+                st.markdown(f'<div class="piscante-erro">FALTAM {resta} CONTRATOS PARA FECHAR A POSIÇÃO</div>', unsafe_allow_html=True)
+            elif resta < 0:
+                st.markdown(f'<div class="piscante-erro">ERRO: EXCESSO DE {abs(resta)} CONTRATOS!</div>', unsafe_allow_html=True)
+            else:
+                st.success("✅ Posição completa.")
 
     st.markdown("---")
     
@@ -124,7 +127,7 @@ if selected == "Registrar Trade":
     
     with col_save:
         if st.button("💾 REGISTRAR GAIN / PARCIAIS", use_container_width=True):
-            if contratos_alocados == lote_total:
+            if lote_total > 0 and contratos_alocados == lote_total:
                 res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas_list])
                 pts_m = sum([s[0] * s[1] for s in saidas_list]) / lote_total
                 faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
@@ -132,37 +135,31 @@ if selected == "Registrar Trade":
                 df = pd.concat([df, novo], ignore_index=True)
                 df.to_csv(CSV_FILE, index=False)
                 st.success("Gain registrado!")
-                st.rerun()
+                st.rerun() # LIMPA OS CAMPOS
             else:
-                st.error("Alocação de contratos incompleta!")
+                st.error("Verifique o Lote e as Parciais!")
 
     with col_stop:
-        # Botão de Stop com cor secundária (vermelho no CSS)
         if st.button("🚨 REGISTRAR STOP FULL", use_container_width=True, type="secondary"):
-            if stop_pts > 0:
+            if lote_total > 0 and stop_pts > 0:
                 prejuizo = -(stop_pts * MULTIPLIERS[ativo] * lote_total)
                 faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
                 novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': prejuizo, 'Pts_Medio': -stop_pts, 'Risco_Fin': risco_calc}])
                 df = pd.concat([df, novo], ignore_index=True)
                 df.to_csv(CSV_FILE, index=False)
-                st.error(f"Stop de ${abs(prejuizo):.2f} registrado.")
-                st.rerun()
+                st.rerun() # REGISTRA E LIMPA TUDO NA HORA
             else:
-                st.warning("Defina o valor do Stop em pontos antes de registrar.")
+                st.warning("Defina Lote e Stop antes de registrar.")
 
 elif selected == "Dashboard":
+    # [Mantido o código anterior do Dashboard]
     st.title("EvoTrade Analytics")
     if not df.empty:
         k1, k2, k3 = st.columns(3)
         total_pnl = df['Resultado'].sum()
-        cor_pnl = "green" if total_pnl >= 0 else "red"
-        
-        st.markdown(f"### P&L Total: <span style='color:{cor_pnl}'>${total_pnl:.2f}</span>", unsafe_allow_html=True)
-        
         k1.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
         k2.metric("Total Trades", len(df))
-        k3.metric("Risco Médio", f"${df['Risco_Fin'].mean():.2f}")
-        
+        k3.metric("P&L Total", f"${total_pnl:.2f}")
         st.markdown("---")
         df_ev = df.sort_values('Data').copy()
         df_ev['Acumulado'] = df_ev['Resultado'].cumsum()
@@ -172,10 +169,5 @@ elif selected == "Dashboard":
 
 elif selected == "Histórico":
     st.title("Histórico de Trades")
-    # Colorindo o resultado no histórico
-    def color_result(val):
-        color = '#00FF00' if val > 0 else '#FF0000'
-        return f'color: {color}'
-    
     if not df.empty:
-        st.dataframe(df.sort_values('Data', ascending=False).style.applymap(color_result, subset=['Resultado']), use_container_width=True)
+        st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
