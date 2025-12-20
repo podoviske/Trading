@@ -29,18 +29,15 @@ st.markdown("""
     .trade-card {
         background-color: #1E1E1E;
         border-radius: 10px;
-        padding: 10px;
+        padding: 12px;
         border: 1px solid #333;
+        margin-bottom: 20px;
         text-align: center;
-        margin-bottom: 10px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
     }
     
-    .stButton > button { width: 100%; }
-
-    /* Estilização do Seletor Segmentado */
+    .stButton > button { width: 100%; border-radius: 5px; }
+    
+    /* Seletor Segmentado */
     div[data-testid="stSegmentedControl"] button {
         background-color: #1E1E1E !important;
         color: #FFFFFF !important;
@@ -50,7 +47,7 @@ st.markdown("""
         background-color: #B20000 !important;
         font-weight: bold !important;
     }
-    
+
     @keyframes blinking {
         0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; }
     }
@@ -64,7 +61,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE PERSISTÊNCIA ---
+# --- FUNÇÕES DE DADOS ---
 def load_atm():
     if os.path.exists(ATM_FILE):
         try:
@@ -91,34 +88,33 @@ def load_data():
 atm_db = load_atm()
 df = load_data()
 
-if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
-
 # --- MODAL DE DETALHES (POP-UP) ---
 @st.dialog("Detalhes da Operação", width="large")
 def show_details(trade_id):
-    row = df[df['ID'] == trade_id].iloc[0]
+    # Recarrega para garantir dados frescos
+    temp_df = load_data()
+    row = temp_df[temp_df['ID'] == trade_id].iloc[0]
     col_img, col_txt = st.columns([2, 1])
     
     with col_img:
         p_list = str(row['Prints']).split("|") if row['Prints'] and pd.notna(row['Prints']) else []
         if p_list and os.path.exists(p_list[0]):
             st.image(p_list[0], use_container_width=True)
-            st.caption("Clique com o botão direito na imagem e 'Abrir em nova aba' para tela cheia.")
         else:
-            st.info("Nenhum print anexado a este trade.")
+            st.info("Nenhum print anexado.")
             
     with col_txt:
-        st.subheader(f"Trade #{df[df['ID'] == trade_id].index[0] + 1}")
+        st.subheader(f"Trade Detalhado")
         st.write(f"**Data:** {row['Data']}")
         st.write(f"**Ativo:** {row['Ativo']} | **Direção:** {row['Direcao']}")
         color = "green" if row['Resultado'] > 0 else "red"
         st.markdown(f"**Resultado:** :{color}[${row['Resultado']:,.2f}]")
-        st.write(f"**Contexto:** {row['Contexto']}")
+        st.markdown(f"**Contexto:** :blue[{row['Contexto']}]")
         st.write(f"**Estratégia:** {row['ATM']}")
         st.write(f"**Lote Total:** {row['Lote']}")
         
         st.divider()
-        if st.button("🗑️ Excluir Trade", type="secondary"):
+        if st.button("🗑️ Excluir Operação", type="secondary"):
             st.session_state.to_delete = trade_id
             st.rerun()
 
@@ -126,37 +122,39 @@ def show_details(trade_id):
 with st.sidebar:
     st.markdown('<div class="logo-container"><div class="logo-main">EVO</div><div class="logo-sub">TRADE</div></div>', unsafe_allow_html=True)
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
-        icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], default_index=1)
+        icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], default_index=0)
 
-# --- DASHBOARD ---
+# --- PÁGINA: DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
         filtro_view = st.segmented_control("Visualizar:", options=["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
         df_f = df[df['Contexto'] == filtro_view] if filtro_view != "Capital" else df.copy()
         
+        # Filtro de tempo vs trade
+        st.write("")
+        tipo_grafico = st.radio("Evolução por:", ["Tempo (Data)", "Trade a Trade"], horizontal=True)
+        
         wins = df_f[df_f['Resultado'] > 0]; losses = df_f[df_f['Resultado'] < 0]
         wr = (len(wins)/len(df_f)*100) if len(df_f)>0 else 0
-        aw = wins['Resultado'].mean() if not wins.empty else 0
-        al = abs(losses['Resultado'].mean()) if not losses.empty else 0
-        rr = (aw/al) if al>0 else 0
         
-        m1, m2, m3, m4, m5 = st.columns(5)
+        m1, m2, m3 = st.columns(3)
         m1.metric("P&L Total", f"${df_f['Resultado'].sum():,.2f}")
         m2.metric("Win Rate", f"{wr:.1f}%")
-        m3.metric("Risco:Retorno", f"1:{rr:.2f}")
-        m4.metric("Ganho Médio", f"${aw:,.2f}")
-        m5.metric("Perda Média", f"$-{al:,.2f}")
+        m3.metric("Total Trades", len(df_f))
         
         st.markdown("---")
         df_g = df_f.sort_values('Data').reset_index()
         df_g['Acumulado'] = df_g['Resultado'].cumsum()
-        fig = px.area(df_g, x='Data', y='Acumulado', title="Curva de Capital Suave", template="plotly_dark")
+        
+        x_axis = 'Data' if tipo_grafico == "Tempo (Data)" else df_g.index + 1
+        
+        fig = px.area(df_g, x=x_axis, y='Acumulado', title=f"Curva de Capital - {filtro_view}", template="plotly_dark")
         fig.update_traces(line_color='#B20000', line_shape='spline', fillcolor='rgba(178, 0, 0, 0.2)', mode='lines')
         st.plotly_chart(fig, use_container_width=True)
-    else: st.info("Sem dados.")
+    else: st.info("Sem dados para exibir.")
 
-# --- REGISTRAR TRADE ---
+# --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     atm_sel = st.selectbox("🎯 Estratégia ATM", options=list(atm_db.keys()))
@@ -170,11 +168,10 @@ elif selected == "Registrar Trade":
         contexto = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
     with c2:
-        lote_t = st.number_input("Lote Total", min_value=0, value=int(config["lote"]), key=f"lote_{key_prefix}")
-        stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]), key=f"stop_{key_prefix}")
-        st.metric("Risco Total", f"${(stop_p * MULTIPLIERS[ativo] * lote_t):,.2f}")
-        up_files = st.file_uploader("📸 Anexar Prints (Clique e aperte Ctrl+V)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
-
+        lote_t = st.number_input("Lote Total", min_value=0, value=int(config["lote"]), key=f"l_reg_{key_prefix}")
+        stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]), key=f"s_reg_{key_prefix}")
+        st.metric("Risco Financeiro", f"${(stop_p * MULTIPLIERS[ativo] * lote_t):,.2f}")
+        up_files = st.file_uploader("📸 Anexar Prints (Ctrl+V aqui)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
     with c3:
         st.write("**Saídas**")
         saidas = []; alocado = 0
@@ -187,19 +184,20 @@ elif selected == "Registrar Trade":
             if lote_t - alocado != 0: st.markdown(f'<div class="piscante-erro">FALTAM {lote_t - alocado} CONTRATOS</div>', unsafe_allow_html=True)
             else: st.success("✅ Posição Completa")
 
-    if st.button("💾 REGISTRAR TRADE"):
+    if st.button("💾 REGISTRAR"):
         if lote_t > 0 and alocado == lote_t:
             t_id = f"ID_{int(time.time())}"
             paths = []
             for i, f in enumerate(up_files):
-                p = os.path.join(IMG_DIR, f"{t_id}_{i}.png"); paths.append(p)
+                p = os.path.join(IMG_DIR, f"{t_id}_{i}.png")
                 with open(p, "wb") as bf: bf.write(f.getbuffer())
+                paths.append(p)
             res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas])
             n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': (res/(lote_t*MULTIPLIERS[ativo])), 'Risco_Fin': (stop_p * MULTIPLIERS[ativo] * lote_t), 'ID': t_id, 'Prints': "|".join(paths)}])
             df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-            st.success("🎯 Registrado!"); time.sleep(1); st.rerun()
+            st.success("🎯 Trade Salvo!"); time.sleep(1); st.rerun()
 
-# --- HISTÓRICO (GALERIA ALINHADA COM POP-UP) ---
+# --- PÁGINA: HISTÓRICO (GALERIA) ---
 elif selected == "Histórico":
     st.title("📜 Galeria de Operações")
     
@@ -214,35 +212,37 @@ elif selected == "Histórico":
         df_disp['Num'] = range(1, len(df_disp) + 1)
         df_disp = df_disp.iloc[::-1]
         
-        cols = st.columns(5) # Alinhamento fixo de 5 colunas
+        cols = st.columns(5)
         for i, (_, row) in enumerate(df_disp.iterrows()):
             with cols[i % 5]:
                 st.markdown('<div class="trade-card">', unsafe_allow_html=True)
                 p_list = str(row['Prints']).split("|") if row['Prints'] and pd.notna(row['Prints']) else []
                 if p_list and os.path.exists(p_list[0]):
                     st.image(p_list[0], use_container_width=True)
-                else:
-                    st.write("📁 *Sem Print*")
+                else: st.write("📁 *Sem Print*")
                 
                 st.write(f"**Trade #{row['Num']}**")
-                color = "green" if row['Resultado'] > 0 else "red"
-                st.markdown(f":{color}[${row['Resultado']:,.2f}]")
+                st.caption(f"**{row['Contexto']}**")
+                res_color = "green" if row['Resultado'] > 0 else "red"
+                st.markdown(f":{res_color}[${row['Resultado']:,.2f}]")
+                
                 if st.button("Ver", key=f"btn_{row['ID']}"):
                     show_details(row['ID'])
                 st.markdown('</div>', unsafe_allow_html=True)
-    else: st.info("Vazio.")
+    else: st.info("Nenhuma operação registrada.")
 
-# --- CONFIGURAR ATM ---
+# --- PÁGINA: CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
     st.title("⚙️ Editor ATM")
-    with st.expander("Novo Template"):
-        n = st.text_input("Nome"); l = st.number_input("Lote", 1); s = st.number_input("Stop", 0.0)
-        np = st.number_input("Alvos", 1, 6); nps = []
+    with st.expander("✨ Novo Template"):
+        n = st.text_input("Nome"); l = st.number_input("Lote Total", 1); s = st.number_input("Stop Pts", 0.0)
+        np = st.number_input("Qtd de Saídas", 1, 6)
+        nps = []
         for i in range(np):
             c1, c2 = st.columns(2)
-            pt = c1.number_input(f"Pts P{i+1}", key=f"ap{i}")
-            qt = c2.number_input(f"Qtd P{i+1}", key=f"aq{i}")
+            pt = c1.number_input(f"Pts Alvo {i+1}", key=f"ap_{i}")
+            qt = c2.number_input(f"Qtd Contratos {i+1}", key=f"aq_{i}")
             nps.append([pt, qt])
-        if st.button("Salvar ATM"):
+        if st.button("Salvar Estratégia"):
             atm_db[n] = {"lote": l, "stop": s, "parciais": nps}
-            save_atm(atm_db); st.rerun()
+            save_atm(atm_db); st.success("ATM Salva!"); st.rerun()
