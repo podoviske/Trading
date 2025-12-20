@@ -21,7 +21,7 @@ CSV_FILE = 'evotrade_data.csv'
 ATM_FILE = 'atm_configs.json'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-# --- ESTILO CSS GERAL (RESTAURADO COMPLETO) ---
+# --- ESTILO CSS GERAL (PROTEGIDO) ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
@@ -52,7 +52,7 @@ st.markdown("""
         background-color: #B20000 !important; font-weight: bold !important;
     }
 
-    /* ESTILO DO HISTÓRICO - RESTAURADO */
+    /* ESTILO DO HISTÓRICO */
     .trade-card {
         background-color: #161616; border: 1px solid #333; border-radius: 12px;
         margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px;
@@ -144,30 +144,30 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD (CORREÇÃO FILTRO) ---
+# --- DASHBOARD (RESTAURADO COM TODAS AS MÉTRICAS) ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
         opcoes = ["Capital", "Contexto A", "Contexto B", "Contexto C"]
         f_v = st.segmented_control("Ver:", opcoes, default="Capital")
-        
-        # Filtro preciso
         df_f = df.copy() if f_v == "Capital" else df[df['Contexto'] == f_v].copy()
         
         if not df_f.empty:
-            m1, m2, m3, m4, m5 = st.columns(5)
             total = len(df_f)
             wins = df_f[df_f['Resultado'] > 0]
             losses = df_f[df_f['Resultado'] < 0]
             wr = (len(wins)/total*100) if total > 0 else 0
             aw = wins['Resultado'].mean() if not wins.empty else 0
             al = abs(losses['Resultado'].mean()) if not losses.empty else 0
+            rr = (aw/al) if al > 0 else 0 # Cálculo do Risco:Retorno
             
+            m1, m2, m3, m4, m5, m6 = st.columns(6)
             m1.metric("P&L Total", f"${df_f['Resultado'].sum():,.2f}")
             m2.metric("Win Rate", f"{wr:.1f}%")
             m3.metric("Trades", total)
-            m4.metric("Ganho Méd", f"${aw:,.2f}")
-            m5.metric("Perda Méd", f"$-{al:,.2f}")
+            m4.metric("Risco:Retorno", f"1:{rr:.2f}")
+            m5.metric("Ganho Méd", f"${aw:,.2f}")
+            m6.metric("Perda Méd", f"$-{al:,.2f}")
             
             st.markdown("---")
             tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
@@ -222,6 +222,7 @@ elif selected == "Registrar Trade":
             p = s1.number_input(f"Pts Ex {i+1}", key=f"pe_{i}"); q = s2.number_input(f"Qtd Ex {i+1}", key=f"qe_{i}")
             saidas.append((p, q)); alocado += q
         if lote_t > 0 and lote_t != alocado: st.markdown(f'<div class="piscante-erro">FALTAM {lote_t-alocado}</div>', unsafe_allow_html=True)
+        elif lote_t == alocado and lote_t > 0: st.success("✅ OK")
     
     r1, r2 = st.columns(2)
     with r1:
@@ -266,7 +267,7 @@ elif selected == "Configurar ATM":
             c_n.write(f"**{nome}** (Lote: {cfg['lote']})")
             if c_d.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
-# --- HISTÓRICO (RESTAURADO E SEGURO) ---
+# --- HISTÓRICO ---
 elif selected == "Histórico":
     st.title("📜 Galeria")
     if 'to_delete' in st.session_state:
@@ -283,7 +284,6 @@ elif selected == "Histórico":
                 if i + j < len(df_disp):
                     row = df_disp.iloc[i + j]
                     with cols[j]:
-                        # Pega o primeiro print para a capa do card
                         p_list = str(row['Prints']).split("|") if row['Prints'] else []
                         img_html = ""
                         if p_list and os.path.exists(p_list[0]):
