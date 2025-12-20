@@ -79,12 +79,14 @@ def save_atm(configs):
     with open(ATM_FILE, 'w') as f: json.dump(configs, f)
 
 def load_data():
-    cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID', 'Prints']
+    # Adicionado 'Notas' às colunas base
+    cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID', 'Prints', 'Notas']
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
             if 'ID' not in df.columns: df['ID'] = [str(uuid.uuid4()) for _ in range(len(df))]
             if 'Prints' not in df.columns: df['Prints'] = ""
+            if 'Notas' not in df.columns: df['Notas'] = ""
             df['Data'] = pd.to_datetime(df['Data']).dt.date
             return df
         except: return pd.DataFrame(columns=cols)
@@ -98,20 +100,58 @@ def get_base64(path):
 atm_db = load_atm()
 df = load_data()
 
-# --- MODAL ---
-@st.dialog("Detalhes", width="large")
+# --- MODAL (ATUALIZADO COM CONTEXTO, DIREÇÃO, CONTRATOS E OBSERVAÇÕES) ---
+@st.dialog("Detalhes do Trade", width="large")
 def expand_modal(trade_id):
-    row = df[df['ID'] == trade_id].iloc[0]
-    c1, c2 = st.columns([2, 1])
+    # Recarregar dados para garantir que notas recém-salvas apareçam
+    current_df = load_data()
+    row = current_df[current_df['ID'] == trade_id].iloc[0]
+    
+    c1, c2 = st.columns([1.5, 1])
+    
     with c1:
         p = str(row['Prints']).split("|")[0] if row['Prints'] else ""
-        if p and os.path.exists(p): st.image(p, use_container_width=True)
-        else: st.info("Sem print.")
+        if p and os.path.exists(p): 
+            st.image(p, use_container_width=True)
+        else: 
+            st.info("Sem print disponível.")
+            
+        # Área de Observações
+        st.markdown("---")
+        st.subheader("📝 Observações")
+        # Usamos um text_area com o valor atual das notas no CSV
+        notas_input = st.text_area("Notas sobre o trade:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150, placeholder="Digite aqui seus insights ou o que aconteceu no trade...")
+        
+        if st.button("💾 Salvar Notas"):
+            # Localizar e atualizar no dataframe global
+            current_df.loc[current_df['ID'] == trade_id, 'Notas'] = notas_input
+            current_df.to_csv(CSV_FILE, index=False)
+            st.success("Notas salvas com sucesso!")
+            time.sleep(1)
+            st.rerun()
+
     with c2:
-        st.write(f"📅 {row['Data']} | {row['Ativo']}")
+        st.markdown(f"### Trade Info")
+        st.write(f"📅 **Data:** {row['Data']}")
+        st.write(f"📈 **Ativo:** {row['Ativo']}")
+        
+        # Cores para Direção
+        dir_color = "cyan" if row['Direcao'] == "Compra" else "orange"
+        st.markdown(f"↕️ **Direção:** :{dir_color}[{row['Direcao']}]")
+        
+        st.write(f"🏗️ **Contexto:** {row['Contexto']}")
+        st.write(f"🔢 **Contratos:** {row['Lote']}")
+        st.write(f"🎯 **ATM Utilizada:** {row['ATM']}")
+        
+        st.divider()
+        
         res_c = "green" if row['Resultado'] > 0 else "red"
-        st.markdown(f"💰 **Resultado:** :{res_c}[${row['Resultado']:,.2f}]")
-        if st.button("🗑️ Deletar"):
+        st.markdown(f"💰 **Resultado Final:** :{res_c}[${row['Resultado']:,.2f}]")
+        st.write(f"📊 **Pontos Médios:** {row['Pts_Medio']:.2f}")
+        
+        st.divider()
+        
+        if st.button("🗑️ Deletar Trade", type="primary"):
             st.session_state.to_delete = trade_id
             st.rerun()
 
@@ -121,14 +161,13 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD (RESTAURADO COMPLETO) ---
+# --- DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
         f_v = st.segmented_control("Visualizar:", options=["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
         df_f = df[df['Contexto'] == f_v] if f_v != "Capital" else df.copy()
         
-        # Cálculos avançados restaurados
         total_trades = len(df_f)
         wins = df_f[df_f['Resultado'] > 0]
         losses = df_f[df_f['Resultado'] < 0]
@@ -155,7 +194,7 @@ if selected == "Dashboard":
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("Sem dados.")
 
-# --- REGISTRAR TRADE --- (Igual à versão recuperada)
+# --- REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
@@ -208,7 +247,8 @@ elif selected == "Registrar Trade":
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
-                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths)}])
+                # Incluída coluna 'Notas' vazia no registro inicial
+                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.success("🎯 Trade registrado!"); time.sleep(1); st.rerun()
     with r2:
@@ -216,7 +256,7 @@ elif selected == "Registrar Trade":
             if lote_t > 0 and stop_p > 0:
                 pre = -(stop_p * MULTIPLIERS[ativo] * lote_t)
                 n_id = str(uuid.uuid4())
-                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': ""}])
+                n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "", 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
 
@@ -243,7 +283,7 @@ elif selected == "Configurar ATM":
             cn, cb = st.columns([4, 1]); cn.write(f"**{nome}**")
             if cb.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
-# --- ABA: HISTÓRICO (PERFEITO E ISOLADO) ---
+# --- ABA: HISTÓRICO ---
 elif selected == "Histórico":
     st.title("📜 Galeria de Operações")
     if 'to_delete' in st.session_state:
