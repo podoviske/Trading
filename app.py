@@ -79,7 +79,6 @@ def save_atm(configs):
     with open(ATM_FILE, 'w') as f: json.dump(configs, f)
 
 def load_data():
-    # Adicionado 'Notas' às colunas base
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID', 'Prints', 'Notas']
     if os.path.exists(CSV_FILE):
         try:
@@ -100,33 +99,39 @@ def get_base64(path):
 atm_db = load_atm()
 df = load_data()
 
-# --- MODAL (ATUALIZADO COM CONTEXTO, DIREÇÃO, CONTRATOS E OBSERVAÇÕES) ---
+# --- MODAL (SUPORTE A MÚLTIPLOS PRINTS) ---
 @st.dialog("Detalhes do Trade", width="large")
 def expand_modal(trade_id):
-    # Recarregar dados para garantir que notas recém-salvas apareçam
     current_df = load_data()
     row = current_df[current_df['ID'] == trade_id].iloc[0]
     
     c1, c2 = st.columns([1.5, 1])
     
     with c1:
-        p = str(row['Prints']).split("|")[0] if row['Prints'] else ""
-        if p and os.path.exists(p): 
-            st.image(p, use_container_width=True)
+        # Lógica para múltiplos prints
+        p_list = str(row['Prints']).split("|") if row['Prints'] else []
+        p_list = [p for p in p_list if p and os.path.exists(p)] # Filtra apenas caminhos válidos
+        
+        if p_list:
+            if len(p_list) > 1:
+                st.subheader(f"📸 Prints da Operação ({len(p_list)})")
+                tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
+                for i, tab in enumerate(tabs):
+                    with tab:
+                        st.image(p_list[i], use_container_width=True)
+            else:
+                st.image(p_list[0], use_container_width=True)
         else: 
             st.info("Sem print disponível.")
             
-        # Área de Observações
         st.markdown("---")
         st.subheader("📝 Observações")
-        # Usamos um text_area com o valor atual das notas no CSV
-        notas_input = st.text_area("Notas sobre o trade:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150, placeholder="Digite aqui seus insights ou o que aconteceu no trade...")
+        notas_input = st.text_area("Notas sobre o trade:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150, placeholder="Digite aqui seus insights...")
         
         if st.button("💾 Salvar Notas"):
-            # Localizar e atualizar no dataframe global
             current_df.loc[current_df['ID'] == trade_id, 'Notas'] = notas_input
             current_df.to_csv(CSV_FILE, index=False)
-            st.success("Notas salvas com sucesso!")
+            st.success("Notas salvas!")
             time.sleep(1)
             st.rerun()
 
@@ -134,23 +139,16 @@ def expand_modal(trade_id):
         st.markdown(f"### Trade Info")
         st.write(f"📅 **Data:** {row['Data']}")
         st.write(f"📈 **Ativo:** {row['Ativo']}")
-        
-        # Cores para Direção
         dir_color = "cyan" if row['Direcao'] == "Compra" else "orange"
         st.markdown(f"↕️ **Direção:** :{dir_color}[{row['Direcao']}]")
-        
         st.write(f"🏗️ **Contexto:** {row['Contexto']}")
         st.write(f"🔢 **Contratos:** {row['Lote']}")
         st.write(f"🎯 **ATM Utilizada:** {row['ATM']}")
-        
         st.divider()
-        
         res_c = "green" if row['Resultado'] > 0 else "red"
         st.markdown(f"💰 **Resultado Final:** :{res_c}[${row['Resultado']:,.2f}]")
         st.write(f"📊 **Pontos Médios:** {row['Pts_Medio']:.2f}")
-        
         st.divider()
-        
         if st.button("🗑️ Deletar Trade", type="primary"):
             st.session_state.to_delete = trade_id
             st.rerun()
@@ -247,7 +245,6 @@ elif selected == "Registrar Trade":
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
-                # Incluída coluna 'Notas' vazia no registro inicial
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.success("🎯 Trade registrado!"); time.sleep(1); st.rerun()
