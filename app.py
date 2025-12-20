@@ -10,12 +10,12 @@ import time
 # Configuração da Página
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
 
-# --- NOVO: DIRETÓRIO DE IMAGENS (Necessário para a Galeria) ---
+# --- GARANTIR DIRETÓRIO DE IMAGENS ---
 IMG_DIR = "trade_prints"
 if not os.path.exists(IMG_DIR):
     os.makedirs(IMG_DIR)
 
-# --- ESTILO CSS (Original + Suporte para a Galeria) ---
+# --- ESTILO CSS ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
@@ -47,45 +47,6 @@ st.markdown("""
         background-color: #B20000 !important;
         font-weight: bold !important;
     }
-
-    /* CSS DA GALERIA (O PRÉDIO) */
-    .trade-window {
-        background-color: #161616;
-        border: 1px solid #333;
-        border-radius: 12px;
-        margin-bottom: 20px;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-        height: 340px;
-    }
-    .trade-window:hover { border-color: #B20000; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); }
-
-    .image-crop-container {
-        width: 100%;
-        height: 180px;
-        overflow: hidden;
-        background-color: #000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    
-    .image-crop-container img {
-        width: 100% !important;
-        height: 180px !important;
-        object-fit: cover !important;
-        object-position: center !important;
-    }
-
-    .trade-footer { 
-        padding: 15px; 
-        text-align: center; 
-        display: flex; 
-        flex-direction: column; 
-        justify-content: space-between;
-        height: 160px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -105,17 +66,14 @@ def save_atm(configs):
     with open(ATM_FILE, 'w') as f: json.dump(configs, f)
 
 def load_data():
-    # Adicionada coluna 'Prints' na carga
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID', 'Prints']
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
-            if 'ID' not in df.columns:
-                df['ID'] = [f"ID_{int(time.time())}_{i}" for i in range(len(df))]
-            if 'Prints' not in df.columns:
-                df['Prints'] = ""
+            # Trava de segurança para colunas novas
             for col in cols:
-                if col not in df.columns: df[col] = 0
+                if col not in df.columns:
+                    df[col] = "" if col == 'Prints' else 0
             df['Data'] = pd.to_datetime(df['Data']).dt.date
             return df
         except: return pd.DataFrame(columns=cols)
@@ -131,25 +89,27 @@ if 'confirmar_limpeza' not in st.session_state: st.session_state.confirmar_limpe
 def on_atm_change():
     st.session_state.n_extras = 0
 
-# --- NOVO: POP-UP DE EXPANSÃO (MODAL) ---
-@st.dialog("Visão Detalhada do Trade", width="large")
+# --- MODAL DE EXPANSÃO ---
+@st.dialog("Detalhes do Trade", width="large")
 def expand_trade_modal(trade_id):
-    row = df[df['ID'] == trade_id].iloc[0]
+    # Recarrega para pegar dados frescos
+    temp_df = load_data()
+    row = temp_df[temp_df['ID'] == trade_id].iloc[0]
     c_img, c_det = st.columns([2, 1])
     with c_img:
         p_list = str(row['Prints']).split("|") if row['Prints'] else []
         if p_list and os.path.exists(p_list[0]):
             st.image(p_list[0], use_container_width=True)
         else:
-            st.info("Sem print disponível.")
+            st.info("Sem print anexado.")
     with c_det:
-        st.subheader("Informações")
-        st.write(f"📅 **Data:** {row['Data']} | **Ativo:** {row['Ativo']}")
-        st.write(f"🏗️ **Contexto:** {row['Contexto']} | **ATM:** {row['ATM']}")
+        st.write(f"**Data:** {row['Data']}")
+        st.write(f"**Ativo:** {row['Ativo']} | **Lote:** {row['Lote']}")
+        st.write(f"**Contexto:** {row['Contexto']}")
         color = "green" if row['Resultado'] > 0 else "red"
-        st.markdown(f"💰 **Resultado:** :{color}[${row['Resultado']:,.2f}]")
+        st.markdown(f"### Resultado: :{color}[${row['Resultado']:,.2f}]")
         st.divider()
-        if st.button("🗑️ Excluir Operação", type="secondary"):
+        if st.button("Deletar Trade", type="secondary"):
             st.session_state.to_delete = trade_id
             st.rerun()
 
@@ -161,7 +121,7 @@ with st.sidebar:
             "nav-link-selected": {"background-color": "#B20000", "color": "white"}
         })
 
-# --- PÁGINA: DASHBOARD --- (INTACTA)
+# --- PÁGINA: DASHBOARD (INTACTA) ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
@@ -195,7 +155,7 @@ if selected == "Dashboard":
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("Nenhum dado encontrado.")
 
-# --- PÁGINA: REGISTRAR TRADE --- (INTACTA + Campo de Upload)
+# --- PÁGINA: REGISTRAR TRADE (INTACTA + Uploader) ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     c_topo1, c_topo2 = st.columns([3, 1])
@@ -220,28 +180,24 @@ elif selected == "Registrar Trade":
         stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]), key=f"stop_{key_prefix}")
         risco = stop_p * MULTIPLIERS[ativo] * lote_t
         if lote_t > 0: st.metric("Risco Total", f"${risco:,.2f}")
-        # NOVO: Uploader para Ctrl+V
         up_files = st.file_uploader("📸 Prints (Upload ou Ctrl+V)", accept_multiple_files=True)
     with c3:
         st.write("**Saídas Executadas**")
         saidas = []; alocado = 0
         for i, p_config in enumerate(config["parciais"]):
-            s1, s2 = st.columns(2)
+            s1, sc2 = st.columns(2)
             p = s1.number_input(f"Pts P{i+1}", key=f"p_atm_{i}_{key_prefix}", value=float(p_config[0]))
-            q = s2.number_input(f"Qtd P{i+1}", key=f"q_atm_{i}_{key_prefix}", value=int(p_config[1]), step=1)
+            q = sc2.number_input(f"Qtd P{i+1}", key=f"q_atm_{i}_{key_prefix}", value=int(p_config[1]), step=1)
             saidas.append((p, q)); alocado += q
         for i in range(st.session_state.n_extras):
             idx = len(config["parciais"]) + i
-            s1, s2 = st.columns(2)
+            s1, sc2 = st.columns(2)
             p = s1.number_input(f"Pts Extra {i+1}", key=f"p_ext_{idx}_{key_prefix}", value=0.0)
-            q = s2.number_input(f"Qtd Extra {i+1}", key=f"q_ext_{idx}_{key_prefix}", value=0, step=1)
+            q = sc2.number_input(f"Qtd Extra {i+1}", key=f"q_ext_{idx}_{key_prefix}", value=0, step=1)
             saidas.append((p, q)); alocado += q
-        if lote_t > 0:
-            resta = lote_t - alocado
-            if resta != 0:
-                msg = f"FALTAM {resta} CONTRATOS" if resta > 0 else f"EXCESSO DE {abs(resta)} CONTRATOS"
-                st.markdown(f'<div class="piscante-erro">{msg}</div>', unsafe_allow_html=True)
-            else: st.success("✅ Posição Completa")
+        if lote_t > 0 and lote_t != alocado:
+            st.markdown(f'<div class="piscante-erro">RESTANTE: {lote_t - alocado}</div>', unsafe_allow_html=True)
+        elif lote_t == alocado: st.success("✅ Posição Completa")
     st.markdown("---")
     r1, r2 = st.columns(2)
     with r1:
@@ -250,7 +206,6 @@ elif selected == "Registrar Trade":
                 res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas])
                 pts_m = sum([s[0] * s[1] for s in saidas]) / lote_t
                 n_id = f"ID_{int(time.time())}"
-                # Salvar Imagens
                 paths = []
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png")
@@ -268,7 +223,7 @@ elif selected == "Registrar Trade":
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: CONFIGURAR ATM --- (INTACTA)
+# --- PÁGINA: CONFIGURAR ATM (INTACTA) ---
 elif selected == "Configurar ATM":
     st.title("⚙️ Editor de Estratégias ATM")
     with st.expander("✨ Criar Novo Template", expanded=True):
@@ -291,16 +246,22 @@ elif selected == "Configurar ATM":
             c_n.write(f"**{nome}**")
             if c_b.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
-# --- PÁGINA: HISTÓRICO --- (MODIFICADA PARA GALERIA)
+# --- PÁGINA: HISTÓRICO (REMODELADA COM FOCO EM ESTABILIDADE) ---
 elif selected == "Histórico":
     st.title("📜 Galeria do Prédio")
+    
+    # Tratamento de Deleção
     if 'to_delete' in st.session_state:
         df = df[df['ID'] != st.session_state.to_delete]
-        df.to_csv(CSV_FILE, index=False); del st.session_state.to_delete; st.rerun()
+        df.to_csv(CSV_FILE, index=False)
+        del st.session_state.to_delete
+        st.rerun()
+
     if not df.empty:
         col_export, col_limpar = st.columns([4, 1])
         csv_data = df.to_csv(index=False).encode('utf-8')
         col_export.download_button("📥 Backup (CSV)", data=csv_data, file_name="backup_trades.csv")
+        
         if not st.session_state.confirmar_limpeza:
             if col_limpar.button("🗑️ LIMPAR TUDO", type="secondary"): 
                 st.session_state.confirmar_limpeza = True; st.rerun()
@@ -308,22 +269,29 @@ elif selected == "Histórico":
             if st.button("✅ CONFIRMAR LIMPEZA TOTAL"):
                 if os.path.exists(CSV_FILE): os.remove(CSV_FILE)
                 st.session_state.confirmar_limpeza = False; st.rerun()
+
         st.markdown("---")
-        df_disp = df.copy(); df_disp['Num'] = range(1, len(df_disp) + 1)
-        df_disp = df_disp.iloc[::-1]
-        cols = st.columns(5)
-        for i, (_, row) in enumerate(df_disp.iterrows()):
-            with cols[i % 5]:
-                st.markdown('<div class="trade-window">', unsafe_allow_html=True)
-                p_list = str(row['Prints']).split("|") if row['Prints'] else []
-                if p_list and os.path.exists(p_list[0]):
-                    st.markdown('<div class="image-crop-container">', unsafe_allow_html=True)
-                    st.image(p_list[0])
-                    st.markdown('</div>', unsafe_allow_html=True)
-                else: st.markdown('<div class="image-crop-container"><span style="color:#444">Sem Print</span></div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="trade-footer"><div><b>Trade #{row["Num"]}</b><br><small>{row["Contexto"]}</small></div>', unsafe_allow_html=True)
-                color = "green" if row['Resultado'] > 0 else "red"
-                st.markdown(f'<div style="color:{"#00FF88" if row["Resultado"]>0 else "#FF4B4B"}; font-weight:bold">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
-                if st.button("Ver", key=f"btn_{row['ID']}"): expand_trade_modal(row['ID'])
-                st.markdown('</div></div>', unsafe_allow_html=True)
+        df_disp = df.copy()
+        df_disp = df_disp.iloc[::-1] # Mais recentes primeiro
+        
+        # Grid System Nativo para evitar erros de CSS
+        for i in range(0, len(df_disp), 4):
+            cols = st.columns(4)
+            for j in range(4):
+                if i + j < len(df_disp):
+                    row = df_disp.iloc[i + j]
+                    with cols[j]:
+                        # Bloco Visual
+                        p_list = str(row['Prints']).split("|") if row['Prints'] else []
+                        if p_list and os.path.exists(p_list[0]):
+                            st.image(p_list[0], use_container_width=True)
+                        else:
+                            st.image("https://via.placeholder.com/300x180/161616/444444?text=Sem+Print", use_container_width=True)
+                        
+                        st.write(f"**Trade #{len(df_disp) - (i + j)}**")
+                        color = "green" if row['Resultado'] > 0 else "red"
+                        st.markdown(f":{color}[${row['Resultado']:,.2f}]")
+                        
+                        if st.button(f"Ver Trade", key=f"btn_{row['ID']}"):
+                            expand_trade_modal(row['ID'])
     else: st.info("Vazio.")
