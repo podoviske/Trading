@@ -17,8 +17,8 @@ def check_password():
     """Retorna True se o usuário inseriu a senha correta."""
     def password_entered():
         if (
-            st.session_state["username"] == "admin" 
-            and st.session_state["password"] == "1234"
+            st.session_state["username"] == "podoviske" 
+            and st.session_state["password"] == "podoviske"
         ):
             st.session_state["password_correct"] = True
             del st.session_state["password"]
