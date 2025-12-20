@@ -8,43 +8,38 @@ from streamlit_option_menu import option_menu
 # Configuração da Página
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
 
-# --- ESTILO CSS PARA ALINHAMENTO FORÇADO ---
+# --- ESTILO CSS ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
     .stApp { background-color: #0F0F0F; }
-
-    /* Forçar todos os blocos de input a terem a mesma margem superior */
-    .stNumberInput, .stSelectbox, .stTextInput, .stDateInput, .stRadio {
-        margin-top: 0px !important;
-    }
-
-    /* Ajuste para o texto de 'Saídas' ficar alinhado com o topo da coluna da esquerda */
-    .header-style {
-        font-size: 14px;
-        font-weight: bold;
-        color: #B20000;
-        margin-bottom: 22px; /* Espaço para compensar a label dos campos da esquerda */
-    }
-
+    
     @keyframes blinking {
-        0% { background-color: #440000; }
-        50% { background-color: #B20000; }
-        100% { background-color: #440000; }
+        0% { background-color: #440000; box-shadow: 0 0 5px #440000; }
+        50% { background-color: #B20000; box-shadow: 0 0 20px #B20000; }
+        100% { background-color: #440000; box-shadow: 0 0 5px #440000; }
     }
     .piscante-erro {
-        padding: 10px; border-radius: 5px; color: white; font-weight: bold;
+        padding: 15px; border-radius: 5px; color: white; font-weight: bold;
         text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000;
-        margin-top: 15px;
     }
-
-    .logo-container { padding: 20px 15px; }
+    .logo-container { padding: 20px 15px; display: flex; flex-direction: column; }
     .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
     .logo-sub { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; }
+    
+    .stButton > button[kind="secondary"] {
+        background-color: transparent !important;
+        color: #FF4B4B !important;
+        border: 1px solid #FF4B4B !important;
+    }
+    .stButton > button[kind="secondary"]:hover {
+        background-color: #FF4B4B !important;
+        color: white !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- DADOS ---
+# --- DADOS E MULTIPLICADORES ---
 CSV_FILE = 'evotrade_data.csv'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
@@ -52,7 +47,8 @@ def load_data():
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'Faixa', 'Resultado', 'Pts_Medio', 'Risco_Fin']
     if os.path.exists(CSV_FILE):
         try:
-            df = pd.read_csv(CSV_FILE); df['Data'] = pd.to_datetime(df['Data']).dt.date
+            df = pd.read_csv(CSV_FILE)
+            df['Data'] = pd.to_datetime(df['Data']).dt.date
             return df
         except: pass
     return pd.DataFrame(columns=cols)
@@ -60,10 +56,13 @@ def load_data():
 df = load_data()
 
 # --- ESTADO ---
-if 'n_parciais' not in st.session_state: st.session_state.n_parciais = 1
-def adicionar_parcial(): 
+if 'n_parciais' not in st.session_state:
+    st.session_state.n_parciais = 1
+
+def adicionar_parcial():
     if st.session_state.n_parciais < 6: st.session_state.n_parciais += 1
-def limpar_parciais(): st.session_state.n_parciais = 1
+def limpar_parciais():
+    st.session_state.n_parciais = 1
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -77,74 +76,99 @@ with st.sidebar:
 if selected == "Registrar Trade":
     st.title("Registro de Trade")
     
-    # Grid Principal
-    col_dados, col_parciais = st.columns([2, 3])
+    c_btn1, c_btn2 = st.columns([4, 1])
+    with c_btn2:
+        st.button("➕ Parcial", on_click=adicionar_parcial, use_container_width=True)
+        st.button("🧹 Limpar Campos", on_click=limpar_parciais, use_container_width=True)
 
-    with col_dados:
-        st.markdown('<p style="height:22px;"></p>', unsafe_allow_html=True) # Espaçador de alinhamento
-        d1, d2 = st.columns(2)
-        with d1:
-            data = st.date_input("Data", datetime.now())
-            ativo = st.selectbox("Ativo", ["MNQ", "NQ"])
-        with d2:
-            contexto = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
-            direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-        
-        l1, l2 = st.columns(2)
-        with l1:
-            lote_total = st.number_input("Contratos", min_value=0, step=1, value=0)
-        with l2:
-            stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, value=0.0)
+    c1, c2, c3 = st.columns([1, 1, 2])
+    
+    with c1:
+        data = st.date_input("Data", datetime.now())
+        ativo = st.selectbox("Ativo", ["MNQ", "NQ"])
+        contexto = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
+        direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
+
+    with c2:
+        # Lote zerado
+        lote_total = st.number_input("Contratos", min_value=0, step=1, value=0)
+        # Stop zerado - Removido o step fixo para evitar o .00 constante
+        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, value=0.0, step=None)
         
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
         if lote_total > 0 and stop_pts > 0:
-            st.metric("Risco Total", f"${risco_calc:,.2f}")
+            st.metric("Risco Financeiro Total", f"${risco_calc:,.2f}")
 
-    with col_parciais:
-        # Título e Botões alinhados
-        h1, h2 = st.columns([2, 1])
-        with h1: st.markdown('<p class="header-style">SAÍDAS / PARCIAIS</p>', unsafe_allow_html=True)
-        with h2:
-            sub1, sub2 = st.columns(2)
-            sub1.button("➕", on_click=adicionar_parcial)
-            sub2.button("🧹", on_click=limpar_parciais)
-
+    with c3:
+        st.write("**Saídas / Parciais (em Pontos)**")
         saidas_list = []
         contratos_alocados = 0
         
-        # Gerar parciais com alinhamento forçado
         for i in range(st.session_state.n_parciais):
-            p1, p2 = st.columns(2)
-            with p1:
-                p = st.number_input(f"Pontos P{i+1}", key=f"pts_{i}", value=0.0)
-            with p2:
-                q = st.number_input(f"Qtd P{i+1}", key=f"qtd_{i}", value=0, step=1)
+            s1, s2 = st.columns(2)
+            with s1: 
+                # PONTOS: Removido step fixo para ficar visualmente igual aos contratos (limpo)
+                p = st.number_input(f"Pontos Parcial {i+1}", key=f"pts_real_{i}", value=0.0, step=None)
+            with s2: 
+                # CONTRATOS: Inteiro
+                q = st.number_input(f"Contratos Parcial {i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
             saidas_list.append((p, q))
             contratos_alocados += q
         
         if lote_total > 0:
             resta = lote_total - contratos_alocados
-            if resta != 0:
-                msg = f"FALTAM {resta} CONTRATOS" if resta > 0 else f"EXCESSO DE {abs(resta)} CONTRATOS"
-                st.markdown(f'<div class="piscante-erro">{msg}</div>', unsafe_allow_html=True)
+            if resta > 0:
+                st.markdown(f'<div class="piscante-erro">FALTAM {resta} CONTRATOS PARA FECHAR A POSIÇÃO</div>', unsafe_allow_html=True)
+            elif resta < 0:
+                st.markdown(f'<div class="piscante-erro">ERRO: EXCESSO DE {abs(resta)} CONTRATOS!</div>', unsafe_allow_html=True)
             else:
-                st.success("✅ Posição Completa")
+                st.success("✅ Posição completa.")
 
     st.markdown("---")
-    reg1, reg2 = st.columns(2)
-    with reg1:
-        if st.button("💾 REGISTRAR GAIN"):
+    
+    col_save, col_stop = st.columns(2)
+    
+    with col_save:
+        if st.button("💾 REGISTRAR GAIN / PARCIAIS", use_container_width=True):
             if lote_total > 0 and contratos_alocados == lote_total:
                 res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas_list])
                 pts_m = sum([s[0] * s[1] for s in saidas_list]) / lote_total
-                novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': "Trade", 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco_calc}])
-                df = pd.concat([df, novo], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.rerun()
+                faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
+                novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco_calc}])
+                df = pd.concat([df, novo], ignore_index=True)
+                df.to_csv(CSV_FILE, index=False)
+                st.rerun() 
+            else:
+                st.error("Verifique o Lote e as Parciais!")
 
-    with reg2:
-        if st.button("🚨 REGISTRAR STOP FULL", type="secondary"):
+    with col_stop:
+        if st.button("🚨 REGISTRAR STOP FULL", use_container_width=True, type="secondary"):
             if lote_total > 0 and stop_pts > 0:
                 prejuizo = -(stop_pts * MULTIPLIERS[ativo] * lote_total)
-                novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': "Trade", 'Resultado': prejuizo, 'Pts_Medio': -stop_pts, 'Risco_Fin': risco_calc}])
-                df = pd.concat([df, novo], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.rerun()
+                faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
+                novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': prejuizo, 'Pts_Medio': -stop_pts, 'Risco_Fin': risco_calc}])
+                df = pd.concat([df, novo], ignore_index=True)
+                df.to_csv(CSV_FILE, index=False)
+                st.rerun() 
+            else:
+                st.warning("Defina Lote e Stop antes de registrar.")
+
+elif selected == "Dashboard":
+    st.title("EvoTrade Analytics")
+    if not df.empty:
+        k1, k2, k3 = st.columns(3)
+        total_pnl = df['Resultado'].sum()
+        k1.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
+        k2.metric("Total Trades", len(df))
+        k3.metric("P&L Total", f"${total_pnl:,.2f}")
+        st.markdown("---")
+        df_ev = df.sort_values('Data').copy()
+        df_ev['Acumulado'] = df_ev['Resultado'].cumsum()
+        fig = px.area(df_ev, x='Data', y='Acumulado', template="plotly_dark", color_discrete_sequence=['#B20000'])
+        fig.update_traces(line_shape='spline', fillcolor='rgba(178, 0, 0, 0.1)')
+        st.plotly_chart(fig, use_container_width=True)
+
+elif selected == "Histórico":
+    st.title("Histórico de Trades")
+    if not df.empty:
+        st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
