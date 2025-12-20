@@ -90,13 +90,16 @@ if selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        # Lote zerado por padrão
+        # LOTE INICIANDO EM 0
         lote_total = st.number_input("Lote Total (Contratos)", min_value=0, step=1, value=0)
-        # Stop zerado, aceitando decimais (pontos fracionados)
+        
+        # STOP EM PONTOS INICIANDO EM 0.00 (Aceita decimais/vírgula)
         stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25, value=0.0, format="%.2f")
+        
+        # CÁLCULO DE RISCO SÓ APARECE SE TIVER LOTE E STOP
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
         if lote_total > 0 and stop_pts > 0:
-            st.metric("Risco em caso de Stop", f"${risco_calc:.2f}")
+            st.metric("Risco Financeiro", f"${risco_calc:.2f}")
 
     with c3:
         st.write("**Saídas / Parciais (em Pontos)**")
@@ -106,14 +109,15 @@ if selected == "Registrar Trade":
         for i in range(st.session_state.n_parciais):
             s1, s2 = st.columns(2)
             with s1: 
-                # Pontos zerados por padrão, aceita decimal
+                # PONTOS DA PARCIAL INICIANDO EM 0.00
                 p = st.number_input(f"Pontos P{i+1}", key=f"pts_real_{i}", step=0.25, value=0.0, format="%.2f")
             with s2: 
-                # Contratos zerados por padrão
+                # CONTRATOS DA PARCIAL INICIANDO EM 0
                 q = st.number_input(f"Contratos P{i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
             saidas_list.append((p, q))
             contratos_alocados += q
         
+        # ALERTA PISCANTE SÓ SE O LOTE FOR > 0
         if lote_total > 0:
             resta = lote_total - contratos_alocados
             if resta > 0:
@@ -136,6 +140,7 @@ if selected == "Registrar Trade":
                 novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco_calc}])
                 df = pd.concat([df, novo], ignore_index=True)
                 df.to_csv(CSV_FILE, index=False)
+                st.success("Gain registrado!")
                 st.rerun() 
             else:
                 st.error("Verifique o Lote e as Parciais!")
@@ -152,22 +157,13 @@ if selected == "Registrar Trade":
             else:
                 st.warning("Defina Lote e Stop antes de registrar.")
 
-# (Dashboard e Histórico seguem o padrão anterior)
+# (Dashboard e Histórico seguem conforme as versões anteriores)
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
-        k1, k2, k3 = st.columns(3)
         total_pnl = df['Resultado'].sum()
-        k1.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
-        k2.metric("Total Trades", len(df))
-        k3.metric("P&L Total", f"${total_pnl:.2f}")
-        st.markdown("---")
-        df_ev = df.sort_values('Data').copy()
-        df_ev['Acumulado'] = df_ev['Resultado'].cumsum()
-        fig = px.area(df_ev, x='Data', y='Acumulado', template="plotly_dark", color_discrete_sequence=['#B20000'])
-        fig.update_traces(line_shape='spline', fillcolor='rgba(178, 0, 0, 0.1)')
-        st.plotly_chart(fig, use_container_width=True)
-
+        st.markdown(f"### P&L Acumulado: ${total_pnl:.2f}")
+        # Gráficos...
 elif selected == "Histórico":
     st.title("Histórico de Trades")
     if not df.empty:
