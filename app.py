@@ -5,9 +5,9 @@ from datetime import datetime
 import plotly.express as px
 
 # Configuração da Página
-st.set_page_config(page_title="Trading Dashboard NQ/MNQ", layout="wide", page_icon="📈")
+st.set_page_config(page_title="Trading Dashboard Pro", layout="wide", page_icon="📈")
 
-CSV_FILE = 'trades_nq_mnq_v2.csv'
+CSV_FILE = 'trades_nq_mnq_v3.csv'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
 def load_data():
@@ -22,7 +22,7 @@ def save_data(df):
 
 df = load_data()
 
-# --- LÓGICA DE PARCIAIS ---
+# --- ESTADO DAS PARCIAIS ---
 if 'n_parciais' not in st.session_state:
     st.session_state.n_parciais = 1
 
@@ -33,17 +33,26 @@ def adicionar_parcial():
 def limpar_parciais():
     st.session_state.n_parciais = 1
 
-st.title("📊 Master Analytics - NQ & MNQ")
-st.markdown("---")
+# --- MENU LATERAL (SIDEBAR) ---
+st.sidebar.title("💎 ProTrader Menu")
+menu = st.sidebar.radio(
+    "Gerenciamento",
+    ["🚀 Registrar Trade", "📈 Dashboard Avançado", "📋 Histórico"],
+    index=0
+)
 
-tab1, tab2, tab3 = st.tabs(["🚀 Registrar Trade", "📈 Dashboard Avançado", "📋 Histórico"])
+st.sidebar.markdown("---")
+st.sidebar.info("Configurado para: **NQ / MNQ**")
 
-with tab1:
-    # Cabeçalho com botões alinhados à direita
+# --- LÓGICA DAS PÁGINAS ---
+
+if menu == "🚀 Registrar Trade":
+    # Cabeçalho da página com botões no topo direito
     col_tit, col_btns = st.columns([2, 1])
     with col_tit:
-        st.subheader("Novo Registro Detalhado")
+        st.title("Registrar Operação")
     with col_btns:
+        st.write("") # Espaçamento
         c_add, c_res = st.columns(2)
         with c_add:
             st.button("➕ Add Parcial", on_click=adicionar_parcial, use_container_width=True)
@@ -64,7 +73,7 @@ with tab1:
             lote_total = st.number_input("Contratos Totais", min_value=1, step=1, value=1)
             stop_pts = st.number_input("Risco em Pontos (Stop)", min_value=0.0, step=0.25, format="%.2f")
             risco_financeiro = stop_pts * MULTIPLIERS[ativo] * lote_total
-            st.info(f"Risco Calculado: ${risco_financeiro:.2f}")
+            st.metric("Risco Calculado", f"${risco_financeiro:.2f}")
 
         with c3:
             st.write("**Saídas / Parciais**")
@@ -76,32 +85,30 @@ with tab1:
                 with cp1:
                     pts = st.number_input(f"Pts Parcial {i+1}", min_value=0.0, step=0.25, key=f"pts_{i}")
                 with cp2:
-                    # O valor padrão é 0 para não estourar a conta antes do usuário digitar
                     qtd = st.number_input(f"Contratos P{i+1}", min_value=0, step=1, key=f"qtd_{i}")
                 parciais_inputs.append((pts, qtd))
                 contratos_alocados += qtd
             
-            # --- CORREÇÃO DO ERRO DE VALIDAÇÃO ---
+            # Validação dinâmica de contratos
             restante = lote_total - contratos_alocados
             if restante > 0:
-                st.warning(f"⚠️ Restam {restante} contratos para fechar a posição.")
+                st.warning(f"⚠️ Restam {restante} contratos para fechar.")
             elif restante < 0:
-                st.error(f"❌ Erro: Você alocou {abs(restante)} contratos a mais do que a entrada!")
+                st.error(f"❌ Erro: Alocou {abs(restante)} contratos a mais!")
 
-        notas = st.text_area("Notas do Trade (Psicológico, Por que entrou?)")
+        notas = st.text_area("Notas do Trade")
         submit = st.form_submit_button("💾 Salvar Trade")
 
         if submit:
             if contratos_alocados != lote_total:
-                st.error(f"Impossível salvar: A soma das parciais ({contratos_alocados}) deve ser igual ao total ({lote_total}).")
+                st.error(f"Erro: A soma das parciais ({contratos_alocados}) deve ser igual ao total ({lote_total}).")
             elif entrada == 0:
-                st.error("Por favor, insira o preço de entrada.")
+                st.error("Insira o preço de entrada.")
             else:
-                # Cálculo financeiro baseado na regra NQ/MNQ
                 lucro_total = sum([p[0] * MULTIPLIERS[ativo] * p[1] for p in parciais_inputs])
                 pts_medios = sum([p[0] * p[1] for p in parciais_inputs]) / lote_total
                 
-                # Classificação automática por faixa de lote
+                # Faixas de Lote
                 if lote_total <= 10: faixa = "Até 10"
                 elif lote_total <= 20: faixa = "11 a 20"
                 else: faixa = "Acima de 20"
@@ -116,37 +123,59 @@ with tab1:
                 
                 df = pd.concat([df, novo_trade], ignore_index=True)
                 save_data(df)
-                st.success("✅ Trade registrado com sucesso!")
+                st.success("✅ Trade salvo!")
                 st.rerun()
 
-with tab2:
+elif menu == "📈 Dashboard Avançado":
+    st.title("Analytics de Performance")
     if not df.empty:
-        st.subheader("🔍 Filtros de Performance")
-        f1, f2 = st.columns(2)
+        # Filtros no topo do dashboard
+        st.write("### 🔍 Filtros")
+        f1, f2, f3 = st.columns(3)
         with f1:
             f_faixa = st.multiselect("Faixa de Contratos", df['Faixa_Lote'].unique(), default=df['Faixa_Lote'].unique())
         with f2:
             f_contexto = st.multiselect("Contexto", df['Contexto'].unique(), default=df['Contexto'].unique())
+        with f3:
+            f_ativo = st.multiselect("Ativo", df['Ativo'].unique(), default=df['Ativo'].unique())
         
-        dff = df[(df['Faixa_Lote'].isin(f_faixa)) & (df['Contexto'].isin(f_contexto))]
+        dff = df[(df['Faixa_Lote'].isin(f_faixa)) & (df['Contexto'].isin(f_contexto)) & (df['Ativo'].isin(f_ativo))]
 
-        # KPIs Estilo Dashboard Profissional
+        # KPIs principais
         k1, k2, k3, k4 = st.columns(4)
         k1.metric("P&L Total", f"${dff['Resultado'].sum():.2f}")
-        k2.metric("Win Rate", f"{(len(dff[dff['Resultado'] > 0]) / len(dff) * 100):.1f}%")
-        k3.metric("Média Pontos", f"{dff['Pts_Medio'].mean():.2f}")
-        k4.metric("R:R Médio", f"1:{dff['RR'].mean():.2f}")
+        k2.metric("Taxa de Acerto", f"{(len(dff[dff['Resultado'] > 0]) / len(dff) * 100):.1f}%")
+        k3.metric("Média de Pontos", f"{dff['Pts_Medio'].mean():.2f}")
+        k4.metric("Risk Reward Médio", f"1:{dff['RR'].mean():.2f}")
 
-        # Gráficos
+        st.markdown("---")
+        
+        # Gráficos de barra e dispersão
         c_g1, c_g2 = st.columns(2)
         with c_g1:
-            fig_res = px.bar(dff, x='Contexto', y='Resultado', color='Faixa_Lote', title="Resultado por Contexto e Lote", template="plotly_dark")
+            fig_res = px.bar(dff, x='Contexto', y='Resultado', color='Faixa_Lote', 
+                             title="Lucro Acumulado por Contexto", template="plotly_dark", barmode='group')
             st.plotly_chart(fig_res, use_container_width=True)
         with c_g2:
-            fig_risk = px.scatter(dff, x='Stop_Pts', y='Resultado', size='Lote', color='Contexto', title="Risco vs Retorno", template="plotly_dark")
+            fig_risk = px.box(dff, x='Faixa_Lote', y='Risco_Fin', color='Contexto',
+                              title="Distribuição de Risco Financeiro por Faixa", template="plotly_dark")
             st.plotly_chart(fig_risk, use_container_width=True)
-    else:
-        st.info("Registre trades para ver a análise.")
 
-with tab3:
-    st.dataframe(df, use_container_width=True)
+        st.write("### 📉 Curva de Capital")
+        dff = dff.sort_values('Data')
+        dff['Acumulado'] = dff['Resultado'].cumsum()
+        fig_evol = px.line(dff, x='Data', y='Acumulado', markers=True, template="plotly_dark")
+        st.plotly_chart(fig_evol, use_container_width=True)
+    else:
+        st.info("Aguardando dados para gerar o Dashboard.")
+
+elif menu == "📋 Histórico":
+    st.title("Histórico de Operações")
+    if not df.empty:
+        st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
+        if st.button("🗑️ Limpar Banco de Dados"):
+            if os.path.exists(CSV_FILE):
+                os.remove(CSV_FILE)
+                st.rerun()
+    else:
+        st.write("Nenhum trade registrado.")
