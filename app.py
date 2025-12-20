@@ -21,13 +21,22 @@ st.markdown("""
     }
     .piscante-erro {
         padding: 15px; border-radius: 5px; color: white; font-weight: bold;
-        text-align: center; 
-        animation: blinking 2.4s infinite;
-        border: 1px solid #FF0000;
+        text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000;
     }
     .logo-container { padding: 20px 15px; display: flex; flex-direction: column; }
     .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
     .logo-sub { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; }
+    
+    /* Estilo Especial para Botão de Stop */
+    .stButton > button[kind="secondary"] {
+        background-color: transparent !important;
+        color: #FF4B4B !important;
+        border: 1px solid #FF4B4B !important;
+    }
+    .stButton > button[kind="secondary"]:hover {
+        background-color: #FF4B4B !important;
+        color: white !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -36,7 +45,6 @@ CSV_FILE = 'evotrade_data.csv'
 MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
 def load_data():
-    # Removido 'Entrada' das colunas
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'Faixa', 'Resultado', 'Pts_Medio', 'Risco_Fin']
     if os.path.exists(CSV_FILE):
         try:
@@ -86,7 +94,7 @@ if selected == "Registrar Trade":
         lote_total = st.number_input("Lote Total (Contratos)", min_value=1, step=1, value=1)
         stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25)
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
-        st.metric("Risco Financeiro", f"${risco_calc:.2f}")
+        st.metric("Prejuízo em caso de Stop", f"${risco_calc:.2f}")
 
     with c3:
         st.write("**Saídas / Parciais (em Pontos)**")
@@ -108,31 +116,53 @@ if selected == "Registrar Trade":
         elif resta < 0:
             st.markdown(f'<div class="piscante-erro">ERRO: EXCESSO DE {abs(resta)} CONTRATOS!</div>', unsafe_allow_html=True)
         else:
-            st.success("✅ Posição completa. Pronto para registrar.")
+            st.success("✅ Posição completa.")
 
-    if st.button("💾 REGISTRAR OPERAÇÃO FINAL", use_container_width=True):
-        if contratos_alocados == lote_total:
-            # Cálculo do resultado baseado apenas nos pontos das parciais
-            res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas_list])
-            pts_m = sum([s[0] * s[1] for s in saidas_list]) / lote_total
-            faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
-            
-            novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco_calc}])
-            df = pd.concat([df, novo], ignore_index=True)
-            df.to_csv(CSV_FILE, index=False)
-            st.success("Trade EvoTrade registrado com sucesso!")
-            st.rerun()
-        else:
-            st.error("A quantidade de contratos das parciais não bate com o Lote Total.")
+    st.markdown("---")
+    
+    col_save, col_stop = st.columns(2)
+    
+    with col_save:
+        if st.button("💾 REGISTRAR GAIN / PARCIAIS", use_container_width=True):
+            if contratos_alocados == lote_total:
+                res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas_list])
+                pts_m = sum([s[0] * s[1] for s in saidas_list]) / lote_total
+                faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
+                novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco_calc}])
+                df = pd.concat([df, novo], ignore_index=True)
+                df.to_csv(CSV_FILE, index=False)
+                st.success("Gain registrado!")
+                st.rerun()
+            else:
+                st.error("Alocação de contratos incompleta!")
 
-# (Dashboard e Histórico seguem abaixo...)
+    with col_stop:
+        # Botão de Stop com cor secundária (vermelho no CSS)
+        if st.button("🚨 REGISTRAR STOP FULL", use_container_width=True, type="secondary"):
+            if stop_pts > 0:
+                prejuizo = -(stop_pts * MULTIPLIERS[ativo] * lote_total)
+                faixa = "Até 10" if lote_total <= 10 else "11-20" if lote_total <= 20 else "20+"
+                novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': prejuizo, 'Pts_Medio': -stop_pts, 'Risco_Fin': risco_calc}])
+                df = pd.concat([df, novo], ignore_index=True)
+                df.to_csv(CSV_FILE, index=False)
+                st.error(f"Stop de ${abs(prejuizo):.2f} registrado.")
+                st.rerun()
+            else:
+                st.warning("Defina o valor do Stop em pontos antes de registrar.")
+
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
         k1, k2, k3 = st.columns(3)
-        k1.metric("P&L Total", f"${df['Resultado'].sum():.2f}")
-        k2.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
+        total_pnl = df['Resultado'].sum()
+        cor_pnl = "green" if total_pnl >= 0 else "red"
+        
+        st.markdown(f"### P&L Total: <span style='color:{cor_pnl}'>${total_pnl:.2f}</span>", unsafe_allow_html=True)
+        
+        k1.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
+        k2.metric("Total Trades", len(df))
         k3.metric("Risco Médio", f"${df['Risco_Fin'].mean():.2f}")
+        
         st.markdown("---")
         df_ev = df.sort_values('Data').copy()
         df_ev['Acumulado'] = df_ev['Resultado'].cumsum()
@@ -142,4 +172,10 @@ elif selected == "Dashboard":
 
 elif selected == "Histórico":
     st.title("Histórico de Trades")
-    st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
+    # Colorindo o resultado no histórico
+    def color_result(val):
+        color = '#00FF00' if val > 0 else '#FF0000'
+        return f'color: {color}'
+    
+    if not df.empty:
+        st.dataframe(df.sort_values('Data', ascending=False).style.applymap(color_result, subset=['Resultado']), use_container_width=True)
