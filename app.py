@@ -103,7 +103,6 @@ df = load_data()
 def expand_modal(trade_id):
     current_df = load_data()
     row = current_df[current_df['ID'] == trade_id].iloc[0]
-    
     c1, c2 = st.columns([1.5, 1])
     
     with c1:
@@ -111,45 +110,40 @@ def expand_modal(trade_id):
         p_list = [p.strip() for p in raw_prints.split("|") if p.strip() and os.path.exists(p.strip())]
         
         if p_list:
-            st.write("🖼️ **Galeria de Prints**")
-            # Correção Final: Streamlit nativo gerencia o zoom melhor sem links externos
-            st.info("💡 Para tela cheia: Passe o mouse na imagem e clique nas setas no canto superior direito.")
-            tabs = st.tabs([f"Foto {i+1}" for i in range(len(p_list))])
+            tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
             for i, tab in enumerate(tabs):
                 with tab:
-                    # O segredo é o use_container_width=True que habilita o botão de zoom nativo
                     st.image(p_list[i], use_container_width=True)
-        else: 
-            st.info("Sem print disponível.")
-            
+                    b64 = get_base64(p_list[i])
+                    # BOTÃO TELA CHEIA (Injeção de JS para abrir em nova aba sem bloqueio)
+                    st.markdown(f"""
+                        <button onclick="var w=window.open('','_blank');w.document.write('<img src=\\'data:image/png;base64,{b64}\\' style=\\'width:100%\\'>');" 
+                        style="width:100%; background-color:#B20000; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold; margin-top:5px;">
+                        📂 ABRIR EM TELA CHEIA (NOVA ABA)
+                        </button>
+                    """, unsafe_allow_html=True)
+        else: st.info("Sem print disponível.")
+        
         st.markdown("---")
         st.subheader("📝 Observações")
-        notas_input = st.text_area("Notas sobre o trade:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
-        
+        notas_input = st.text_area("Notas:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
         if st.button("💾 Salvar Notas"):
             current_df.loc[current_df['ID'] == trade_id, 'Notas'] = notas_input
-            current_df.to_csv(CSV_FILE, index=False)
-            st.success("Salvo!")
-            time.sleep(1)
-            st.rerun()
+            current_df.to_csv(CSV_FILE, index=False); st.success("Salvo!"); time.sleep(1); st.rerun()
 
     with c2:
         st.markdown(f"### Trade Info")
-        st.write(f"📅 **Data:** {row['Data']}")
-        st.write(f"📈 **Ativo:** {row['Ativo']}")
+        st.write(f"📅 **Data:** {row['Data']} | 📈 **Ativo:** {row['Ativo']}")
         dir_color = "cyan" if row['Direcao'] == "Compra" else "orange"
         st.markdown(f"↕️ **Direção:** :{dir_color}[{row['Direcao']}]")
-        st.write(f"🏗️ **Contexto:** {row['Contexto']}")
-        st.write(f"🔢 **Contratos:** {row['Lote']}")
+        st.write(f"🏗️ **Contexto:** {row['Contexto']} | 🔢 **Lote:** {row['Lote']}")
         st.write(f"🎯 **ATM:** {row['ATM']}")
         st.divider()
         res_c = "green" if row['Resultado'] > 0 else "red"
         st.markdown(f"💰 **P&L:** :{res_c}[${row['Resultado']:,.2f}]")
         st.write(f"📊 **Média Pts:** {row['Pts_Medio']:.2f}")
-        st.divider()
         if st.button("🗑️ Deletar Trade", type="primary"):
-            st.session_state.to_delete = trade_id
-            st.rerun()
+            st.session_state.to_delete = trade_id; st.rerun()
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -157,31 +151,33 @@ with st.sidebar:
     selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
         icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
 
-# --- DASHBOARD ---
+# --- DASHBOARD (RESTAURADO) ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
-        f_v = st.segmented_control("Ver:", options=["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
+        f_v = st.segmented_control("Ver:", ["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
         df_f = df[df['Contexto'] == f_v] if f_v != "Capital" else df.copy()
+        
+        total_trades = len(df_f)
+        wins = df_f[df_f['Resultado'] > 0]
+        losses = df_f[df_f['Resultado'] < 0]
+        wr = (len(wins)/total_trades*100) if total_trades > 0 else 0
+        aw = wins['Resultado'].mean() if not wins.empty else 0
+        al = abs(losses['Resultado'].mean()) if not losses.empty else 0
+        rr = (aw/al) if al > 0 else 0
         
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("P&L Total", f"${df_f['Resultado'].sum():,.2f}")
-        total = len(df_f)
-        wins = len(df_f[df_f['Resultado'] > 0])
-        m2.metric("Win Rate", f"{(wins/total*100):.1f}%" if total > 0 else "0%")
-        m3.metric("Trades", total)
-        m4.metric("Ganho Méd", f"${df_f[df_f['Resultado']>0]['Resultado'].mean():,.2f}" if wins > 0 else "$0")
-        losses = len(df_f[df_f['Resultado'] < 0])
-        m5.metric("Perda Méd", f"${abs(df_f[df_f['Resultado']<0]['Resultado'].mean()):,.2f}" if losses > 0 else "$0")
+        m2.metric("Win Rate", f"{wr:.1f}%")
+        m3.metric("Risco:Retorno", f"1:{rr:.2f}")
+        m4.metric("Ganho Méd", f"${aw:,.2f}")
+        m5.metric("Perda Méd", f"$-{al:,.2f}")
         
-        st.markdown("---")
         df_g = df_f.sort_values('Data').reset_index(drop=True)
         df_g['Acumulado'] = df_g['Resultado'].cumsum()
-        fig = px.area(df_g, x=df_g.index + 1, y='Acumulado', template="plotly_dark")
-        fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
-        st.plotly_chart(fig, use_container_width=True)
-    else: st.info("Sem dados.")
+        st.plotly_chart(px.area(df_g, x=df_g.index + 1, y='Acumulado', template="plotly_dark").update_traces(line_color='#B20000'), use_container_width=True)
 
+# --- REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
@@ -226,41 +222,45 @@ elif selected == "Registrar Trade":
             if lote_t > 0 and alocado == lote_t:
                 res = sum([s[0]*MULTIPLIERS[ativo]*s[1] for s in saidas])
                 pts_m = sum([s[0]*s[1] for s in saidas]) / lote_t
-                n_id = str(uuid.uuid4())
-                paths = []
+                n_id = str(uuid.uuid4()); paths = []
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.success("🎯 Salvo!"); time.sleep(1); st.rerun()
+                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
     with r2:
         if st.button("🚨 REGISTRAR STOP", type="secondary", use_container_width=True):
-            if lote_t > 0 and stop_p > 0:
-                pre = -(stop_p * MULTIPLIERS[ativo] * lote_t)
-                n_id = str(uuid.uuid4())
-                paths = []
+            if lote_t > 0:
+                pre = -(stop_p * MULTIPLIERS[ativo] * lote_t); n_id = str(uuid.uuid4()); paths = []
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
-                st.error("🚨 Stop!"); time.sleep(1); st.rerun()
+                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
 
+# --- ABA: CONFIGURAR ATM (RESTAURADA) ---
 elif selected == "Configurar ATM":
-    st.title("⚙️ Editor ATM")
-    with st.expander("✨ Novo Template"):
-        n = st.text_input("Nome"); l = st.number_input("Lote", 1); s = st.number_input("Stop", 0.0)
-        np = st.number_input("Alvos", 1, 6); nps = []
-        for i in range(np):
-            c1, c2 = st.columns(2); nps.append([c1.number_input(f"Pts {i+1}", key=f"ap_{i}"), c2.number_input(f"Qtd {i+1}", key=f"aq_{i}", min_value=1)])
-        if st.button("💾 Salvar"):
-            atm_db[n] = {"lote": l, "stop": s, "parciais": nps}; save_atm(atm_db); st.rerun()
-    for nome in list(atm_db.keys()):
+    st.title("⚙️ Editor de ATM")
+    with st.expander("✨ Criar Novo Template", expanded=True):
+        n = st.text_input("Nome da Estratégia")
+        ca1, ca2 = st.columns(2)
+        l_p = ca1.number_input("Lote Total", min_value=1, step=1)
+        s_p = ca2.number_input("Stop (Pts)", min_value=0.0)
+        n_p = st.number_input("Número de Alvos", 1, 6, 1)
+        novas_p = []
+        for i in range(n_p):
+            cp1, cp2 = st.columns(2)
+            novas_p.append([cp1.number_input(f"Pts {i+1}", key=f"ap_{i}"), cp2.number_input(f"Qtd {i+1}", key=f"aq_{i}", min_value=1)])
+        if st.button("💾 Salvar ATM"):
+            atm_db[n] = {"lote": l_p, "stop": s_p, "parciais": novas_p}; save_atm(atm_db); st.rerun()
+    st.markdown("---")
+    for nome, cfg in list(atm_db.items()):
         if nome != "Personalizado":
-            cn, cb = st.columns([4, 1]); cn.write(f"**{nome}**")
-            if cb.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
+            c_n, c_d = st.columns([4, 1])
+            c_n.write(f"**{nome}** (Lote: {cfg['lote']}, Stop: {cfg['stop']} pts)")
+            if c_d.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
+# --- ABA: HISTÓRICO ---
 elif selected == "Histórico":
     st.title("📜 Galeria")
     if 'to_delete' in st.session_state:
