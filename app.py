@@ -60,15 +60,12 @@ def load_data():
 atm_db = load_atm()
 df = load_data()
 
-# --- ESTADO ---
+# --- ESTADO E LOGICA DE RESET ---
 if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
 if 'atm_selecionado' not in st.session_state: st.session_state.atm_selecionado = list(atm_db.keys())[0]
 
-# Função para resetar tudo quando o ATM muda
 def on_atm_change():
     st.session_state.n_extras = 0
-    # O rerun garante que os inputs peguem o 'value' atualizado do dicionário
-    st.toast(f"ATM {st.session_state.atm_selecionado} Carregado!")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -78,43 +75,14 @@ with st.sidebar:
             "nav-link-selected": {"background-color": "#B20000", "color": "white"}
         })
 
-# --- PÁGINA: CONFIGURAR ATM ---
-if selected == "Configurar ATM":
-    st.title("⚙️ Editor de Estratégias ATM")
-    with st.expander("✨ Criar Novo Template ATM", expanded=True):
-        nome_novo = st.text_input("Nome da Estratégia")
-        c1, c2 = st.columns(2)
-        l_p = c1.number_input("Lote Total", min_value=1, step=1)
-        s_p = c2.number_input("Stop (Pts)", min_value=0.0, step=0.25)
-        
-        n_p = st.number_input("Número de Alvos", 1, 6, 1)
-        novas_p = []
-        for i in range(n_p):
-            cp1, cp2 = st.columns(2)
-            pt = cp1.number_input(f"Alvo P{i+1} (Pts)", key=f"conf_pts_{i}", value=0.0)
-            qt = cp2.number_input(f"Contratos P{i+1}", key=f"conf_qtd_{i}", min_value=1, step=1)
-            novas_p.append([pt, qt])
-        
-        if st.button("💾 Salvar Estratégia"):
-            if nome_novo:
-                atm_db[nome_novo] = {"lote": l_p, "stop": s_p, "parciais": novas_p}
-                save_atm(atm_db); st.success("Salvo!"); st.rerun()
-
 # --- PÁGINA: REGISTRAR TRADE ---
-elif selected == "Registrar Trade":
+if selected == "Registrar Trade":
     st.title("Registro de Trade")
     
     c_topo1, c_topo2 = st.columns([3, 1])
     with c_topo1:
-        # Mudança importante: selectbox agora usa on_change
-        atm_sel_nome = st.selectbox(
-            "🎯 Estratégia ATM", 
-            options=list(atm_db.keys()), 
-            key='atm_selecionado',
-            on_change=on_atm_change
-        )
+        atm_sel_nome = st.selectbox("🎯 Estratégia ATM", options=list(atm_db.keys()), key='atm_selecionado', on_change=on_atm_change)
         config = atm_db[atm_sel_nome]
-        
     with c_topo2:
         st.write("") 
         cb1, cb2 = st.columns(2)
@@ -122,10 +90,7 @@ elif selected == "Registrar Trade":
         cb2.button("🧹", on_click=lambda: st.rerun())
 
     st.markdown("---")
-    
-    # Usamos o nome do ATM na key para forçar o reset visual dos inputs
     key_prefix = atm_sel_nome.replace(" ", "_")
-
     c1, c2, c3 = st.columns([1, 1, 2.5])
     
     with c1:
@@ -135,25 +100,20 @@ elif selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        lote_t = st.number_input("Lote Total", min_value=0, step=1, value=int(config["lote"]), key=f"lote_{key_prefix}")
+        lote_t = st.number_input("Contratos", min_value=0, step=1, value=int(config["lote"]), key=f"lote_{key_prefix}")
         stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]), key=f"stop_{key_prefix}")
         risco = stop_p * MULTIPLIERS[ativo] * lote_t
         if lote_t > 0: st.metric("Risco Total", f"${risco:,.2f}")
 
     with c3:
         st.write("**Saídas Executadas**")
-        saidas = []
-        alocado = 0
-        
-        # Parciais do ATM
+        saidas = []; alocado = 0
         for i, p_config in enumerate(config["parciais"]):
             s1, s2 = st.columns(2)
-            # A key dinâmica 'key_prefix' força o campo a atualizar quando o ATM muda
             p = s1.number_input(f"Pts P{i+1}", key=f"p_atm_{i}_{key_prefix}", value=float(p_config[0]))
             q = s2.number_input(f"Qtd P{i+1}", key=f"q_atm_{i}_{key_prefix}", value=int(p_config[1]), step=1)
             saidas.append((p, q)); alocado += q
             
-        # Parciais extras
         for i in range(st.session_state.n_extras):
             idx = len(config["parciais"]) + i
             s1, s2 = st.columns(2)
@@ -178,7 +138,6 @@ elif selected == "Registrar Trade":
                 pts_m = sum([s[0] * s[1] for s in saidas]) / lote_t
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
-
     with r2:
         if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
             if lote_t > 0 and stop_p > 0:
@@ -186,4 +145,67 @@ elif selected == "Registrar Trade":
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': risco}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
 
-# [As abas Dashboard e Histórico continuam aqui para baixo]
+# --- PÁGINA: DASHBOARD ---
+elif selected == "Dashboard":
+    st.title("📊 EvoTrade Analytics")
+    if not df.empty:
+        total_pnl = df['Resultado'].sum()
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Win Rate", f"{(len(df[df['Resultado']>0])/len(df)*100):.1f}%")
+        k2.metric("P&L Total", f"${total_pnl:,.2f}")
+        k3.metric("Total Trades", len(df))
+        k4.metric("Lucro Médio/Trade", f"${df['Resultado'].mean():.2f}")
+        
+        st.markdown("---")
+        df_sort = df.sort_values('Data')
+        df_sort['Acumulado'] = df_sort['Resultado'].cumsum()
+        
+        fig = px.area(df_sort, x='Data', y='Acumulado', title="Curva de Capital (Equity Curve)",
+                      template="plotly_dark", color_discrete_sequence=['#B20000'])
+        fig.update_traces(line_shape='spline', fillcolor='rgba(178, 0, 0, 0.2)')
+        st.plotly_chart(fig, use_container_width=True)
+        
+        c1, c2 = st.columns(2)
+        c1.plotly_chart(px.bar(df, x='Contexto', y='Resultado', color='Resultado', title="Performance por Contexto", template="plotly_dark"), use_container_width=True)
+        c2.plotly_chart(px.pie(df, names='Ativo', values='Lote', title="Distribuição por Ativo", template="plotly_dark"), use_container_width=True)
+    else:
+        st.warning("Nenhum dado encontrado para gerar o Dashboard.")
+
+# --- PÁGINA: CONFIGURAR ATM ---
+elif selected == "Configurar ATM":
+    st.title("⚙️ Editor de Estratégias ATM")
+    with st.expander("✨ Criar Novo Template ATM", expanded=True):
+        nome_novo = st.text_input("Nome da Estratégia")
+        ca1, ca2 = st.columns(2)
+        l_p = ca1.number_input("Lote Total", min_value=1, step=1)
+        s_p = ca2.number_input("Stop (Pts)", min_value=0.0, step=0.25)
+        n_p = st.number_input("Número de Alvos", 1, 6, 1)
+        novas_p = []
+        for i in range(n_p):
+            cp1, cp2 = st.columns(2)
+            pt = cp1.number_input(f"Alvo P{i+1} (Pts)", key=f"conf_pts_{i}", value=0.0)
+            qt = cp2.number_input(f"Contratos P{i+1}", key=f"conf_qtd_{i}", min_value=1, step=1)
+            novas_p.append([pt, qt])
+        if st.button("💾 Salvar Estratégia"):
+            if nome_novo:
+                atm_db[nome_novo] = {"lote": l_p, "stop": s_p, "parciais": novas_p}
+                save_atm(atm_db); st.success("Salvo!"); st.rerun()
+    st.markdown("---")
+    for nome in list(atm_db.keys()):
+        if nome != "Personalizado":
+            col_n, col_b = st.columns([4, 1])
+            col_n.write(f"**{nome}**")
+            if col_b.button("Excluir", key=f"del_{nome}"):
+                del atm_db[nome]; save_atm(atm_db); st.rerun()
+
+# --- PÁGINA: HISTÓRICO ---
+elif selected == "Histórico":
+    st.title("📜 Histórico de Trades")
+    if not df.empty:
+        # Estilização básica para o dataframe
+        st.dataframe(df.sort_values('Data', ascending=False), use_container_width=True)
+        if st.button("🗑️ Limpar Todo o Histórico (CUIDADO)"):
+            if os.path.exists(CSV_FILE): os.remove(CSV_FILE)
+            st.rerun()
+    else:
+        st.info("Nenhum trade registrado ainda.")
