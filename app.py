@@ -90,11 +90,12 @@ if selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        # LOTE INICIANDO EM ZERO
+        # Lote zerado por padrão
         lote_total = st.number_input("Lote Total (Contratos)", min_value=0, step=1, value=0)
-        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25)
+        # Stop zerado, aceitando decimais (pontos fracionados)
+        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25, value=0.0, format="%.2f")
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
-        if lote_total > 0:
+        if lote_total > 0 and stop_pts > 0:
             st.metric("Risco em caso de Stop", f"${risco_calc:.2f}")
 
     with c3:
@@ -105,13 +106,14 @@ if selected == "Registrar Trade":
         for i in range(st.session_state.n_parciais):
             s1, s2 = st.columns(2)
             with s1: 
-                p = st.number_input(f"Pontos P{i+1}", key=f"pts_real_{i}", step=0.25)
+                # Pontos zerados por padrão, aceita decimal
+                p = st.number_input(f"Pontos P{i+1}", key=f"pts_real_{i}", step=0.25, value=0.0, format="%.2f")
             with s2: 
-                q = st.number_input(f"Contratos P{i+1}", min_value=0, key=f"qtd_real_{i}", step=1)
+                # Contratos zerados por padrão
+                q = st.number_input(f"Contratos P{i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
             saidas_list.append((p, q))
             contratos_alocados += q
         
-        # ALERTA SÓ APARECE SE O LOTE FOR MAIOR QUE ZERO
         if lote_total > 0:
             resta = lote_total - contratos_alocados
             if resta > 0:
@@ -134,8 +136,7 @@ if selected == "Registrar Trade":
                 novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': risco_calc}])
                 df = pd.concat([df, novo], ignore_index=True)
                 df.to_csv(CSV_FILE, index=False)
-                st.success("Gain registrado!")
-                st.rerun() # LIMPA OS CAMPOS
+                st.rerun() 
             else:
                 st.error("Verifique o Lote e as Parciais!")
 
@@ -147,12 +148,12 @@ if selected == "Registrar Trade":
                 novo = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_total, 'Faixa': faixa, 'Resultado': prejuizo, 'Pts_Medio': -stop_pts, 'Risco_Fin': risco_calc}])
                 df = pd.concat([df, novo], ignore_index=True)
                 df.to_csv(CSV_FILE, index=False)
-                st.rerun() # REGISTRA E LIMPA TUDO NA HORA
+                st.rerun() 
             else:
                 st.warning("Defina Lote e Stop antes de registrar.")
 
+# (Dashboard e Histórico seguem o padrão anterior)
 elif selected == "Dashboard":
-    # [Mantido o código anterior do Dashboard]
     st.title("EvoTrade Analytics")
     if not df.empty:
         k1, k2, k3 = st.columns(3)
