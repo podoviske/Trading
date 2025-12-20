@@ -112,7 +112,7 @@ def expand_modal(trade_id):
         p_list = [p for p in p_list if p and os.path.exists(p)]
         
         if p_list:
-            st.markdown("💡 *Clique no ícone de expansão no canto da imagem para tela cheia.*")
+            st.info("💡 Passe o mouse sobre a imagem e clique no ícone de setas (canto superior direito) para ver em tela cheia.")
             if len(p_list) > 1:
                 st.subheader(f"📸 Prints da Operação ({len(p_list)})")
                 tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
