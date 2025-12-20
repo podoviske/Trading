@@ -90,10 +90,10 @@ if selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        # Lote zerado (Inteiro)
+        # Lote zerado
         lote_total = st.number_input("Contratos", min_value=0, step=1, value=0)
-        # Stop zerado (Visual limpo, mas aceita vírgula)
-        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, step=0.25, value=0.0)
+        # Stop zerado - Removido o step fixo para evitar o .00 constante
+        stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, value=0.0, step=None)
         
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
         if lote_total > 0 and stop_pts > 0:
@@ -107,10 +107,10 @@ if selected == "Registrar Trade":
         for i in range(st.session_state.n_parciais):
             s1, s2 = st.columns(2)
             with s1: 
-                # Pontos da parcial (Visual limpo, mas aceita vírgula)
-                p = st.number_input(f"Pontos Parcial {i+1}", key=f"pts_real_{i}", step=0.25, value=0.0)
+                # PONTOS: Removido step fixo para ficar visualmente igual aos contratos (limpo)
+                p = st.number_input(f"Pontos Parcial {i+1}", key=f"pts_real_{i}", value=0.0, step=None)
             with s2: 
-                # Contratos (Inteiro)
+                # CONTRATOS: Inteiro
                 q = st.number_input(f"Contratos Parcial {i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
             saidas_list.append((p, q))
             contratos_alocados += q
@@ -153,7 +153,6 @@ if selected == "Registrar Trade":
             else:
                 st.warning("Defina Lote e Stop antes de registrar.")
 
-# (Dashboard e Histórico continuam os mesmos)
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
