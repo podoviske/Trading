@@ -113,7 +113,6 @@ def expand_modal(trade_id):
             tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
             for i, tab in enumerate(tabs):
                 with tab:
-                    # Mantendo apenas a visualização nativa do Streamlit
                     st.image(p_list[i], use_container_width=True)
         else: st.info("Sem print disponível.")
         
@@ -177,12 +176,13 @@ if selected == "Dashboard":
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("Sem dados.")
 
-# --- REGISTRAR TRADE ---
+# --- REGISTRAR TRADE (RESTAURADO) ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
     c_topo1, c_topo2 = st.columns([3, 1])
     with c_topo1:
+        # Seleção de ATM com atualização automática de sessão
         atm_sel = st.selectbox("🎯 ATM", list(atm_db.keys()), on_change=lambda: st.session_state.update({"n_extras": 0}))
         config = atm_db[atm_sel]
     with c_topo2:
@@ -198,8 +198,12 @@ elif selected == "Registrar Trade":
         contexto = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
     with c2:
+        # Lote e Stop preenchidos via config da ATM
         lote_t = st.number_input("Contratos", min_value=0, value=int(config["lote"]))
-        stop_p = st.number_input("Stop (Pts)", min_value=0.0)
+        stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]))
+        # Mostrar risco financeiro em tempo real
+        if lote_t > 0 and stop_p > 0:
+            st.metric("Risco Total", f"${(stop_p * MULTIPLIERS[ativo] * lote_t):,.2f}")
         up_files = st.file_uploader("📸 Prints", accept_multiple_files=True)
     with c3:
         st.write("**Saídas**")
@@ -214,7 +218,10 @@ elif selected == "Registrar Trade":
             p = s1.number_input(f"Pts Ex {i+1}", key=f"pe_{i}")
             q = s2.number_input(f"Qtd Ex {i+1}", key=f"qe_{i}")
             saidas.append((p, q)); alocado += q
-        if lote_t > 0 and lote_t != alocado: st.markdown(f'<div class="piscante-erro">FALTAM {lote_t-alocado}</div>', unsafe_allow_html=True)
+        if lote_t > 0 and lote_t != alocado: 
+            st.markdown(f'<div class="piscante-erro">FALTAM {lote_t-alocado} CONTRATOS</div>', unsafe_allow_html=True)
+        elif lote_t == alocado and lote_t > 0:
+            st.success("✅ Posição Completa")
 
     r1, r2 = st.columns(2)
     with r1:
@@ -227,16 +234,20 @@ elif selected == "Registrar Trade":
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
+                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
+                st.success("🎯 Trade registrado com sucesso!")
+                time.sleep(1); st.rerun()
     with r2:
-        if st.button("🚨 REGISTRAR STOP", type="secondary", use_container_width=True):
-            if lote_t > 0:
+        if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
+            if lote_t > 0 and stop_p > 0:
                 pre = -(stop_p * MULTIPLIERS[ativo] * lote_t); n_id = str(uuid.uuid4()); paths = []
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
+                df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
+                st.error("🚨 Stop registrado com sucesso!")
+                time.sleep(1); st.rerun()
 
 # --- CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
