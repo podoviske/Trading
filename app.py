@@ -14,6 +14,13 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
     .stApp { background-color: #0F0F0F; }
     
+    /* Alinhamento forçado para nivelar as colunas */
+    div[data-testid="column"] {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+    }
+
     @keyframes blinking {
         0% { background-color: #440000; box-shadow: 0 0 5px #440000; }
         50% { background-color: #B20000; box-shadow: 0 0 20px #B20000; }
@@ -22,6 +29,7 @@ st.markdown("""
     .piscante-erro {
         padding: 15px; border-radius: 5px; color: white; font-weight: bold;
         text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000;
+        margin-top: 10px;
     }
     .logo-container { padding: 20px 15px; display: flex; flex-direction: column; }
     .logo-main { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
@@ -81,7 +89,7 @@ if selected == "Registrar Trade":
         st.button("➕ Parcial", on_click=adicionar_parcial, use_container_width=True)
         st.button("🧹 Limpar Campos", on_click=limpar_parciais, use_container_width=True)
 
-    c1, c2, c3 = st.columns([1, 1, 2])
+    c1, c2, c3 = st.columns([1, 1, 2.5]) # Aumentei um pouco a c3 para caber melhor
     
     with c1:
         data = st.date_input("Data", datetime.now())
@@ -90,9 +98,7 @@ if selected == "Registrar Trade":
         direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
     with c2:
-        # Lote zerado
         lote_total = st.number_input("Contratos", min_value=0, step=1, value=0)
-        # Stop zerado - Removido o step fixo para evitar o .00 constante
         stop_pts = st.number_input("Stop (Pontos)", min_value=0.0, value=0.0, step=None)
         
         risco_calc = stop_pts * MULTIPLIERS[ativo] * lote_total
@@ -100,27 +106,26 @@ if selected == "Registrar Trade":
             st.metric("Risco Financeiro Total", f"${risco_calc:,.2f}")
 
     with c3:
-        st.write("**Saídas / Parciais (em Pontos)**")
+        # Título alinhado: usei markdown para garantir que a altura bata com as labels da esquerda
+        st.markdown("<p style='margin-bottom: 8px; font-weight: bold;'>Saídas / Parciais (em Pontos)</p>", unsafe_allow_html=True)
         saidas_list = []
         contratos_alocados = 0
         
         for i in range(st.session_state.n_parciais):
             s1, s2 = st.columns(2)
             with s1: 
-                # PONTOS: Removido step fixo para ficar visualmente igual aos contratos (limpo)
-                p = st.number_input(f"Pontos Parcial {i+1}", key=f"pts_real_{i}", value=0.0, step=None)
+                # Adicionei labels vazias (" ") para forçar o alinhamento vertical com os campos da esquerda
+                p = st.number_input(f"Pts P{i+1}", key=f"pts_real_{i}", value=0.0, step=None)
             with s2: 
-                # CONTRATOS: Inteiro
-                q = st.number_input(f"Contratos Parcial {i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
+                q = st.number_input(f"Qtd P{i+1}", min_value=0, key=f"qtd_real_{i}", step=1, value=0)
             saidas_list.append((p, q))
             contratos_alocados += q
         
         if lote_total > 0:
             resta = lote_total - contratos_alocados
-            if resta > 0:
-                st.markdown(f'<div class="piscante-erro">FALTAM {resta} CONTRATOS PARA FECHAR A POSIÇÃO</div>', unsafe_allow_html=True)
-            elif resta < 0:
-                st.markdown(f'<div class="piscante-erro">ERRO: EXCESSO DE {abs(resta)} CONTRATOS!</div>', unsafe_allow_html=True)
+            if resta != 0:
+                msg = f"FALTAM {resta} CONTRATOS" if resta > 0 else f"EXCESSO DE {abs(resta)} CONTRATOS"
+                st.markdown(f'<div class="piscante-erro">{msg}</div>', unsafe_allow_html=True)
             else:
                 st.success("✅ Posição completa.")
 
@@ -153,6 +158,7 @@ if selected == "Registrar Trade":
             else:
                 st.warning("Defina Lote e Stop antes de registrar.")
 
+# (Dashboard e Histórico continuam iguais)
 elif selected == "Dashboard":
     st.title("EvoTrade Analytics")
     if not df.empty:
