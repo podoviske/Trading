@@ -108,7 +108,6 @@ def expand_modal(trade_id):
     c1, c2 = st.columns([1.5, 1])
     
     with c1:
-        # CORREÇÃO: Lógica robusta para múltiplos prints
         raw_prints = str(row['Prints']) if pd.notna(row['Prints']) else ""
         p_list = [p.strip() for p in raw_prints.split("|") if p.strip() and os.path.exists(p.strip())]
         
@@ -247,9 +246,7 @@ elif selected == "Registrar Trade":
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p)
                     with open(p, "wb") as bf: bf.write(f.getbuffer())
                 
-                # CORREÇÃO: Salvando múltiplos prints com o separador correto
                 prints_str = "|".join(paths)
-                
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': prints_str, 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.success("🎯 Trade registrado!"); time.sleep(1); st.rerun()
@@ -258,6 +255,7 @@ elif selected == "Registrar Trade":
             if lote_t > 0 and stop_p > 0:
                 pre = -(stop_p * MULTIPLIERS[ativo] * lote_t)
                 n_id = str(uuid.uuid4())
+                # ADICIONADO: 'Notas': "" para evitar erro de colunas faltantes no CSV
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "", 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
@@ -304,7 +302,6 @@ elif selected == "Histórico":
                 if i + j < num_trades:
                     row = df_disp.iloc[i + j]
                     with cols[j]:
-                        # CORREÇÃO: Mostrando apenas o primeiro print como capa no card
                         raw_prints = str(row['Prints']) if pd.notna(row['Prints']) else ""
                         p_list = [p.strip() for p in raw_prints.split("|") if p.strip()]
                         
