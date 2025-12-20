@@ -62,7 +62,7 @@ with st.sidebar:
     st.markdown('<p class="sidebar-category">Menu</p>', unsafe_allow_html=True)
     selected = option_menu(
         menu_title=None,
-        options=["Vendas Analytics", "Registrar Trade", "Histórico"],
+        options=["Registrar Trade", "Histórico"],
         icons=["graph-up-arrow", "plus-circle", "clock-history"],
         menu_icon="cast",
         default_index=0,
