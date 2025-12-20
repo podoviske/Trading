@@ -113,29 +113,8 @@ def expand_modal(trade_id):
             tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
             for i, tab in enumerate(tabs):
                 with tab:
+                    # Mantendo apenas a visualização nativa do Streamlit
                     st.image(p_list[i], use_container_width=True)
-                    b64 = get_base64(p_list[i])
-                    # SOLUÇÃO DEFINITIVA: BLOB URL VIA JAVASCRIPT
-                    js_code = f"""
-                        <script>
-                        function openImage{i}() {{
-                            const base64Data = "{b64}";
-                            const byteCharacters = atob(base64Data);
-                            const byteNumbers = new Array(byteCharacters.length);
-                            for (let i = 0; i < byteCharacters.length; i++) {{
-                                byteNumbers[i] = byteCharacters.charCodeAt(i);
-                            }}
-                            const byteArray = new Uint8Array(byteNumbers);
-                            const blob = new Blob([byteArray], {{type: 'image/png'}});
-                            const blobUrl = URL.createObjectURL(blob);
-                            window.open(blobUrl, '_blank');
-                        }}
-                        </script>
-                        <button onclick="openImage{i}()" style="width:100%; background-color:#B20000; color:white; border:none; padding:12px; border-radius:8px; cursor:pointer; font-weight:bold; margin-top:10px;">
-                            📂 ABRIR EM TELA CHEIA (NOVA ABA)
-                        </button>
-                    """
-                    st.markdown(js_code, unsafe_allow_html=True)
         else: st.info("Sem print disponível.")
         
         st.markdown("---")
@@ -259,7 +238,7 @@ elif selected == "Registrar Trade":
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(pre), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.rerun()
 
-# --- ABA: CONFIGURAR ATM ---
+# --- CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
     st.title("⚙️ Editor de ATM")
     with st.expander("✨ Criar Novo Template", expanded=True):
@@ -281,7 +260,7 @@ elif selected == "Configurar ATM":
             c_n.write(f"**{nome}** (Lote: {cfg['lote']}, Stop: {cfg['stop']} pts)")
             if c_d.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
-# --- ABA: HISTÓRICO ---
+# --- HISTÓRICO ---
 elif selected == "Histórico":
     st.title("📜 Galeria")
     if 'to_delete' in st.session_state:
