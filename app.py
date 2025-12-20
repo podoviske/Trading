@@ -16,7 +16,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 # --- CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
 
-# --- MOTOR GOOGLE DRIVE (PERSISTÊNCIA TOTAL) ---
+# --- MOTOR GOOGLE DRIVE (PERSISTÊNCIA NA NUVEM) ---
 SCOPES = ['https://www.googleapis.com/auth/drive']
 FOLDER_NAME = "EvoTrade_Data"
 
@@ -35,7 +35,8 @@ def get_folder_id():
     query = f"name = '{FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     results = DRIVE.files().list(q=query, fields="files(id)").execute()
     items = results.get('files', [])
-    if items: return items[0]['id']
+    if items:
+        return items[0]['id']
     else:
         file_metadata = {'name': FOLDER_NAME, 'mimeType': 'application/vnd.google-apps.folder'}
         folder = DRIVE.files().create(body=file_metadata, fields='id').execute()
@@ -49,7 +50,8 @@ def save_to_drive(file_name, content, mime_type='application/octet-stream'):
     items = results.get('files', [])
     fh = io.BytesIO(content)
     media = MediaIoBaseUpload(fh, mimetype=mime_type, resumable=True)
-    if items: DRIVE.files().update(fileId=items[0]['id'], media_body=media).execute()
+    if items:
+        DRIVE.files().update(fileId=items[0]['id'], media_body=media).execute()
     else:
         file_metadata = {'name': file_name, 'parents': [FOLDER_ID]}
         DRIVE.files().create(body=file_metadata, media_body=media, fields='id').execute()
@@ -63,7 +65,8 @@ def load_from_drive(file_name):
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
     done = False
-    while not done: status, done = downloader.next_chunk()
+    while not done:
+        status, done = downloader.next_chunk()
     return fh.getvalue()
 
 # --- SISTEMA DE LOGIN SEGURO ---
@@ -73,7 +76,9 @@ def check_password():
             st.session_state["password_correct"] = True
             del st.session_state["password"]
             del st.session_state["username"]
-        else: st.session_state["password_correct"] = False
+        else:
+            st.session_state["password_correct"] = False
+
     if "password_correct" not in st.session_state:
         st.markdown("""<style>.login-container { max-width: 400px; margin: 100px auto; padding: 30px; background-color: #161616; border-radius: 15px; border: 1px solid #B20000; text-align: center; } .logo-main { color: #B20000; font-size: 50px; font-weight: 900; } .logo-sub { color: white; font-size: 35px; font-weight: 700; margin-top: -15px; }</style>""", unsafe_allow_html=True)
         _, col_login, _ = st.columns([1, 2, 1])
@@ -83,16 +88,20 @@ def check_password():
             st.text_input("Usuário", key="username")
             st.text_input("Senha", type="password", key="password")
             st.button("Acessar Terminal", on_click=password_entered, use_container_width=True)
-            if "password_correct" in st.session_state and not st.session_state["password_correct"]: st.error("😕 Credenciais incorretas.")
+            if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+                st.error("😕 Credenciais incorretas.")
         return False
-    return True
+    return st.session_state["password_correct"]
 
 if check_password():
     CSV_FILE = 'evotrade_data.csv'
     ATM_FILE = 'atm_configs.json'
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-    # --- FUNÇÕES DE CARREGAMENTO (SUBSTITUÍDAS PARA DRIVE) ---
+    # --- ESTILO CSS GERAL PREMIUM ---
+    st.markdown("""<style>[data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; } .stApp { background-color: #0F0F0F; } .metric-container { background-color: #161616; border: 1px solid #262626; padding: 20px; border-radius: 10px; text-align: center; transition: transform 0.2s; margin-bottom: 15px; } .metric-container:hover { border-color: #B20000; transform: translateY(-2px); } .metric-label { color: #888; font-size: 13px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; } .metric-value { color: white; font-size: 24px; font-weight: bold; } @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } } .piscante-erro { padding: 15px; border-radius: 5px; color: white; font-weight: bold; text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; } .logo-container { padding: 20px 15px; display: flex; flex-direction: column; } .logo-main-side { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; } .logo-sub-side { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; } .stButton > button { width: 100%; border-radius: 8px; font-weight: 600; } div[data-testid="stSegmentedControl"] button { background-color: #1E1E1E !important; color: white !important; border: none !important; } div[data-testid="stSegmentedControl"] button[aria-checked="true"] { background-color: #B20000 !important; font-weight: bold !important; } .trade-card { background-color: #161616; border: 1px solid #333; border-radius: 12px; margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px; } .trade-card:hover { border-color: #B20000; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); } .img-container { width: 100%; height: 180px; overflow: hidden; background-color: #000; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #333; } .img-container img { width: 100% !important; height: 100% !important; object-fit: cover !important; } .card-footer { padding: 15px; text-align: center; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1; }</style>""", unsafe_allow_html=True)
+
+    # --- FUNÇÕES DE DADOS (INTEGRADAS AO DRIVE) ---
     def load_atm():
         data = load_from_drive(ATM_FILE)
         if data:
@@ -115,8 +124,10 @@ if check_password():
         return pd.DataFrame(columns=cols)
 
     def get_base64_cloud(file_name):
+        # Remove caminho local se existir e busca no Drive
+        clean_name = file_name.split("/")[-1] if "/" in file_name else file_name
         try:
-            content = load_from_drive(file_name)
+            content = load_from_drive(clean_name)
             if content: return base64.b64encode(content).decode()
         except: return None
 
@@ -125,9 +136,6 @@ if check_password():
 
     atm_db = load_atm()
     df = load_data()
-
-    # --- ESTILO CSS ORIGINAL (MANTIDO 100%) ---
-    st.markdown("""<style>[data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; } .stApp { background-color: #0F0F0F; } .metric-container { background-color: #161616; border: 1px solid #262626; padding: 20px; border-radius: 10px; text-align: center; transition: transform 0.2s; margin-bottom: 15px; } .metric-container:hover { border-color: #B20000; transform: translateY(-2px); } .metric-label { color: #888; font-size: 13px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; } .metric-value { color: white; font-size: 24px; font-weight: bold; } @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } } .piscante-erro { padding: 15px; border-radius: 5px; color: white; font-weight: bold; text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; } .logo-container { padding: 20px 15px; display: flex; flex-direction: column; } .logo-main-side { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; } .logo-sub-side { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; } .stButton > button { width: 100%; border-radius: 8px; font-weight: 600; } div[data-testid="stSegmentedControl"] button { background-color: #1E1E1E !important; color: white !important; border: none !important; } div[data-testid="stSegmentedControl"] button[aria-checked="true"] { background-color: #B20000 !important; font-weight: bold !important; } .trade-card { background-color: #161616; border: 1px solid #333; border-radius: 12px; margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px; } .trade-card:hover { border-color: #B20000; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); } .img-container { width: 100%; height: 180px; overflow: hidden; background-color: #000; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #333; } .img-container img { width: 100% !important; height: 100% !important; object-fit: cover !important; } .card-footer { padding: 15px; text-align: center; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1; }</style>""", unsafe_allow_html=True)
 
     # --- MODAL ---
     @st.dialog("Detalhes do Trade", width="large")
@@ -141,8 +149,9 @@ if check_password():
                 tabs = st.tabs([f"Print {i+1}" for i in range(len(p_list))])
                 for i, tab in enumerate(tabs):
                     with tab:
-                        img_bytes = load_from_drive(p_list[i])
+                        img_bytes = load_from_drive(p_list[i].split("/")[-1])
                         if img_bytes: st.image(img_bytes, use_container_width=True)
+            else: st.info("Sem print disponível.")
             st.markdown("---")
             notas_input = st.text_area("Notas:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
             if st.button("💾 Salvar Notas"):
@@ -169,10 +178,9 @@ if check_password():
         selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
         st.write("---")
         if st.button("Sair / Logout"):
-            del st.session_state["password_correct"]
-            st.rerun()
+            del st.session_state["password_correct"]; st.rerun()
 
-    # --- DASHBOARD (ORIGINAL COMPLETO) ---
+    # --- DASHBOARD ---
     if selected == "Dashboard":
         st.markdown("## 📊 EvoTrade Analytics")
         if not df.empty:
@@ -207,7 +215,7 @@ if check_password():
                 fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
                 st.plotly_chart(fig, use_container_width=True)
 
-    # --- REGISTRAR TRADE (ATM COMPLETO) ---
+    # --- REGISTRAR TRADE ---
     elif selected == "Registrar Trade":
         st.title("Registro de Trade")
         if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
@@ -245,7 +253,8 @@ if check_password():
                     for i, f in enumerate(up_files):
                         p_name = f"{n_id}_{i}.png"; save_to_drive(p_name, f.getvalue(), 'image/png'); paths.append(p_name)
                     new_r = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                    df = pd.concat([df, new_r], ignore_index=True); save_to_drive(CSV_FILE, df.to_csv(index=False).encode()); st.success("🎯 Registrado!"); time.sleep(1); st.rerun()
+                    df = pd.concat([df, new_r], ignore_index=True); save_to_drive(CSV_FILE, df.to_csv(index=False).encode('utf-8'))
+                    st.success("🎯 Registrado!"); time.sleep(1); st.rerun()
         with r_b2:
             if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
                 if lote_t > 0 and stop_p > 0:
@@ -253,9 +262,10 @@ if check_password():
                     for i, f in enumerate(up_files):
                         p_name = f"{n_id}_{i}.png"; save_to_drive(p_name, f.getvalue(), 'image/png'); paths.append(p_name)
                     new_r = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res_s, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(res_s), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': ""}])
-                    df = pd.concat([df, new_r], ignore_index=True); save_to_drive(CSV_FILE, df.to_csv(index=False).encode()); st.error("🚨 Stop!"); time.sleep(1); st.rerun()
+                    df = pd.concat([df, new_r], ignore_index=True); save_to_drive(CSV_FILE, df.to_csv(index=False).encode('utf-8'))
+                    st.error("🚨 Stop!"); time.sleep(1); st.rerun()
 
-    # --- CONFIGURAR ATM (ORIGINAL) ---
+    # --- CONFIGURAR ATM ---
     elif selected == "Configurar ATM":
         st.title("⚙️ Editor de ATM")
         with st.expander("✨ Criar Novo Template", expanded=True):
@@ -269,9 +279,12 @@ if check_password():
                 c_n, c_d = st.columns([4, 1]); c_n.write(f"**{nome}** (Lote: {cfg['lote']})")
                 if c_d.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm_cloud(atm_db); st.rerun()
 
-    # --- HISTÓRICO (GALERIA ORIGINAL) ---
+    # --- HISTÓRICO ---
     elif selected == "Histórico":
         st.title("📜 Galeria")
+        if 'to_delete' in st.session_state:
+            df = df[df['ID'] != st.session_state.to_delete]
+            save_to_drive(CSV_FILE, df.to_csv(index=False).encode('utf-8')); del st.session_state.to_delete; st.rerun()
         if not df.empty:
             df_disp = df.iloc[::-1].copy(); df_disp['Num'] = range(len(df_disp), 0, -1)
             for i in range(0, len(df_disp), 5):
