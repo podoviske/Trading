@@ -39,8 +39,6 @@ with tab1:
             direcao = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
 
         with c2:
-            entrada = st.number_input("Preço Entrada", min_value=0.0)
-            saida = st.number_input("Preço Saída Final", min_value=0.0)
             contratos = st.number_input("Total de Contratos", min_value=1)
             p_parcial = st.number_input("1ª Parcial (Pontos)", min_value=0.0)
             q_parcial = st.number_input("Contratos na 1ª Parcial", min_value=0)
