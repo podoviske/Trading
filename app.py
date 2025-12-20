@@ -6,6 +6,7 @@ import plotly.express as px
 from streamlit_option_menu import option_menu
 import json
 import time
+import uuid # Novo para IDs únicos
 
 # Configuração da Página
 st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
@@ -15,7 +16,7 @@ IMG_DIR = "trade_prints"
 if not os.path.exists(IMG_DIR):
     os.makedirs(IMG_DIR)
 
-# --- ESTILO CSS (Original + Suporte para a Galeria) ---
+# --- ESTILO CSS ---
 st.markdown("""
     <style>
     [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
@@ -105,13 +106,12 @@ def save_atm(configs):
     with open(ATM_FILE, 'w') as f: json.dump(configs, f)
 
 def load_data():
-    # Adicionada coluna 'Prints' na carga
     cols = ['Data', 'Ativo', 'Contexto', 'Direcao', 'Lote', 'ATM', 'Resultado', 'Pts_Medio', 'Risco_Fin', 'ID', 'Prints']
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
             if 'ID' not in df.columns:
-                df['ID'] = [f"ID_{int(time.time())}_{i}" for i in range(len(df))]
+                df['ID'] = [str(uuid.uuid4()) for _ in range(len(df))]
             if 'Prints' not in df.columns:
                 df['Prints'] = ""
             for col in cols:
@@ -134,7 +134,14 @@ def on_atm_change():
 # --- NOVO: POP-UP DE EXPANSÃO (MODAL) ---
 @st.dialog("Visão Detalhada do Trade", width="large")
 def expand_trade_modal(trade_id):
-    row = df[df['ID'] == trade_id].iloc[0]
+    # Recarregar para garantir que o ID existe no estado atual
+    temp_df = load_data()
+    row_list = temp_df[temp_df['ID'] == trade_id]
+    if row_list.empty:
+        st.error("Trade não encontrado.")
+        return
+    row = row_list.iloc[0]
+    
     c_img, c_det = st.columns([2, 1])
     with c_img:
         p_list = str(row['Prints']).split("|") if row['Prints'] else []
@@ -149,7 +156,7 @@ def expand_trade_modal(trade_id):
         color = "green" if row['Resultado'] > 0 else "red"
         st.markdown(f"💰 **Resultado:** :{color}[${row['Resultado']:,.2f}]")
         st.divider()
-        if st.button("🗑️ Excluir Operação", type="secondary"):
+        if st.button("🗑️ Excluir Operação", type="secondary", key=f"modal_del_{trade_id}"):
             st.session_state.to_delete = trade_id
             st.rerun()
 
@@ -161,7 +168,7 @@ with st.sidebar:
             "nav-link-selected": {"background-color": "#B20000", "color": "white"}
         })
 
-# --- PÁGINA: DASHBOARD --- (INTACTA)
+# --- PÁGINA: DASHBOARD ---
 if selected == "Dashboard":
     st.title("📊 EvoTrade Analytics")
     if not df.empty:
@@ -195,7 +202,7 @@ if selected == "Dashboard":
         st.plotly_chart(fig, use_container_width=True)
     else: st.info("Nenhum dado encontrado.")
 
-# --- PÁGINA: REGISTRAR TRADE --- (INTACTA + Campo de Upload)
+# --- PÁGINA: REGISTRAR TRADE ---
 elif selected == "Registrar Trade":
     st.title("Registro de Trade")
     c_topo1, c_topo2 = st.columns([3, 1])
@@ -220,7 +227,6 @@ elif selected == "Registrar Trade":
         stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]), key=f"stop_{key_prefix}")
         risco = stop_p * MULTIPLIERS[ativo] * lote_t
         if lote_t > 0: st.metric("Risco Total", f"${risco:,.2f}")
-        # NOVO: Uploader para Ctrl+V
         up_files = st.file_uploader("📸 Prints (Upload ou Ctrl+V)", accept_multiple_files=True)
     with c3:
         st.write("**Saídas Executadas**")
@@ -249,8 +255,7 @@ elif selected == "Registrar Trade":
             if lote_t > 0 and alocado == lote_t:
                 res = sum([s[0] * MULTIPLIERS[ativo] * s[1] for s in saidas])
                 pts_m = sum([s[0] * s[1] for s in saidas]) / lote_t
-                n_id = f"ID_{int(time.time())}"
-                # Salvar Imagens
+                n_id = str(uuid.uuid4()) # ID Único Garantido
                 paths = []
                 for i, f in enumerate(up_files):
                     p = os.path.join(IMG_DIR, f"{n_id}_{i}.png")
@@ -263,12 +268,12 @@ elif selected == "Registrar Trade":
         if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
             if lote_t > 0 and stop_p > 0:
                 pre = -(stop_p * MULTIPLIERS[ativo] * lote_t)
-                n_id = f"ID_{int(time.time())}"
+                n_id = str(uuid.uuid4()) # ID Único Garantido
                 n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel_nome, 'Resultado': pre, 'Pts_Medio': -stop_p, 'Risco_Fin': risco, 'ID': n_id, 'Prints': ""}])
                 df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False)
                 st.error("🚨 Stop registrado!"); time.sleep(1); st.rerun()
 
-# --- PÁGINA: CONFIGURAR ATM --- (INTACTA)
+# --- PÁGINA: CONFIGURAR ATM ---
 elif selected == "Configurar ATM":
     st.title("⚙️ Editor de Estratégias ATM")
     with st.expander("✨ Criar Novo Template", expanded=True):
@@ -291,16 +296,18 @@ elif selected == "Configurar ATM":
             c_n.write(f"**{nome}**")
             if c_b.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; save_atm(atm_db); st.rerun()
 
-# --- PÁGINA: HISTÓRICO --- (MODIFICADA PARA GALERIA)
+# --- PÁGINA: HISTÓRICO ---
 elif selected == "Histórico":
     st.title("📜 Galeria do Prédio")
     if 'to_delete' in st.session_state:
         df = df[df['ID'] != st.session_state.to_delete]
         df.to_csv(CSV_FILE, index=False); del st.session_state.to_delete; st.rerun()
+    
     if not df.empty:
         col_export, col_limpar = st.columns([4, 1])
         csv_data = df.to_csv(index=False).encode('utf-8')
         col_export.download_button("📥 Backup (CSV)", data=csv_data, file_name="backup_trades.csv")
+        
         if not st.session_state.confirmar_limpeza:
             if col_limpar.button("🗑️ LIMPAR TUDO", type="secondary"): 
                 st.session_state.confirmar_limpeza = True; st.rerun()
@@ -308,9 +315,11 @@ elif selected == "Histórico":
             if st.button("✅ CONFIRMAR LIMPEZA TOTAL"):
                 if os.path.exists(CSV_FILE): os.remove(CSV_FILE)
                 st.session_state.confirmar_limpeza = False; st.rerun()
+        
         st.markdown("---")
         df_disp = df.copy(); df_disp['Num'] = range(1, len(df_disp) + 1)
         df_disp = df_disp.iloc[::-1]
+        
         cols = st.columns(5)
         for i, (_, row) in enumerate(df_disp.iterrows()):
             with cols[i % 5]:
@@ -321,9 +330,14 @@ elif selected == "Histórico":
                     st.image(p_list[0])
                     st.markdown('</div>', unsafe_allow_html=True)
                 else: st.markdown('<div class="image-crop-container"><span style="color:#444">Sem Print</span></div>', unsafe_allow_html=True)
+                
                 st.markdown(f'<div class="trade-footer"><div><b>Trade #{row["Num"]}</b><br><small>{row["Contexto"]}</small></div>', unsafe_allow_html=True)
                 color = "green" if row['Resultado'] > 0 else "red"
                 st.markdown(f'<div style="color:{"#00FF88" if row["Resultado"]>0 else "#FF4B4B"}; font-weight:bold">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
-                if st.button("Ver", key=f"btn_{row['ID']}"): expand_trade_modal(row['ID'])
+                
+                # CHAVE ÚNICA GARANTIDA: row['ID'] + índice i para evitar colisão total
+                if st.button("Ver", key=f"btn_{row['ID']}_{i}"): 
+                    expand_trade_modal(row['ID'])
+                
                 st.markdown('</div></div>', unsafe_allow_html=True)
     else: st.info("Vazio.")
