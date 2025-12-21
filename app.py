@@ -73,6 +73,26 @@ if check_password():
         [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
         .stApp { background-color: #0F0F0F; }
         
+        /* Sidebar Logo Rebranding */
+        .sidebar-brand-container {
+            padding: 10px 0px 20px 0px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .brand-icon {
+            background-color: #B20000;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-weight: 900;
+            font-size: 20px;
+            box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.3);
+        }
+        .brand-text-wrapper { display: flex; flex-direction: column; }
+        .brand-name { color: white; font-size: 20px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; }
+        .brand-suffix { color: #B20000; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; }
+
         /* Dashboard Metric Cards */
         .metric-container {
             background-color: #161616;
@@ -96,9 +116,6 @@ if check_password():
             padding: 15px; border-radius: 5px; color: white; font-weight: bold;
             text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000;
         }
-        .logo-container { padding: 20px 15px; display: flex; flex-direction: column; }
-        .logo-main-side { color: #B20000; font-size: 26px; font-weight: 900; line-height: 1; }
-        .logo-sub-side { color: white; font-size: 22px; font-weight: 700; margin-top: -5px; }
         
         .stButton > button { width: 100%; border-radius: 8px; font-weight: 600; }
         div[data-testid="stSegmentedControl"] button { background-color: #1E1E1E !important; color: white !important; border: none !important; }
@@ -189,9 +206,19 @@ if check_password():
             if st.button("🗑️ Deletar Trade", type="primary"):
                 st.session_state.to_delete = trade_id; st.rerun()
 
-    # --- SIDEBAR ---
+    # --- SIDEBAR ATUALIZADA ---
     with st.sidebar:
-        st.markdown('<div class="logo-container"><div class="logo-main-side">EVO</div><div class="logo-sub-side">TRADE</div></div>', unsafe_allow_html=True)
+        # Novo Container de Logo com Ícone Dinâmico
+        st.markdown("""
+            <div class="sidebar-brand-container">
+                <div class="brand-icon">E</div>
+                <div class="brand-text-wrapper">
+                    <div class="brand-name">EVO TRADE</div>
+                    <div class="brand-suffix">TERMINAL</div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+        
         selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
             icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
         st.write("---")
