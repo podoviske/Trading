@@ -14,7 +14,6 @@ st.set_page_config(page_title="EvoTrade", layout="wide", page_icon="📈")
 
 # --- SISTEMA DE LOGIN SEGURO ---
 def check_password():
-    """Retorna True se o usuário inseriu a senha correta."""
     def password_entered():
         if (
             st.session_state["username"] == "admin" 
@@ -31,7 +30,7 @@ def check_password():
             <style>
             .login-container {
                 max-width: 400px;
-                margin: 100px auto;
+                margin: 50px auto;
                 padding: 30px;
                 background-color: #161616;
                 border-radius: 15px;
@@ -40,24 +39,26 @@ def check_password():
             }
             .logo-main { color: #B20000; font-size: 50px; font-weight: 900; }
             .logo-sub { color: white; font-size: 35px; font-weight: 700; margin-top: -15px; }
+            @media (max-width: 768px) {
+                .login-container { width: 90%; margin: 20px auto; }
+            }
             </style>
         """, unsafe_allow_html=True)
         
         _, col_login, _ = st.columns([1, 2, 1])
         with col_login:
-            st.markdown('<div class="logo-main">EVO</div><div class="logo-sub">TRADE</div>', unsafe_allow_html=True)
+            st.markdown('<div class="login-container"><div class="logo-main">EVO</div><div class="logo-sub">TRADE</div>', unsafe_allow_html=True)
             st.write("---")
             st.text_input("Usuário", key="username")
             st.text_input("Senha", type="password", key="password")
             st.button("Acessar Terminal", on_click=password_entered, use_container_width=True)
             if "password_correct" in st.session_state and not st.session_state["password_correct"]:
                 st.error("😕 Credenciais incorretas.")
+            st.markdown('</div>', unsafe_allow_html=True)
         return False
     return st.session_state["password_correct"]
 
-# --- EXECUÇÃO DO APP ---
 if check_password():
-
     # --- DIRETÓRIOS E PERSISTÊNCIA ---
     IMG_DIR = "trade_prints"
     if not os.path.exists(IMG_DIR):
@@ -67,31 +68,41 @@ if check_password():
     ATM_FILE = 'atm_configs.json'
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-    # --- ESTILO CSS GERAL PREMIUM ---
+    # --- ESTILO CSS PREMIUM E RESPONSIVO ---
     st.markdown("""
         <style>
-        [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #1E1E1E; }
+        [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
         .stApp { background-color: #0F0F0F; }
         
-        /* Sidebar Logo Rebranding */
-        .sidebar-brand-container {
-            padding: 10px 0px 20px 0px;
+        /* Nova Sidebar Branding (Conforme Print) */
+        .sidebar-logo-box {
+            padding: 10px 0px 30px 5px;
             display: flex;
-            align-items: center;
-            gap: 12px;
+            flex-direction: column;
+            align-items: flex-start;
         }
-        .brand-icon {
-            background-color: #B20000;
-            color: white;
-            padding: 8px 12px;
-            border-radius: 8px;
+        .evo-icon {
+            color: #B20000;
+            font-size: 38px;
             font-weight: 900;
-            font-size: 20px;
-            box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.3);
+            line-height: 1;
+            margin-bottom: 2px;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: -1px;
         }
-        .brand-text-wrapper { display: flex; flex-direction: column; }
-        .brand-name { color: white; font-size: 20px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; }
-        .brand-suffix { color: #B20000; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; }
+        .evo-brand-text {
+            color: #B20000;
+            font-size: 24px;
+            font-weight: 800;
+            line-height: 1;
+        }
+        .trade-brand-text {
+            color: white;
+            font-size: 24px;
+            font-weight: 700;
+            line-height: 1;
+            margin-top: -2px;
+        }
 
         /* Dashboard Metric Cards */
         .metric-container {
@@ -101,12 +112,19 @@ if check_password():
             border-radius: 10px;
             text-align: center;
             transition: transform 0.2s;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
         .metric-container:hover { border-color: #B20000; transform: translateY(-2px); }
-        .metric-label { color: #888; font-size: 13px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
-        .metric-value { color: white; font-size: 24px; font-weight: bold; }
+        .metric-label { color: #888; font-size: 11px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        .metric-value { color: white; font-size: 22px; font-weight: bold; }
         
+        /* Responsividade Mobile */
+        @media (max-width: 768px) {
+            [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; }
+            .metric-value { font-size: 19px; }
+            .stPlotlyChart { height: 300px !important; }
+        }
+
         @keyframes blinking {
             0% { background-color: #440000; }
             50% { background-color: #B20000; }
@@ -123,7 +141,7 @@ if check_password():
 
         .trade-card {
             background-color: #161616; border: 1px solid #333; border-radius: 12px;
-            margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: 360px;
+            margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: auto; min-height: 350px;
         }
         .trade-card:hover { border-color: #B20000; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); }
         .img-container {
@@ -131,7 +149,7 @@ if check_password():
             display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #333;
         }
         .img-container img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
-        .card-footer { padding: 15px; text-align: center; display: flex; flex-direction: column; justify-content: space-between; flex-grow: 1; }
+        .card-footer { padding: 15px; text-align: center; flex-grow: 1; }
         </style>
         """, unsafe_allow_html=True)
 
@@ -165,12 +183,7 @@ if check_password():
         except: return None
 
     def card_metric(label, value, color="white"):
-        st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">{label}</div>
-                <div class="metric-value" style="color: {color};">{value}</div>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value" style="color: {color};">{value}</div></div>', unsafe_allow_html=True)
 
     atm_db = load_atm()
     df = load_data()
@@ -206,21 +219,23 @@ if check_password():
             if st.button("🗑️ Deletar Trade", type="primary"):
                 st.session_state.to_delete = trade_id; st.rerun()
 
-    # --- SIDEBAR ATUALIZADA ---
+    # --- SIDEBAR (NOVA IDENTIDADE) ---
     with st.sidebar:
-        # Novo Container de Logo com Ícone Dinâmico
         st.markdown("""
-            <div class="sidebar-brand-container">
-                <div class="brand-icon">E</div>
-                <div class="brand-text-wrapper">
-                    <div class="brand-name">EVO TRADE</div>
-                    <div class="brand-suffix">TERMINAL</div>
-                </div>
+            <div class="sidebar-logo-box">
+                <div class="evo-icon">E</div>
+                <div class="evo-brand-text">EVO</div>
+                <div class="trade-brand-text">TRADE</div>
             </div>
         """, unsafe_allow_html=True)
         
         selected = option_menu(None, ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"], 
-            icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], styles={"nav-link-selected": {"background-color": "#B20000"}})
+            icons=["grid-1x2", "currency-dollar", "gear", "clock-history"], 
+            styles={
+                "nav-link-selected": {"background-color": "#B20000"},
+                "container": {"background-color": "transparent"},
+                "nav-link": {"color": "white", "font-size": "14px"}
+            })
         st.write("---")
         if st.button("Sair / Logout"):
             del st.session_state["password_correct"]
@@ -228,7 +243,7 @@ if check_password():
 
     # --- DASHBOARD ---
     if selected == "Dashboard":
-        st.markdown("## 📊 EvoTrade Analytics")
+        st.markdown("## 📊 Analytics")
         if not df.empty:
             f_v = st.segmented_control("Filtrar Visão:", ["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
             df_f = df.copy() if f_v == "Capital" else df[df['Contexto'] == f_v].copy()
@@ -237,36 +252,23 @@ if check_password():
                 wr = (len(wins)/total*100) if total > 0 else 0
                 aw = wins['Resultado'].mean() if not wins.empty else 0
                 al = abs(losses['Resultado'].mean()) if not losses.empty else 0
-                rr = (aw/al) if al > 0 else 0
-                avg_pts_gain = wins['Pts_Medio'].mean() if not wins.empty else 0
-                avg_pts_loss = abs(losses['Pts_Medio'].mean()) if not losses.empty else 0
-                avg_lote = df_f['Lote'].mean() if total > 0 else 0
-                total_pl = df_f['Resultado'].sum()
-
-                # Grid 3x3
-                r1c1, r1c2, r1c3 = st.columns(3)
-                with r1c1: card_metric("P&L TOTAL", f"${total_pl:,.2f}", "#00FF88" if total_pl > 0 else "#FF4B4B")
-                with r1c2: card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
-                with r1c3: card_metric("TRADES TOTAL", total)
-                r2c1, r2c2, r2c3 = st.columns(3)
-                with r2c1: card_metric("RISCO:RETORNO", f"1:{rr:.2f}")
-                with r2c2: card_metric("LOTE MÉDIO", f"{avg_lote:.1f}")
-                with r2c3: card_metric("GAIN MÉDIO ($)", f"${aw:,.2f}", "#00FF88")
-                r3c1, r3c2, r3c3 = st.columns(3)
-                with r3c1: card_metric("PTS MÉD GAIN", f"{avg_pts_gain:.2f}")
-                with r3c2: card_metric("PTS MÉD LOSS", f"{avg_pts_loss:.2f}")
-                with r3c3: card_metric("LOSS MÉDIO ($)", f"$-{al:,.2f}", "#FF4B4B")
+                rr = (aw/al) if al > 0 else 0; avg_lote = df_f['Lote'].mean(); total_pl = df_f['Resultado'].sum()
                 
+                c1, c2, c3 = st.columns(3)
+                with c1: card_metric("P&L TOTAL", f"${total_pl:,.2f}", "#00FF88" if total_pl > 0 else "#FF4B4B")
+                with c1: card_metric("RISCO:RETORNO", f"1:{rr:.2f}")
+                with c2: card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
+                with c2: card_metric("LOTE MÉDIO", f"{avg_lote:.1f}")
+                with c3: card_metric("TRADES TOTAL", total)
+                with c3: card_metric("GAIN MÉDIO", f"${aw:,.2f}", "#00FF88")
+
                 st.markdown("---")
                 tipo_g = st.radio("Evolução por:", ["Trade a Trade", "Tempo (Data)"], horizontal=True)
                 df_g = df_f.sort_values('Data').reset_index(drop=True)
                 df_g['Acumulado'] = df_g['Resultado'].cumsum()
-                x_axis = df_g.index + 1 if tipo_g == "Trade a Trade" else 'Data'
-                fig = px.area(df_g, x=x_axis, y='Acumulado', template="plotly_dark", markers=True)
+                fig = px.area(df_g, x=df_g.index + 1 if tipo_g == "Trade a Trade" else 'Data', y='Acumulado', template="plotly_dark")
                 fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.warning(f"Sem trades para {f_v}")
-        else: st.info("Aguardando dados...")
 
     # --- REGISTRAR TRADE ---
     elif selected == "Registrar Trade":
@@ -293,7 +295,6 @@ if check_password():
         with f2:
             lote_t = st.number_input("Contratos", min_value=0, value=int(config["lote"]), key=f"lote_{atm_sel}")
             stop_p = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]), key=f"stop_{atm_sel}")
-            if lote_t > 0 and stop_p > 0: st.metric("Risco Total", f"${(stop_p * MULTIPLIERS[ativo] * lote_t):,.2f}")
             up_files = st.file_uploader("📸 Prints", accept_multiple_files=True)
         with f3:
             st.write("**Saídas**")
@@ -368,7 +369,6 @@ if check_password():
                         with cols[j]:
                             p_list = str(row['Prints']).split("|") if row['Prints'] else []
                             img_html = f'<div class="img-container"><img src="data:image/png;base64,{get_base64(p_list[0])}"></div>' if p_list and os.path.exists(p_list[0]) else '<div class="img-container" style="color:#444">Sem Print</div>'
-                            color = "#00FF88" if row['Resultado'] > 0 else "#FF4B4B"
-                            st.markdown(f'<div class="trade-card">{img_html}<div class="card-footer"><div><b style="color:white">Trade #{row["Num"]}</b><br><small style="color:#888">{row["Contexto"]}</small></div><div style="color:{color}; font-weight:bold; font-size:1.1rem">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="trade-card">{img_html}<div class="card-footer"><div><b style="color:white">Trade #{row["Num"]}</b><br><small style="color:#888">{row["Contexto"]}</small></div><div style="color:{"#00FF88" if row["Resultado"] > 0 else "#FF4B4B"}; font-weight:bold;">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
                             if st.button("Ver", key=f"v_{row['ID']}_{i+j}"): expand_modal(row['ID'])
                             st.markdown('</div></div>', unsafe_allow_html=True)
