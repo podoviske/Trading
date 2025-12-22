@@ -18,11 +18,13 @@ USER_FILE = 'users.json'
 
 def load_users():
     if os.path.exists(USER_FILE):
-        with open(USER_FILE, 'r') as f: return json.load(f)
+        with open(USER_FILE, 'r') as f:
+            return json.load(f)
     return {"admin": "1234"}
 
 def save_users(users):
-    with open(USER_FILE, 'w') as f: json.dump(users, f)
+    with open(USER_FILE, 'w') as f:
+        json.dump(users, f)
 
 # --- SISTEMA DE LOGIN SEGURO ---
 def check_password():
@@ -67,31 +69,33 @@ def check_password():
 if check_password():
     # --- DIRETÓRIOS E ARQUIVOS ---
     IMG_DIR = "trade_prints"
-    if not os.path.exists(IMG_DIR): os.makedirs(IMG_DIR)
+    if not os.path.exists(IMG_DIR):
+        os.makedirs(IMG_DIR)
     CSV_FILE = 'evotrade_data.csv'
     ATM_FILE = 'atm_configs.json'
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-    # --- CSS PREMIUM EVO ---
+    # --- ESTILO CSS PREMIUM ---
     st.markdown("""
         <style>
         [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
         .stApp { background-color: #0F0F0F; }
+        
         .sidebar-brand-container { display: flex; align-items: center; gap: 12px; padding: 10px 5px 25px 5px; }
         .evo-logo-box { background-color: #B20000; color: white; padding: 5px 12px; border-radius: 8px; font-weight: 900; font-size: 24px; }
-        .evo-text-red { color: #B20000; font-size: 22px; font-weight: 900; line-height: 1; }
-        .evo-text-white { color: white; font-size: 19px; font-weight: 700; line-height: 1; }
+        .evo-brand-text { display: flex; flex-direction: column; }
+        .evo-title-red { color: #B20000; font-size: 22px; font-weight: 900; line-height: 1; margin: 0; }
+        .trade-title-white { color: white; font-size: 18px; font-weight: 700; margin-top: -2px; }
         
-        /* Metric Card Pro */
         .metric-container { 
             background-color: #161616; border: 1px solid #262626; padding: 15px; 
-            border-radius: 10px; text-align: center; margin-bottom: 12px;
+            border-radius: 10px; text-align: center; margin-bottom: 12px; min-height: 100px;
         }
         .metric-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: center; align-items: center; gap: 6px; }
         .metric-value { color: white; font-size: 20px; font-weight: bold; margin-top: 5px; }
         .help-icon { 
             color: #B20000; font-size: 11px; cursor: help; border: 1px solid #B20000; 
-            border-radius: 50%; width: 15px; height: 15px; display: inline-flex; 
+            border-radius: 50%; width: 16px; height: 16px; display: inline-flex; 
             align-items: center; justify-content: center; 
         }
         
@@ -128,10 +132,11 @@ if check_password():
 
     def get_base64(path):
         try:
-            with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
+            with open(path, "rb") as f:
+                return base64.b64encode(f.read()).decode()
         except: return None
 
-    def calculate_streaks_and_dd(results):
+    def calculate_advanced_stats(results):
         if not results: return 0, 0, 0
         m_win = m_loss = c_win = c_loss = peak = acc = mdd = 0
         for r in results:
@@ -146,8 +151,8 @@ if check_password():
             mdd = max(mdd, peak - acc)
         return m_win, m_loss, mdd
 
-    # --- MODAL DETALHES ---
-    @st.dialog("Resumo da Operação", width="large")
+    # --- MODAL ---
+    @st.dialog("Detalhes do Trade", width="large")
     def expand_modal(trade_id):
         curr_df = load_data()
         row = curr_df[curr_df['ID'] == trade_id].iloc[0]
@@ -159,77 +164,84 @@ if check_password():
                 for i, t in enumerate(ts):
                     with t: st.image(ps[i], use_container_width=True)
             st.markdown("---")
-            notas = st.text_area("Anotações do Trade:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
-            if st.button("💾 Atualizar Notas"):
+            notas = st.text_area("Notas:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
+            if st.button("💾 Salvar Notas"):
                 curr_df.loc[curr_df['ID'] == trade_id, 'Notas'] = notas
-                curr_df.to_csv(CSV_FILE, index=False); st.success("Notas Salvas!"); time.sleep(0.5); st.rerun()
+                curr_df.to_csv(CSV_FILE, index=False); st.success("Salvo!"); time.sleep(0.5); st.rerun()
         with c2:
-            st.markdown("### Dados Técnicos")
+            st.markdown("### Info")
             st.write(f"📅 **Data:** {row['Data']} | 👤 **User:** {row['Usuario']}")
             dir_c = "cyan" if row['Direcao'] == "Compra" else "orange"
             st.markdown(f"↕️ **Direção:** :{dir_c}[{row['Direcao']}]")
             st.divider()
             res_c = "#00FF88" if row['Resultado'] > 0 else "#FF4B4B"
-            st.markdown(f"💰 **P&L:** <span style='color:{res_c}; font-weight:bold; font-size:24px'>${row['Resultado']:,.2f}</span>", unsafe_allow_html=True)
-            st.write(f"📊 **Pontos Médios:** {row['Pts_Medio']:.2f}")
-            if st.button("🗑️ Excluir Operação", type="primary"):
+            st.markdown(f"💰 **P&L:** <span style='color:{res_c}; font-weight:bold; font-size:20px'>${row['Resultado']:,.2f}</span>", unsafe_allow_html=True)
+            if st.button("🗑️ Deletar Trade", type="primary"):
                 st.session_state.to_delete = trade_id; st.rerun()
 
     # --- INICIALIZAÇÃO ---
-    atm_db = json.load(open(ATM_FILE, 'r')) if os.path.exists(ATM_FILE) else {"Personalizado": {"lote": 1, "stop": 0.0, "parciais": []}}
+    if os.path.exists(ATM_FILE):
+        with open(ATM_FILE, 'r') as f: atm_db = json.load(f)
+    else: atm_db = {"Personalizado": {"lote": 1, "stop": 0.0, "parciais": []}}
+    
     df = load_data()
 
     with st.sidebar:
-        st.markdown('<div class="sidebar-brand-container"><div class="evo-logo-box">E</div><div class="evo-text-group"><div class="evo-text-red">EVO</div><div class="evo-text-white">TRADE</div></div></div>', unsafe_allow_html=True)
+        st.markdown("""
+            <div class="sidebar-brand-container">
+                <div class="evo-logo-box">E</div>
+                <div class="evo-brand-text">
+                    <div class="evo-title-red">EVO</div>
+                    <div class="trade-title-white">TRADE</div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
         menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
         icons = ["grid-1x2", "currency-dollar", "gear", "clock-history"]
         if st.session_state["logged_user"] == "admin": menu.append("Gerenciar Usuários"); icons.append("people")
         selected = option_menu(None, menu, icons=icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
         if st.button("Sair / Logout"): del st.session_state["password_correct"]; st.rerun()
 
-    # --- DASHBOARD (12 MÉTRICAS + PRIVACIDADE) ---
+    # --- ABA: DASHBOARD (12 MÉTRICAS + PRIVACIDADE) ---
     if selected == "Dashboard":
-        st.title("📊 Analytics Profissional")
+        st.title("📊 Analytics Pessoal")
         df_u = df[df['Usuario'] == st.session_state["logged_user"]]
         
         if not df_u.empty:
-            vis = st.segmented_control("Filtrar por Contexto:", ["Capital Geral", "Contexto A", "Contexto B", "Contexto C"], default="Capital Geral")
+            vis = st.segmented_control("Visão:", ["Capital Geral", "Contexto A", "Contexto B", "Contexto C"], default="Capital Geral")
             df_f = df_u if vis == "Capital Geral" else df_u[df_u['Contexto'] == vis]
             
             if not df_f.empty:
-                # Cálculos Base
                 total = len(df_f); wins = df_f[df_f['Resultado'] > 0]; losses = df_f[df_f['Resultado'] < 0]
                 wr = (len(wins)/total*100) if total > 0 else 0
                 aw = wins['Resultado'].mean() if not wins.empty else 0
                 al = abs(losses['Resultado'].mean()) if not losses.empty else 0
                 rr = (aw/al) if al > 0 else 0; t_pl = df_f['Resultado'].sum()
                 
-                # Cálculos Sugeridos
-                total_gains = wins['Resultado'].sum()
-                total_loss = abs(losses['Resultado'].sum())
-                pf = total_gains/total_loss if total_loss > 0 else total_gains
+                total_g = wins['Resultado'].sum(); total_l = abs(losses['Resultado'].sum())
+                pf = total_g/total_l if total_l > 0 else total_g
                 exp = (wr/100 * aw) - ((1 - wr/100) * al)
-                m_win, m_loss, mdd = calculate_streaks_and_dd(df_f['Resultado'].tolist())
+                m_win, m_loss, mdd = calculate_advanced_stats(df_f['Resultado'].tolist())
                 avg_lote = df_f['Lote'].mean()
 
                 # Grid 4 Colunas x 3 Linhas
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: 
-                    card_metric("P&L TOTAL", f"${t_pl:,.2f}", "O lucro ou prejuízo total que você colocou no bolso.", "#00FF88" if t_pl > 0 else "#FF4B4B")
-                    card_metric("GAIN MÉDIO", f"${aw:,.2f}", "Quanto você ganha, em média, em cada trade vitorioso.", "#00FF88")
-                    card_metric("MAX SEQ GAIN", f"{m_win}x", "Seu recorde histórico de vitórias seguidas.", "#00FF88")
+                    card_metric("P&L TOTAL", f"${t_pl:,.2f}", "Saldo líquido acumulado (Lucro - Prejuízo).", "#00FF88" if t_pl > 0 else "#FF4B4B")
+                    card_metric("GAIN MÉDIO", f"${aw:,.2f}", "Valor médio recebido em cada operação vencedora.", "#00FF88")
+                    card_metric("MAX SEQ GAIN", f"{m_win}x", "Recorde histórico de trades vitoriosos consecutivos.", "#00FF88")
                 with c2: 
-                    card_metric("PROFIT FACTOR", f"{pf:.2f}", "Sustentabilidade: Acima de 1.0 você ganha mais do que perde no total.")
-                    card_metric("LOSS MÉDIO", f"$-{al:,.2f}", "Quanto você perde, em média, quando o stop é atingido.", "#FF4B4B")
-                    card_metric("MAX SEQ LOSS", f"{m_loss}x", "Seu recorde de stops seguidos. Ajuda no controle emocional.", "#FF4B4B")
+                    card_metric("PROFIT FACTOR", f"{pf:.2f}", "Sustentabilidade: Acima de 1.0 indica que você ganha mais do que perde no total.")
+                    card_metric("LOSS MÉDIO", f"$-{al:,.2f}", "Valor médio perdido em cada operação perdedora.", "#FF4B4B")
+                    card_metric("MAX SEQ LOSS", f"{m_loss}x", "Recorde de stops seguidos. Importante para o psicológico.", "#FF4B4B")
                 with c3: 
                     card_metric("WIN RATE", f"{wr:.1f}%", "Sua taxa de acerto. Indica quantas operações dão gain a cada 100.", "#B20000")
-                    card_metric("EXPECTATIVA", f"${exp:,.2f}", "Quanto você espera ganhar por trade no longo prazo. Deve ser positivo.")
-                    card_metric("MAX DRAWDOWN", f"${mdd:,.2f}", "O maior 'tombo' que sua conta já levou (Pico ao Vale).", "#FF4B4B")
+                    card_metric("EXPECTATIVA", f"${exp:,.2f}", "Quanto você espera ganhar por trade em média no longo prazo.")
+                    card_metric("MAX DRAWDOWN", f"${mdd:,.2f}", "A maior queda da conta a partir de um topo anterior.", "#FF4B4B")
                 with c4: 
-                    card_metric("TRADES TOTAL", str(total), "Número total de operações registradas no sistema.")
-                    card_metric("RISCO:RETORNO", f"1:{rr:.2f}", "Relação de ganho. Diz se você ganha 'baldes' e perde 'colheres'.")
-                    card_metric("LOTE MÉDIO", f"{avg_lote:.1f}", "A média de contratos que você costuma utilizar por operação.")
+                    card_metric("TRADES TOTAL", str(total), "Quantidade total de operações registradas por você.")
+                    card_metric("RISCO:RETORNO", f"1:{rr:.2f}", "Relação entre ganho médio e perda média.")
+                    card_metric("LOTE MÉDIO", f"{avg_lote:.1f}", "Média de contratos utilizados por operação.")
                 
                 st.markdown("---")
                 df_g = df_f.sort_values('Data').reset_index(drop=True)
@@ -237,19 +249,20 @@ if check_password():
                 fig = px.area(df_g, x=df_g.index + 1, y='Acumulado', title="Curva de Patrimônio (Equity Curve)", template="plotly_dark", markers=True)
                 fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.warning("Sem dados suficientes para este contexto.")
-        else: st.info("Você ainda não registrou nenhum trade.")
+            else: st.warning("Sem dados para este contexto.")
+        else: st.info("Você ainda não registrou trades.")
 
-    # --- ABA: REGISTRAR TRADE (RESTAURADO) ---
+    # --- ABA: REGISTRAR TRADE ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         if 'n_ex' not in st.session_state: st.session_state.n_ex = 0
         if 'last_atm' not in st.session_state: st.session_state.last_atm = None
-        col_a, col_b = st.columns([3, 1])
-        with col_a:
+        
+        ca, cb = st.columns([3, 1])
+        with ca:
             atm_sel = st.selectbox("🎯 Escolher ATM", list(atm_db.keys())); config = atm_db[atm_sel]
             if st.session_state.last_atm != atm_sel: st.session_state.n_ex = 0; st.session_state.last_atm = atm_sel; st.rerun()
-        with col_b:
+        with cb:
             st.write(""); bt1, bt2 = st.columns(2)
             bt1.button("➕", on_click=lambda: st.session_state.update({"n_ex": st.session_state.n_ex + 1}))
             bt2.button("🧹", on_click=lambda: st.rerun())
@@ -261,37 +274,41 @@ if check_password():
             lt = st.number_input("Contratos", min_value=0, value=int(config["lote"])); stp = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]))
             up = st.file_uploader("📸 Anexar Prints", accept_multiple_files=True)
         with f3:
-            st.write("**Gerenciamento de Saídas**"); saídas = []; aloc = 0
+            st.write("**Saídas**"); saídas = []; aloc = 0
             for i, p_c in enumerate(config["parciais"]):
                 sc1, sc2 = st.columns(2); p = sc1.number_input(f"Alvo P{i+1} (Pts)", value=float(p_c[0]), key=f"p_{i}"); q = sc2.number_input(f"Qtd P{i+1}", value=int(p_c[1]), key=f"q_{i}"); saídas.append((p, q)); aloc += q
             for i in range(st.session_state.n_ex):
                 sc1, sc2 = st.columns(2); p = sc1.number_input(f"Alvo Ex {i+1} (Pts)", key=f"pe_{i}"); q = sc2.number_input(f"Qtd Ex {i+1}", key=f"qe_{i}"); saídas.append((p, q)); aloc += q
             if lt > 0 and lt != aloc: st.markdown(f'<div class="piscante-erro">FALTAM {lt-aloc} CONTRATOS</div>', unsafe_allow_html=True)
-            elif lt == aloc and lt > 0: st.success("✅ Posição 100% Alocada")
+            elif lt == aloc and lt > 0: st.success("✅ Posição Alocada")
 
         rb1, rb2 = st.columns(2)
         with rb1:
             if st.button("💾 REGISTRAR GAIN", use_container_width=True) and lt == aloc:
                 res = sum([s[0]*MULTIPLIERS[atv]*s[1] for s in saídas]); pt_m = sum([s[0]*s[1] for s in saídas])/lt; nid = str(uuid.uuid4()); paths = []
                 for i, f in enumerate(up):
-                    p_path = os.path.join(IMG_DIR, f"{nid}_{i}.png"); open(p_path, "wb").write(f.getbuffer()); paths.append(p_path)
+                    p_path = os.path.join(IMG_DIR, f"{nid}_{i}.png")
+                    with open(p_path, "wb") as bf: bf.write(f.getbuffer())
+                    paths.append(p_path)
                 nt = pd.DataFrame([{'Data': dt, 'Ativo': atv, 'Contexto': ctx, 'Direcao': dr, 'Lote': lt, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pt_m, 'Risco_Fin': (stp*MULTIPLIERS[atv]*lt), 'ID': nid, 'Prints': "|".join(paths), 'Notas': "", 'Usuario': st.session_state["logged_user"]}])
-                df = pd.concat([df, nt], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.success("🎯 Trade Registrado!"); st.rerun()
+                df = pd.concat([df, nt], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.success("🎯 Registrado!"); st.rerun()
         with rb2:
             if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True) and lt > 0:
                 res_s = -(stp*MULTIPLIERS[atv]*lt); nid = str(uuid.uuid4()); paths = []
                 for i, f in enumerate(up):
-                    p_path = os.path.join(IMG_DIR, f"{nid}_{i}.png"); open(p_path, "wb").write(f.getbuffer()); paths.append(p_path)
+                    p_path = os.path.join(IMG_DIR, f"{nid}_{i}.png")
+                    with open(p_path, "wb") as bf: bf.write(f.getbuffer())
+                    paths.append(p_path)
                 nt = pd.DataFrame([{'Data': dt, 'Ativo': atv, 'Contexto': ctx, 'Direcao': dr, 'Lote': lt, 'ATM': atm_sel, 'Resultado': res_s, 'Pts_Medio': -stp, 'Risco_Fin': abs(res_s), 'ID': nid, 'Prints': "|".join(paths), 'Notas': "", 'Usuario': st.session_state["logged_user"]}])
                 df = pd.concat([df, nt], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.error("🚨 Stop Registrado!"); st.rerun()
 
     # --- ABA: CONFIGURAR ATM ---
     elif selected == "Configurar ATM":
-        st.title("⚙️ Editor de Estratégias ATM")
-        with st.expander("✨ Criar Novo Template de Saída", expanded=True):
+        st.title("⚙️ Editor de ATM")
+        with st.expander("✨ Criar Novo Template", expanded=True):
             n = st.text_input("Nome da Estratégia"); ca1, ca2 = st.columns(2); l_p = ca1.number_input("Lote Total", min_value=1); s_p = ca2.number_input("Stop Loss (Pts)", min_value=0.0); n_p = st.number_input("Número de Alvos", 1, 6, 1); n_p_list = []
             for i in range(n_p):
-                cp1, cp2 = st.columns(2); n_p_list.append([cp1.number_input(f"Pts Alvo {i+1}", key=f"ap_{i}"), cp2.number_input(f"Qtd Contr. Alvo {i+1}", key=f"aq_{i}", min_value=1)])
+                cp1, cp2 = st.columns(2); n_p_list.append([cp1.number_input(f"Pts Alvo {i+1}", key=f"ap_{i}"), cp2.number_input(f"Contr. Alvo {i+1}", key=f"aq_{i}", min_value=1)])
             if st.button("💾 Salvar Template"):
                 atm_db[n] = {"lote": l_p, "stop": s_p, "parciais": n_p_list}
                 with open(ATM_FILE, 'w') as f: json.dump(atm_db, f)
@@ -300,22 +317,24 @@ if check_password():
             if nome != "Personalizado":
                 c_n, c_d = st.columns([4, 1]); c_n.write(f"**{nome}** (Lote: {cfg['lote']})")
                 if c_d.button("Excluir", key=f"del_{nome}"):
-                    del atm_db[nome]; with open(ATM_FILE, 'w') as f: json.dump(atm_db, f); st.rerun()
+                    del atm_db[nome]
+                    with open(ATM_FILE, 'w') as f: json.dump(atm_db, f)
+                    st.rerun()
 
     # --- ABA: HISTÓRICO ---
     elif selected == "Histórico":
         st.title("📜 Galeria de Operações")
         if 'to_delete' in st.session_state:
             df = df[df['ID'] != st.session_state.to_delete]; df.to_csv(CSV_FILE, index=False); del st.session_state.to_delete; st.rerun()
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
+        cf1, cf2 = st.columns(2)
+        with cf1:
             u_opts = ["Todos"] + list(df['Usuario'].unique()) if st.session_state["logged_user"] == "admin" else [st.session_state["logged_user"]]
             f_u = st.selectbox("Filtrar Operador:", u_opts)
-        with col_f2: f_cx = st.selectbox("Filtrar Contexto:", ["Todos", "Contexto A", "Contexto B", "Contexto C"])
+        with cf2: f_cx = st.selectbox("Filtrar Contexto:", ["Todos", "Contexto A", "Contexto B", "Contexto C"])
         
         df_h = df.copy()
         if f_u != "Todos": df_h = df_h[df_h['Usuario'] == f_u]
-        if f_ctx := f_cx != "Todos": df_h = df_h[df_h['Contexto'] == f_cx]
+        if f_cx != "Todos": df_h = df_h[df_h['Contexto'] == f_cx]
         
         if not df_h.empty:
             df_disp = df_h.iloc[::-1].copy(); df_disp['Num'] = range(len(df_disp), 0, -1)
@@ -323,20 +342,20 @@ if check_password():
                 cols = st.columns(5)
                 for j in range(5):
                     if i + j < len(df_disp):
-                        row = df_disp.iloc[i + j]; p_s = str(row['Prints']).split("|") if row['Prints'] else []
+                        row = df_disp.iloc[i + j]; ps = str(row['Prints']).split("|") if row['Prints'] else []
                         with cols[j]:
-                            img_h = f'<div class="img-container"><img src="data:image/png;base64,{get_base64(p_s[0])}"></div>' if p_s and os.path.exists(p_s[0]) else '<div class="img-container">Sem Imagem</div>'
+                            img_h = f'<div class="img-container"><img src="data:image/png;base64,{get_base64(ps[0])}"></div>' if ps and os.path.exists(ps[0]) else '<div class="img-container">Sem Imagem</div>'
                             st.markdown(f'<div class="trade-card">{img_h}<div class="card-footer"><div><b style="color:white">{row["Usuario"]}</b><br><small style="color:#888">{row["Contexto"]}</small></div><div style="color:{"#00FF88" if row["Resultado"] > 0 else "#FF4B4B"}; font-weight:bold;">${row["Resultado"]:,.2f}</div>', unsafe_allow_html=True)
-                            if st.button("Ver Detalhes", key=f"v_{row['ID']}"): expand_modal(row['ID'])
+                            if st.button("Ver", key=f"v_{row['ID']}"): expand_modal(row['ID'])
                             st.markdown('</div></div>', unsafe_allow_html=True)
 
-    # --- ABA: GERENCIAR USUÁRIOS (ADM) ---
+    # --- GERENCIAR USUÁRIOS (ADM) ---
     elif st.session_state["logged_user"] == "admin" and selected == "Gerenciar Usuários":
-        st.title("👥 Gestão de Usuários")
+        st.title("👥 Gestão")
         u_db = load_users()
-        with st.expander("➕ Cadastrar Novo Membro"):
-            nu = st.text_input("Username"); np = st.text_input("Senha", type="password")
-            if st.button("Criar Acesso"): u_db[nu] = np; save_users(u_db); st.rerun()
+        with st.expander("Novo Usuário"):
+            nu = st.text_input("User"); np = st.text_input("Senha", type="password")
+            if st.button("Criar"): u_db[nu] = np; save_users(u_db); st.rerun()
         for u in list(u_db.keys()):
             c_u, c_d = st.columns([4, 1]); c_u.write(f"👤 {u}")
             if u != "admin" and c_d.button("Remover", key=f"rm_{u}"): del u_db[u]; save_users(u_db); st.rerun()
