@@ -17,18 +17,20 @@ USER_FILE = 'users.json'
 
 def load_users():
     if os.path.exists(USER_FILE):
-        with open(USER_FILE, 'r') as f: return json.load(f)
+        with open(USER_FILE, 'r') as f:
+            return json.load(f)
     return {"admin": "1234"}
 
 def save_users(users):
-    with open(USER_FILE, 'w') as f: json.dump(users, f)
+    with open(USER_FILE, 'w') as f:
+        json.dump(users, f)
 
 # --- SISTEMA DE LOGIN SEGURO ---
 def check_password():
     users = load_users()
     def password_entered():
-        u = st.session_state["username"]
-        p = st.session_state["password"]
+        u = st.session_state.get("username")
+        p = st.session_state.get("password")
         if u in users and users[u] == p:
             st.session_state["password_correct"] = True
             st.session_state["logged_user"] = u
@@ -47,6 +49,7 @@ def check_password():
             }
             .logo-main { color: #B20000; font-size: 50px; font-weight: 900; }
             .logo-sub { color: white; font-size: 35px; font-weight: 700; margin-top: -15px; }
+            @media (max-width: 768px) { .login-container { width: 90%; } }
             </style>
         """, unsafe_allow_html=True)
         
@@ -64,7 +67,7 @@ def check_password():
     return st.session_state["password_correct"]
 
 if check_password():
-    # --- DIRETÓRIOS E PERSISTÊNCIA ---
+    # --- DIRETÓRIOS ---
     IMG_DIR = "trade_prints"
     if not os.path.exists(IMG_DIR): os.makedirs(IMG_DIR)
 
@@ -72,19 +75,22 @@ if check_password():
     ATM_FILE = 'atm_configs.json'
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
-    # --- ESTILO CSS GERAL PREMIUM & RESPONSIVO ---
+    # --- ESTILO CSS PREMIUM & RESPONSIVO ---
     st.markdown("""
         <style>
         [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
         .stApp { background-color: #0F0F0F; }
         
-        .sidebar-brand-container { display: flex; align-items: center; gap: 12px; padding: 10px 5px 25px 5px; }
-        .evo-logo-box { background-color: #B20000; color: white; padding: 8px 12px; border-radius: 8px; font-weight: 900; font-size: 24px; box-shadow: 0px 0px 15px rgba(178, 0, 0, 0.4); }
-        .evo-brand-text { display: flex; flex-direction: column; }
-        .evo-title-red { color: #B20000; font-size: 22px; font-weight: 900; line-height: 1; }
-        .trade-title-white { color: white; font-size: 18px; font-weight: 700; margin-top: -2px; }
+        .sidebar-logo-box { padding: 10px 0px 30px 5px; display: flex; align-items: center; gap: 12px; }
+        .evo-icon { background-color: #B20000; color: white; padding: 5px 12px; border-radius: 8px; font-weight: 900; font-size: 24px; }
+        .evo-text-group { display: flex; flex-direction: column; }
+        .evo-text-red { color: #B20000; font-size: 22px; font-weight: 900; line-height: 1; }
+        .evo-text-white { color: white; font-size: 19px; font-weight: 700; line-height: 1; }
 
-        .metric-container { background-color: #161616; border: 1px solid #262626; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 10px; }
+        .metric-container {
+            background-color: #161616; border: 1px solid #262626; padding: 20px;
+            border-radius: 10px; text-align: center; margin-bottom: 10px;
+        }
         .metric-label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
         .metric-value { color: white; font-size: 22px; font-weight: bold; }
         
@@ -97,10 +103,10 @@ if check_password():
         .piscante-erro { padding: 15px; border-radius: 5px; color: white; font-weight: bold; text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; }
         
         .stButton > button { width: 100%; border-radius: 8px; font-weight: 600; }
-        .trade-card { background-color: #161616; border: 1px solid #333; border-radius: 12px; margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; height: auto; min-height: 350px; }
+        .trade-card { background-color: #161616; border: 1px solid #333; border-radius: 12px; margin-bottom: 20px; overflow: hidden; display: flex; flex-direction: column; min-height: 350px; }
         .img-container { width: 100%; height: 180px; background-color: #000; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #333; }
         .img-container img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
-        .card-footer { padding: 15px; text-align: center; flex-grow: 1; }
+        .card-footer { padding: 15px; text-align: center; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -117,7 +123,8 @@ if check_password():
         if os.path.exists(CSV_FILE):
             try:
                 df = pd.read_csv(CSV_FILE)
-                if 'Usuario' not in df.columns: df['Usuario'] = "admin"
+                for col in cols:
+                    if col not in df.columns: df[col] = "admin" if col == 'Usuario' else ""
                 df['Data'] = pd.to_datetime(df['Data']).dt.date
                 return df
             except: return pd.DataFrame(columns=cols)
@@ -128,13 +135,10 @@ if check_password():
             with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
         except: return None
 
-    def card_metric(label, value, color="white"):
-        st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value" style="color: {color};">{value}</div></div>', unsafe_allow_html=True)
-
     atm_db = load_atm()
     df = load_data()
 
-    # --- MODAL COMPLETO (RESTAURADO) ---
+    # --- DIALOG DETALHES ---
     @st.dialog("Detalhes do Trade", width="large")
     def expand_modal(trade_id):
         current_df = load_data()
@@ -152,7 +156,9 @@ if check_password():
             notas_input = st.text_area("Notas:", value=str(row['Notas']) if pd.notna(row['Notas']) else "", height=150)
             if st.button("💾 Salvar Notas"):
                 current_df.loc[current_df['ID'] == trade_id, 'Notas'] = notas_input
-                current_df.to_csv(CSV_FILE, index=False); st.success("Salvo!"); time.sleep(1); st.rerun()
+                current_df.to_csv(CSV_FILE, index=False)
+                st.success("Salvo!")
+                time.sleep(1); st.rerun()
         with c2:
             st.markdown(f"### Trade Info")
             st.write(f"📅 **Data:** {row['Data']} | 👤 **User:** {row['Usuario']}")
@@ -168,11 +174,11 @@ if check_password():
     # --- SIDEBAR NAV ---
     with st.sidebar:
         st.markdown("""
-            <div class="sidebar-brand-container">
-                <div class="evo-logo-box">E</div>
-                <div class="evo-brand-text">
-                    <div class="evo-title-red">EVO</div>
-                    <div class="trade-title-white">TRADE</div>
+            <div class="sidebar-logo-box">
+                <div class="evo-icon">E</div>
+                <div class="evo-text-group">
+                    <div class="evo-text-red">EVO</div>
+                    <div class="evo-text-white">TRADE</div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -187,28 +193,33 @@ if check_password():
         if st.button("Sair / Logout"):
             del st.session_state["password_correct"]; st.rerun()
 
-    # --- LOGICA: GERENCIAR USUÁRIOS (ADM) ---
+    # --- ABA: GERENCIAR USUÁRIOS ---
     if selected == "Gerenciar Usuários":
         st.title("👥 Cadastro de Usuários")
         users = load_users()
-        with st.expander("Criar Usuário", expanded=True):
+        with st.expander("Cadastrar Novo Usuário", expanded=True):
             nu = st.text_input("Username")
             np = st.text_input("Password", type="password")
-            if st.button("Salvar"):
-                users[nu] = np; save_users(users); st.success("Cadastrado!"); st.rerun()
+            if st.button("Criar Acesso"):
+                if nu and np:
+                    users[nu] = np; save_users(users)
+                    st.success("Cadastrado!"); time.sleep(1); st.rerun()
+        
+        st.markdown("### Usuários Ativos")
         for u in list(users.keys()):
             c_u, c_d = st.columns([4, 1])
             c_u.write(f"👤 {u}")
-            if u != "admin" and c_d.button("Remover", key=f"del_{u}"):
-                del users[u]; save_users(users); st.rerun()
+            if u != "admin":
+                if c_d.button("Remover", key=f"del_{u}"):
+                    del users[u]; save_users(users); st.rerun()
 
-    # --- LOGICA: DASHBOARD (RESTAURADO COMPLETO) ---
+    # --- ABA: DASHBOARD ---
     elif selected == "Dashboard":
         st.title("📊 Analytics")
         df_view = df if st.session_state["logged_user"] == "admin" else df[df['Usuario'] == st.session_state["logged_user"]]
         
         if not df_view.empty:
-            f_v = st.segmented_control("Filtrar Visão:", ["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
+            f_v = st.segmented_control("Visão:", ["Capital", "Contexto A", "Contexto B", "Contexto C"], default="Capital")
             df_f = df_view.copy() if f_v == "Capital" else df_view[df_view['Contexto'] == f_v].copy()
             
             if not df_f.empty:
@@ -222,24 +233,23 @@ if check_password():
                 avg_lote = df_f['Lote'].mean()
 
                 r1, r2, r3 = st.columns(3)
-                with r1: card_metric("P&L TOTAL", f"${total_pl:,.2f}", "#00FF88" if total_pl > 0 else "#FF4B4B")
-                with r1: card_metric("RISCO:RETORNO", f"1:{rr:.2f}")
-                with r1: card_metric("PTS MÉD GAIN", f"{avg_pts_gain:.2f}")
-                with r2: card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
-                with r2: card_metric("LOTE MÉDIO", f"{avg_lote:.1f}")
-                with r2: card_metric("PTS MÉD LOSS", f"{avg_pts_loss:.2f}")
-                with r3: card_metric("TRADES TOTAL", total)
-                with r3: card_metric("GAIN MÉDIO ($)", f"${aw:,.2f}", "#00FF88")
-                with r3: card_metric("LOSS MÉDIO ($)", f"$-{al:,.2f}", "#FF4B4B")
+                with r1: 
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">P&L TOTAL</div><div class="metric-value" style="color:{"#00FF88" if total_pl>0 else "#FF4B4B"}">${total_pl:,.2f}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">RISCO:RETORNO</div><div class="metric-value">1:{rr:.2f}</div></div>', unsafe_allow_html=True)
+                with r2: 
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">WIN RATE</div><div class="metric-value" style="color:#B20000">{wr:.1f}%</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">LOTE MÉDIO</div><div class="metric-value">{avg_lote:.1f}</div></div>', unsafe_allow_html=True)
+                with r3: 
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">TRADES TOTAL</div><div class="metric-value">{total}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">GAIN MÉDIO</div><div class="metric-value" style="color:#00FF88">${aw:,.2f}</div></div>', unsafe_allow_html=True)
                 
-                st.markdown("---")
                 df_g = df_f.sort_values('Data').reset_index(drop=True)
                 df_g['Acumulado'] = df_g['Resultado'].cumsum()
-                fig = px.area(df_g, x=df_g.index + 1, y='Acumulado', template="plotly_dark", markers=True)
+                fig = px.area(df_g, x=range(len(df_g)), y='Acumulado', template="plotly_dark", markers=True)
                 fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)', line_shape='spline')
                 st.plotly_chart(fig, use_container_width=True)
 
-    # --- LOGICA: REGISTRAR TRADE (RESTAURADO COMPLETO) ---
+    # --- ABA: REGISTRAR TRADE ---
     elif selected == "Registrar Trade":
         st.title("Registro de Trade")
         if 'n_extras' not in st.session_state: st.session_state.n_extras = 0
@@ -285,7 +295,7 @@ if check_password():
                         p_path = os.path.join(IMG_DIR, f"{n_id}_{i}.png"); paths.append(p_path)
                         with open(p_path, "wb") as bf: bf.write(f.getbuffer())
                     n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res, 'Pts_Medio': pts_m, 'Risco_Fin': (stop_p*MULTIPLIERS[ativo]*lote_t), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': "", 'Usuario': st.session_state["logged_user"]}])
-                    df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.success("🎯 Registrado!"); st.rerun()
+                    df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.success("🎯 Salvo!"); st.rerun()
         with rb2:
             if st.button("🚨 REGISTRAR STOP FULL", type="secondary", use_container_width=True):
                 if lote_t > 0 and stop_p > 0:
@@ -296,7 +306,7 @@ if check_password():
                     n_t = pd.DataFrame([{'Data': data, 'Ativo': ativo, 'Contexto': contexto, 'Direcao': direcao, 'Lote': lote_t, 'ATM': atm_sel, 'Resultado': res_s, 'Pts_Medio': -stop_p, 'Risco_Fin': abs(res_s), 'ID': n_id, 'Prints': "|".join(paths), 'Notas': "", 'Usuario': st.session_state["logged_user"]}])
                     df = pd.concat([df, n_t], ignore_index=True); df.to_csv(CSV_FILE, index=False); st.error("🚨 Stop!"); st.rerun()
 
-    # --- LOGICA: CONFIGURAR ATM (RESTAURADO COMPLETO) ---
+    # --- ABA: CONFIGURAR ATM ---
     elif selected == "Configurar ATM":
         st.title("⚙️ Editor de ATM")
         with st.expander("✨ Criar Novo Template", expanded=True):
@@ -304,14 +314,20 @@ if check_password():
             for i in range(n_p):
                 cp1, cp2 = st.columns(2); novas_p.append([cp1.number_input(f"Pts {i+1}", key=f"ap_{i}"), cp2.number_input(f"Qtd {i+1}", key=f"aq_{i}", min_value=1)])
             if st.button("💾 Salvar ATM"):
-                atm_db[n] = {"lote": l_p, "stop": s_p, "parciais": novas_p}; 
-                with open(ATM_FILE, 'w') as f: json.dump(atm_db, f); st.rerun()
+                atm_db[n] = {"lote": l_p, "stop": s_p, "parciais": novas_p}
+                with open(ATM_FILE, 'w') as f:
+                    json.dump(atm_db, f)
+                st.rerun()
         for nome, cfg in list(atm_db.items()):
             if nome != "Personalizado":
                 c_n, c_d = st.columns([4, 1]); c_n.write(f"**{nome}** (Lote: {cfg['lote']})")
-                if c_d.button("Excluir", key=f"del_{nome}"): del atm_db[nome]; with open(ATM_FILE, 'w') as f: json.dump(atm_db, f); st.rerun()
+                if c_d.button("Excluir", key=f"del_{nome}"):
+                    del atm_db[nome]
+                    with open(ATM_FILE, 'w') as f:
+                        json.dump(atm_db, f)
+                    st.rerun()
 
-    # --- LOGICA: HISTÓRICO (FILTROS NOVOS + MODAL ORIGINAL) ---
+    # --- ABA: HISTÓRICO ---
     elif selected == "Histórico":
         st.title("📜 Galeria")
         if 'to_delete' in st.session_state:
