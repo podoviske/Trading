@@ -118,7 +118,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD (TURBINADA) ---
+    # --- 7. ABA: DASHBOARD ---
     if selected == "Dashboard":
         st.title("📊 Analytics Pessoal")
         df = load_trades_db()
@@ -127,7 +127,6 @@ if check_password():
             df_u = df[df['usuario'] == st.session_state["logged_user"]]
             
             if not df_u.empty:
-                # Filtros de Data
                 filtro_periodo = st.selectbox("📅 Período", ["Geral", "Hoje", "Esta Semana", "Este Mês"])
                 
                 if filtro_periodo == "Hoje":
@@ -142,7 +141,6 @@ if check_password():
                 if df_u.empty:
                     st.info(f"Sem trades registrados em: {filtro_periodo}")
                 else:
-                    # Métricas Principais
                     t_pl = df_u['resultado'].sum()
                     wins = len(df_u[df_u['resultado'] > 0])
                     total = len(df_u)
@@ -154,7 +152,6 @@ if check_password():
                     with c3: card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
                     with c4: card_metric("FATOR DE LUCRO", f"{(df_u[df_u['resultado']>0]['resultado'].sum() / abs(df_u[df_u['resultado']<0]['resultado'].sum()) if len(df_u[df_u['resultado']<0]) > 0 else 0):.2f}")
 
-                    # Gráficos
                     g1, g2 = st.columns([2, 1])
                     with g1:
                         df_u = df_u.sort_values('created_at')
@@ -169,7 +166,7 @@ if check_password():
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. REGISTRAR TRADE (PERFEITA) ---
+    # --- 8. REGISTRAR TRADE ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         
@@ -260,51 +257,122 @@ if check_password():
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # --- 9. CONFIGURAR ATM (MELHORADA) ---
+    # --- 9. CONFIGURAR ATM (REFEITA COM EDIÇÃO E MULTI-PARCIAIS) ---
     elif selected == "Configurar ATM":
         st.title("⚙️ Gerenciar ATMs")
-        
-        # Lista ATMs existentes
-        res = supabase.table("atm_configs").select("*").execute()
-        existing_atms = res.data
-        
-        c_novo, c_lista = st.columns([1, 1.5])
-        
-        with c_novo:
-            st.markdown("### ✨ Criar Nova")
-            nome_atm = st.text_input("Nome da Estratégia")
-            lote_atm = st.number_input("Lote Padrão", min_value=1)
-            stop_atm = st.number_input("Stop Padrão (Pts)", min_value=0.0)
-            
-            st.caption("Defina a Parcial 1 (Você pode adicionar mais na hora do registro)")
-            c_p1, c_q1 = st.columns(2)
-            p1_pts = c_p1.number_input("Alvo 1 (Pts)", min_value=0.0)
-            p1_qtd = c_q1.number_input("Qtd 1", min_value=1)
-            
-            if st.button("💾 Salvar Template"):
-                parciais_json = [{"pts": p1_pts, "qtd": p1_qtd}]
-                supabase.table("atm_configs").insert({
-                    "nome": nome_atm, "lote": lote_atm, "stop": stop_atm, "parciais": parciais_json
-                }).execute()
-                st.success("ATM Criada!"); time.sleep(1); st.rerun()
 
-        with c_lista:
-            st.markdown("### 📋 ATMs Existentes")
+        # Inicializa estado do formulário se não existir
+        if "atm_form_data" not in st.session_state:
+            st.session_state.atm_form_data = {
+                "id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]
+            }
+
+        def reset_atm_form():
+            st.session_state.atm_form_data = {
+                "id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]
+            }
+
+        # Carrega ATMs do banco
+        res = supabase.table("atm_configs").select("*").order("nome").execute()
+        existing_atms = res.data
+
+        # Layout: Formulário à esquerda, Lista à direita
+        c_form, c_list = st.columns([1.5, 1])
+
+        with c_list:
+            st.subheader("📋 Estratégias Salvas")
+            if st.button("✨ Criar Nova (Limpar)", use_container_width=True):
+                reset_atm_form()
+                st.rerun()
+                
             if existing_atms:
                 for item in existing_atms:
-                    with st.expander(f"📍 {item['nome']}"):
-                        st.write(f"Lote: {item['lote']} | Stop: {item['stop']} pts")
-                        if st.button("🗑️ Excluir", key=f"del_{item['id']}"):
+                    with st.expander(f"📍 {item['nome']}", expanded=False):
+                        st.write(f"**Lote:** {item['lote']} | **Stop:** {item['stop']}")
+                        c_edit, c_del = st.columns(2)
+                        
+                        # Botão EDITAR
+                        if c_edit.button("✏️ Editar", key=f"edit_{item['id']}"):
+                            # Carrega dados do banco para o formulário
+                            p_data = item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])
+                            st.session_state.atm_form_data = {
+                                "id": item['id'], "nome": item['nome'], "lote": item['lote'],
+                                "stop": item['stop'], "parciais": p_data
+                            }
+                            st.rerun()
+                            
+                        # Botão EXCLUIR
+                        if c_del.button("🗑️ Excluir", key=f"del_{item['id']}"):
                             supabase.table("atm_configs").delete().eq("id", item['id']).execute()
+                            if st.session_state.atm_form_data["id"] == item['id']:
+                                reset_atm_form()
                             st.rerun()
             else:
-                st.info("Nenhuma ATM salva.")
+                st.info("Nenhuma estratégia salva.")
 
-    # --- 10. HISTÓRICO (COM FILTROS) ---
+        with c_form:
+            form_data = st.session_state.atm_form_data
+            titulo = f"✏️ Editando: {form_data['nome']}" if form_data["id"] else "✨ Nova Estratégia"
+            st.subheader(titulo)
+            
+            # Campos do Formulário
+            new_nome = st.text_input("Nome da Estratégia", value=form_data["nome"])
+            
+            c_l, c_s = st.columns(2)
+            new_lote = c_l.number_input("Lote Total", min_value=1, value=int(form_data["lote"]))
+            new_stop = c_s.number_input("Stop Padrão (Pts)", min_value=0.0, value=float(form_data["stop"]), step=0.25)
+            
+            st.markdown("---")
+            st.write("🎯 Configuração de Alvos (Parciais)")
+            
+            # Botões para adicionar/remover alvos dinamicamente
+            c_add, c_rem = st.columns([1, 4])
+            if c_add.button("➕ Adicionar Alvo"):
+                form_data["parciais"].append({"pts": 0.0, "qtd": 1})
+            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1:
+                form_data["parciais"].pop()
+            
+            # Renderiza os inputs de parciais
+            updated_partials = []
+            total_aloc = 0
+            for i, p in enumerate(form_data["parciais"]):
+                c1, c2 = st.columns(2)
+                p_pts = c1.number_input(f"Alvo {i+1} (Pts)", value=float(p["pts"]), key=f"edm_pts_{i}", step=0.25)
+                p_qtd = c2.number_input(f"Qtd {i+1}", value=int(p["qtd"]), min_value=1, key=f"edm_qtd_{i}")
+                updated_partials.append({"pts": p_pts, "qtd": p_qtd})
+                total_aloc += p_qtd
+            
+            # Aviso de alocação
+            if total_aloc != new_lote:
+                st.warning(f"⚠️ Atenção: A soma das parciais ({total_aloc}) está diferente do Lote Total ({new_lote}).")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Botão Salvar (Insert ou Update)
+            if st.button("💾 SALVAR ESTRATÉGIA", use_container_width=True):
+                payload = {
+                    "nome": new_nome,
+                    "lote": new_lote,
+                    "stop": new_stop,
+                    "parciais": updated_partials
+                }
+                
+                if form_data["id"]:
+                    # Update
+                    supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute()
+                    st.toast("Estratégia atualizada com sucesso!", icon="✅")
+                else:
+                    # Insert
+                    supabase.table("atm_configs").insert(payload).execute()
+                    st.toast("Estratégia criada com sucesso!", icon="✨")
+                
+                time.sleep(1)
+                reset_atm_form()
+                st.rerun()
+
+    # --- 10. HISTÓRICO ---
     elif selected == "Histórico":
         st.title("📜 Histórico de Operações")
-        
-        # Filtros
         col_f1, col_f2 = st.columns(2)
         filtro_ativo = col_f1.multiselect("Filtrar por Ativo", ["NQ", "MNQ"])
         filtro_res = col_f2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
@@ -312,34 +380,24 @@ if check_password():
         df = load_trades_db()
         if not df.empty:
             df_h = df[df['usuario'] == st.session_state["logged_user"]]
-            
-            # Aplica Filtros
             if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
             if filtro_res == "Wins": df_h = df_h[df_h['resultado'] > 0]
             if filtro_res == "Losses": df_h = df_h[df_h['resultado'] < 0]
             
             df_h = df_h.sort_values('created_at', ascending=False)
-            
             for _, row in df_h.iterrows():
                 with st.container():
                     c1, c2, c3 = st.columns([1.2, 3, 1])
+                    if row.get('prints'): c1.image(row['prints'], use_container_width=True)
+                    else: c1.markdown("<div style='height:100px; background:#222; display:flex; align-items:center; justify-content:center; color:#555;'>Sem Foto</div>", unsafe_allow_html=True)
                     
-                    # Imagem
-                    if row.get('prints'): 
-                        c1.image(row['prints'], use_container_width=True)
-                    else: 
-                        c1.markdown("<div style='height:100px; background:#222; display:flex; align-items:center; justify-content:center; color:#555;'>Sem Foto</div>", unsafe_allow_html=True)
-                    
-                    # Dados
                     data_fmt = pd.to_datetime(row['data']).strftime('%d/%m/%Y')
                     c2.markdown(f"### {row['ativo']} - {row['direcao']}")
                     c2.write(f"📅 **{data_fmt}** | Contexto: *{row['contexto']}*")
                     c2.write(f"Lote: `{row['lote']}` | Médio: `{row['pts_medio']:.2f}` pts")
                     
-                    # Resultado
                     res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
                     c3.markdown(f"<h2 style='color:{res_c}; text-align:right;'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
-                    
                     if c3.button("🗑️ Deletar", key=row['id'], use_container_width=True):
                         supabase.table("trades").delete().eq("id", row['id']).execute()
                         st.rerun()
