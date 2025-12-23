@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import plotly.express as px
 from streamlit_option_menu import option_menu
 import json
@@ -19,7 +19,7 @@ except Exception as e:
 # --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
-# --- 3. SISTEMA DE LOGIN SEGURO ---
+# --- 3. SISTEMA DE LOGIN ---
 def check_password():
     def password_entered():
         u = st.session_state.get("username_input")
@@ -32,7 +32,7 @@ def check_password():
             else:
                 st.session_state["password_correct"] = False
         except Exception as e:
-            st.error(f"Erro de conexão (Verifique as Keys): {e}")
+            st.error(f"Erro de conexão: {e}")
 
     if "password_correct" not in st.session_state or not st.session_state["password_correct"]:
         st.markdown("""
@@ -80,7 +80,7 @@ if check_password():
         }
         .risco-alert {
             color: #FF4B4B; font-weight: bold; font-size: 16px; margin-top: 5px;
-            background-color: rgba(255, 75, 75, 0.1); padding: 5px; border-radius: 5px; text-align: center;
+            background-color: rgba(255, 75, 75, 0.1); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #FF4B4B;
         }
         @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } }
         </style>
@@ -118,38 +118,64 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD ---
+    # --- 7. ABA: DASHBOARD (TURBINADA) ---
     if selected == "Dashboard":
         st.title("📊 Analytics Pessoal")
         df = load_trades_db()
+        
         if not df.empty:
             df_u = df[df['usuario'] == st.session_state["logged_user"]]
+            
             if not df_u.empty:
-                t_pl = df_u['resultado'].sum()
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: card_metric("P&L TOTAL", f"${t_pl:,.2f}", "#00FF88" if t_pl >= 0 else "#FF4B4B")
-                with c2: card_metric("TRADES", str(len(df_u)))
-                with c3:
-                    wr = (len(df_u[df_u['resultado'] > 0]) / len(df_u)) * 100
-                    card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
-                with c4: card_metric("USER", st.session_state["logged_user"])
+                # Filtros de Data
+                filtro_periodo = st.selectbox("📅 Período", ["Geral", "Hoje", "Esta Semana", "Este Mês"])
                 
-                df_u = df_u.sort_values('created_at')
-                df_u['Acumulado'] = df_u['resultado'].cumsum()
-                fig = px.area(df_u, x=range(len(df_u)), y='Acumulado', title="Curva de Patrimônio", template="plotly_dark")
-                fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
-                st.plotly_chart(fig, use_container_width=True)
+                if filtro_periodo == "Hoje":
+                    df_u = df_u[df_u['data'] == datetime.now().date()]
+                elif filtro_periodo == "Esta Semana":
+                    inicio_semana = datetime.now().date() - timedelta(days=datetime.now().weekday())
+                    df_u = df_u[df_u['data'] >= inicio_semana]
+                elif filtro_periodo == "Este Mês":
+                    inicio_mes = datetime.now().date().replace(day=1)
+                    df_u = df_u[df_u['data'] >= inicio_mes]
+
+                if df_u.empty:
+                    st.info(f"Sem trades registrados em: {filtro_periodo}")
+                else:
+                    # Métricas Principais
+                    t_pl = df_u['resultado'].sum()
+                    wins = len(df_u[df_u['resultado'] > 0])
+                    total = len(df_u)
+                    wr = (wins / total) * 100 if total > 0 else 0
+                    
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1: card_metric("P&L LIQUIDO", f"${t_pl:,.2f}", "#00FF88" if t_pl >= 0 else "#FF4B4B")
+                    with c2: card_metric("TRADES", str(total))
+                    with c3: card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
+                    with c4: card_metric("FATOR DE LUCRO", f"{(df_u[df_u['resultado']>0]['resultado'].sum() / abs(df_u[df_u['resultado']<0]['resultado'].sum()) if len(df_u[df_u['resultado']<0]) > 0 else 0):.2f}")
+
+                    # Gráficos
+                    g1, g2 = st.columns([2, 1])
+                    with g1:
+                        df_u = df_u.sort_values('created_at')
+                        df_u['Acumulado'] = df_u['resultado'].cumsum()
+                        fig = px.area(df_u, x='data', y='Acumulado', title="Curva de Patrimônio", template="plotly_dark")
+                        fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
+                        st.plotly_chart(fig, use_container_width=True)
+                    with g2:
+                        fig_pie = px.pie(df_u, names='ativo', title="Distribuição por Ativo", template="plotly_dark", hole=0.4)
+                        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                        st.plotly_chart(fig_pie, use_container_width=True)
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. REGISTRAR TRADE ---
+    # --- 8. REGISTRAR TRADE (PERFEITA) ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         
         atm_db = load_atms_db()
         atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
         
-        # Preenchimento Automático
         if atm_sel != "Manual":
             config = atm_db[atm_sel]
             lt_default = int(config["lote"])
@@ -164,54 +190,40 @@ if check_password():
             parciais_pre = []
 
         f1, f2, f3 = st.columns([1, 1, 2.5])
-        
         with f1:
             dt = st.date_input("Data", datetime.now().date())
             atv = st.selectbox("Ativo", ["MNQ", "NQ"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
             ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
-        
         with f2:
             lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
             stp = st.number_input("Stop (Pts)", min_value=0.0, value=stp_default, step=0.25)
-            
-            # --- CÁLCULO DE RISCO EM TEMPO REAL ---
-            risco_calc = stp * MULTIPLIERS[atv] * lt
-            st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
-            
+            if stp > 0:
+                risco_calc = stp * MULTIPLIERS[atv] * lt
+                st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
             up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
 
         with f3:
             st.write("**Saídas (Alocação)**")
-            
-            # Controle de Parciais Manuais
             if "num_parciais" not in st.session_state or atm_sel != st.session_state.get("last_atm"):
                 st.session_state.num_parciais = len(parciais_pre) if parciais_pre else 1
                 st.session_state.last_atm = atm_sel
 
             col_btn1, col_btn2 = st.columns(2)
-            if col_btn1.button("➕ Add Parcial"):
-                st.session_state.num_parciais += 1
-            if col_btn2.button("🧹 Limpar"):
-                st.session_state.num_parciais = 1
-                st.rerun()
+            if col_btn1.button("➕ Add Parcial"): st.session_state.num_parciais += 1
+            if col_btn2.button("🧹 Limpar"): st.session_state.num_parciais = 1; st.rerun()
 
             saidas = []
             aloc = 0
             for i in range(st.session_state.num_parciais):
                 c_pts, c_qtd = st.columns(2)
-                
-                # Valores padrão
                 val_pts = float(parciais_pre[i]["pts"]) if i < len(parciais_pre) else 0.0
                 val_qtd = int(parciais_pre[i]["qtd"]) if i < len(parciais_pre) else (lt if i == 0 else 0)
-                
                 pts = c_pts.number_input(f"Pts Alvo {i+1}", value=val_pts, key=f"p_pts_{i}_{atm_sel}", step=0.25)
                 qtd = c_qtd.number_input(f"Contratos {i+1}", value=val_qtd, key=f"p_qtd_{i}_{atm_sel}", min_value=0)
-                
                 saidas.append({"pts": pts, "qtd": qtd})
                 aloc += qtd
             
-            # Validação
             if lt != aloc:
                 diff = lt - aloc
                 st.markdown(f'<div class="piscante-erro">{"FALTAM" if diff > 0 else "SOBRAM"} {abs(diff)} CONTRATOS</div>', unsafe_allow_html=True)
@@ -219,81 +231,116 @@ if check_password():
                 st.success("✅ Posição Sincronizada")
 
         st.divider()
-
         col_gain, col_loss = st.columns(2)
         btn_registrar = False
-        
-        # Botões de Ação
-        if col_gain.button("🟢 REGISTRAR GAIN", use_container_width=True, disabled=(lt != aloc)):
-            btn_registrar = True
-        if col_loss.button("🔴 REGISTRAR STOP FULL", use_container_width=True):
-            saidas = [{"pts": -stp, "qtd": lt}]
-            btn_registrar = True
+        if col_gain.button("🟢 REGISTRAR GAIN", use_container_width=True, disabled=(lt != aloc)): btn_registrar = True
+        if col_loss.button("🔴 REGISTRAR STOP FULL", use_container_width=True): saidas = [{"pts": -stp, "qtd": lt}]; btn_registrar = True
 
         if btn_registrar:
-            with st.spinner("Salvando operação no Supabase..."):
-                res_fin = sum([s["pts"] * MULTIPLIERS[atv] * s["qtd"] for s in saidas])
-                pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
-                trade_id = str(uuid.uuid4())
-                
-                img_url = ""
-                if up:
-                    file_path = f"{trade_id}.png"
-                    supabase.storage.from_("prints").upload(file_path, up.getvalue())
-                    img_url = supabase.storage.from_("prints").get_public_url(file_path)
+            with st.spinner("Salvando..."):
+                try:
+                    res_fin = sum([s["pts"] * MULTIPLIERS[atv] * s["qtd"] for s in saidas])
+                    pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
+                    trade_id = str(uuid.uuid4())
+                    img_url = ""
+                    if up:
+                        file_path = f"{trade_id}.png"
+                        supabase.storage.from_("prints").upload(file_path, up.getvalue())
+                        img_url = supabase.storage.from_("prints").get_public_url(file_path)
 
-                supabase.table("trades").insert({
-                    "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
-                    "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
-                    "prints": img_url, "usuario": st.session_state["logged_user"],
-                    "risco_fin": (stp * MULTIPLIERS[atv] * lt)
-                }).execute()
-                
-                # --- CONFIRMAÇÃO VISUAL REFORÇADA ---
-                st.balloons() # Animação de Balões
-                st.success(f"✅ TRADE REGISTRADO! Resultado: ${res_fin:,.2f}")
-                time.sleep(2) # Tempo para ver a mensagem antes de atualizar
-                st.rerun()
+                    supabase.table("trades").insert({
+                        "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
+                        "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
+                        "prints": img_url, "usuario": st.session_state["logged_user"],
+                        "risco_fin": (stp * MULTIPLIERS[atv] * lt)
+                    }).execute()
+                    st.balloons() 
+                    st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}")
+                    time.sleep(2); st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
 
-    # --- 9. CONFIGURAR ATM ---
+    # --- 9. CONFIGURAR ATM (MELHORADA) ---
     elif selected == "Configurar ATM":
-        st.title("⚙️ Editor de ATM")
-        with st.expander("✨ Novo Template", expanded=True):
+        st.title("⚙️ Gerenciar ATMs")
+        
+        # Lista ATMs existentes
+        res = supabase.table("atm_configs").select("*").execute()
+        existing_atms = res.data
+        
+        c_novo, c_lista = st.columns([1, 1.5])
+        
+        with c_novo:
+            st.markdown("### ✨ Criar Nova")
             nome_atm = st.text_input("Nome da Estratégia")
-            c_l, c_s = st.columns(2)
-            lote_atm = c_l.number_input("Lote Total", min_value=1)
-            stop_atm = c_s.number_input("Stop Padrão (Pts)", min_value=0.0)
+            lote_atm = st.number_input("Lote Padrão", min_value=1)
+            stop_atm = st.number_input("Stop Padrão (Pts)", min_value=0.0)
             
-            st.write("Parcial Padrão (Exemplo)")
+            st.caption("Defina a Parcial 1 (Você pode adicionar mais na hora do registro)")
             c_p1, c_q1 = st.columns(2)
-            p1_pts = c_p1.number_input("Pts Alvo 1", min_value=0.0)
-            p1_qtd = c_q1.number_input("Qtd Contratos 1", min_value=1)
+            p1_pts = c_p1.number_input("Alvo 1 (Pts)", min_value=0.0)
+            p1_qtd = c_q1.number_input("Qtd 1", min_value=1)
             
-            if st.button("💾 Salvar ATM"):
+            if st.button("💾 Salvar Template"):
                 parciais_json = [{"pts": p1_pts, "qtd": p1_qtd}]
                 supabase.table("atm_configs").insert({
                     "nome": nome_atm, "lote": lote_atm, "stop": stop_atm, "parciais": parciais_json
                 }).execute()
-                st.success("ATM Salva no Banco!"); st.rerun()
+                st.success("ATM Criada!"); time.sleep(1); st.rerun()
 
-    # --- 10. HISTÓRICO ---
+        with c_lista:
+            st.markdown("### 📋 ATMs Existentes")
+            if existing_atms:
+                for item in existing_atms:
+                    with st.expander(f"📍 {item['nome']}"):
+                        st.write(f"Lote: {item['lote']} | Stop: {item['stop']} pts")
+                        if st.button("🗑️ Excluir", key=f"del_{item['id']}"):
+                            supabase.table("atm_configs").delete().eq("id", item['id']).execute()
+                            st.rerun()
+            else:
+                st.info("Nenhuma ATM salva.")
+
+    # --- 10. HISTÓRICO (COM FILTROS) ---
     elif selected == "Histórico":
         st.title("📜 Histórico de Operações")
+        
+        # Filtros
+        col_f1, col_f2 = st.columns(2)
+        filtro_ativo = col_f1.multiselect("Filtrar por Ativo", ["NQ", "MNQ"])
+        filtro_res = col_f2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
+        
         df = load_trades_db()
         if not df.empty:
-            df_h = df[df['usuario'] == st.session_state["logged_user"]].sort_values('created_at', ascending=False)
+            df_h = df[df['usuario'] == st.session_state["logged_user"]]
+            
+            # Aplica Filtros
+            if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
+            if filtro_res == "Wins": df_h = df_h[df_h['resultado'] > 0]
+            if filtro_res == "Losses": df_h = df_h[df_h['resultado'] < 0]
+            
+            df_h = df_h.sort_values('created_at', ascending=False)
+            
             for _, row in df_h.iterrows():
                 with st.container():
-                    c1, c2, c3 = st.columns([1.5, 2, 1])
-                    if row.get('prints'): c1.image(row['prints'], use_container_width=True)
-                    else: c1.info("Sem Print")
+                    c1, c2, c3 = st.columns([1.2, 3, 1])
                     
-                    col2.write(f"**{row['data']} - {row['ativo']} ({row['contexto']})**")
-                    col2.write(f"Direção: {row['direcao']} | Lote: {row['lote']} | Médio: {row['pts_medio']:.1f}")
+                    # Imagem
+                    if row.get('prints'): 
+                        c1.image(row['prints'], use_container_width=True)
+                    else: 
+                        c1.markdown("<div style='height:100px; background:#222; display:flex; align-items:center; justify-content:center; color:#555;'>Sem Foto</div>", unsafe_allow_html=True)
                     
+                    # Dados
+                    data_fmt = pd.to_datetime(row['data']).strftime('%d/%m/%Y')
+                    c2.markdown(f"### {row['ativo']} - {row['direcao']}")
+                    c2.write(f"📅 **{data_fmt}** | Contexto: *{row['contexto']}*")
+                    c2.write(f"Lote: `{row['lote']}` | Médio: `{row['pts_medio']:.2f}` pts")
+                    
+                    # Resultado
                     res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
-                    col3.markdown(f"<h2 style='color:{res_c}'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
-                    if col3.button("Deletar", key=row['id']):
+                    c3.markdown(f"<h2 style='color:{res_c}; text-align:right;'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
+                    
+                    if c3.button("🗑️ Deletar", key=row['id'], use_container_width=True):
                         supabase.table("trades").delete().eq("id", row['id']).execute()
                         st.rerun()
                     st.divider()
