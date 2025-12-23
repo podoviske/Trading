@@ -47,7 +47,7 @@ st.markdown("""
     .card-res-win { font-size: 16px; font-weight: 800; color: #00FF88; }
     .card-res-loss { font-size: 16px; font-weight: 800; color: #FF4B4B; }
 
-    /* Métricas do Dashboard (COM HOVER) */
+    /* Métricas do Dashboard (COM HOVER E TOOLTIP) */
     .metric-container { 
         background-color: #161616; 
         border: 1px solid #262626; 
@@ -56,16 +56,35 @@ st.markdown("""
         text-align: center; 
         margin-bottom: 12px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        transition: border-color 0.3s, transform 0.3s; /* Animação suave */
+        transition: border-color 0.3s, transform 0.3s;
+        position: relative;
     }
     .metric-container:hover {
-        border-color: #B20000; /* Borda Vermelha ao passar o mouse */
-        transform: translateY(-3px); /* Leve flutuada */
-        cursor: pointer;
+        border-color: #B20000;
+        transform: translateY(-3px);
+        cursor: help;
     }
-    .metric-label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+    .metric-label { 
+        color: #888; font-size: 11px; text-transform: uppercase; 
+        letter-spacing: 1px; font-weight: 600; display: flex; 
+        justify-content: center; align-items: center; gap: 5px;
+    }
     .metric-value { color: white; font-size: 24px; font-weight: 800; margin-top: 5px; }
     .metric-sub { font-size: 12px; margin-top: 2px; }
+    
+    /* Ícone de Ajuda */
+    .help-icon {
+        color: #555;
+        font-size: 12px;
+        border: 1px solid #444;
+        border-radius: 50%;
+        width: 14px;
+        height: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: help;
+    }
 
     /* Geral */
     [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
@@ -147,11 +166,14 @@ if check_password():
         except:
             return {}
 
-    def card_metric(label, value, sub_value="", color="white"):
+    # Função de Card com Tooltip
+    def card_metric(label, value, sub_value="", color="white", help_text=""):
         sub_html = f'<div class="metric-sub" style="color: #666;">{sub_value}</div>' if sub_value else ""
+        help_html = f'<span class="help-icon" title="{help_text}">?</span>' if help_text else ""
+        
         st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">{label}</div>
+            <div class="metric-container" title="{help_text}">
+                <div class="metric-label">{label} {help_html}</div>
                 <div class="metric-value" style="color: {color};">{value}</div>
                 {sub_html}
             </div>
@@ -167,7 +189,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD PROFISSIONAL (CLEAN + INTERATIVO) ---
+    # --- 7. ABA: DASHBOARD PROFISSIONAL ---
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
@@ -229,19 +251,41 @@ if check_password():
                     df_filtered['drawdown'] = df_filtered['equity'] - df_filtered['peak']
                     max_dd = df_filtered['drawdown'].min()
 
-                    # --- EXIBIÇÃO KPIs (LINHA 1) ---
+                    # --- EXIBIÇÃO KPIs COM TOOLTIPS ---
                     c1, c2, c3, c4 = st.columns(4)
-                    with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B")
-                    with c2: card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000")
-                    with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white")
-                    with c4: card_metric("PAYOFF (RR)", f"{payoff:.2f}", f"Avg Win: ${avg_win:.0f} / Loss: ${avg_loss:.0f}", "white")
+                    with c1: 
+                        card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B",
+                        "Resultado financeiro total (Lucro - Prejuízo) no período selecionado.")
                     
-                    # --- EXIBIÇÃO KPIs (LINHA 2) ---
+                    with c2: 
+                        card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000",
+                        "Relação Lucro Bruto / Prejuízo Bruto. Indica quanto você ganha para cada dólar perdido. Acima de 1.5 é saudável.")
+                    
+                    with c3: 
+                        card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white",
+                        "Porcentagem de acerto. Quantos trades fecharam positivos em relação ao total.")
+                    
+                    with c4: 
+                        card_metric("PAYOFF (RR)", f"{payoff:.2f}", f"Avg Win: ${avg_win:.0f} / Loss: ${avg_loss:.0f}", "white",
+                        "Risco:Retorno Real. Média do valor dos ganhos dividida pela média do valor das perdas.")
+                    
+                    # Linha 2
                     c5, c6, c7, c8 = st.columns(4)
-                    with c5: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B")
-                    with c6: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Queda do Topo", "#FF4B4B")
-                    with c7: card_metric("TOTAL TRADES", str(total_trades), "No Período", "white")
-                    with c8: card_metric("MELHOR TRADE", f"${df_filtered['resultado'].max():,.2f}", "Maior Gain", "#00FF88")
+                    with c5: 
+                        card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B",
+                        "Valor esperado por operação a longo prazo. Se positivo, seu sistema é lucrativo estatisticamente.")
+                    
+                    with c6: 
+                        card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Queda do Topo", "#FF4B4B",
+                        "A maior queda de capital registrada desde um topo histórico até o fundo subsequente.")
+                    
+                    with c7: 
+                        card_metric("TOTAL TRADES", str(total_trades), "No Período", "white",
+                        "Quantidade total de operações realizadas no período selecionado.")
+                    
+                    with c8: 
+                        card_metric("MELHOR TRADE", f"${df_filtered['resultado'].max():,.2f}", "Maior Gain", "#00FF88",
+                        "O maior lucro obtido em uma única operação no período.")
 
                     st.markdown("---")
 
@@ -249,19 +293,30 @@ if check_password():
                     g1, g2 = st.columns([2, 1])
                     
                     with g1:
-                        # Curva de Patrimônio
-                        fig_eq = px.area(df_filtered, x='data', y='equity', title="📈 Curva de Patrimônio (Equity)", template="plotly_dark")
+                        # Opção de Visualização
+                        view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades (Padrão)", "Data (Tempo)"], horizontal=True)
+                        
+                        if view_mode == "Sequência de Trades (Padrão)":
+                            df_filtered['trade_seq'] = range(1, len(df_filtered) + 1)
+                            x_axis = 'trade_seq'
+                            x_title = "Quantidade de Trades"
+                        else:
+                            x_axis = 'data'
+                            x_title = "Data"
+
+                        fig_eq = px.area(df_filtered, x=x_axis, y='equity', title="📈 Curva de Patrimônio", template="plotly_dark")
                         fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
                         fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
+                        fig_eq.update_layout(xaxis_title=x_title, yaxis_title="Patrimônio ($)")
                         st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
                         
                     with g2:
-                        # Resultado por Contexto
+                        st.markdown("<br><br>", unsafe_allow_html=True)
                         ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
-                    # Performance por Dia da Semana
+                    # Performance Dia
                     st.markdown("### 📅 Performance por Dia da Semana")
                     df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
                     dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
