@@ -78,6 +78,10 @@ if check_password():
             padding: 15px; border-radius: 5px; color: white; font-weight: bold; 
             text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; 
         }
+        .risco-alert {
+            color: #FF4B4B; font-weight: bold; font-size: 16px; margin-top: 5px;
+            background-color: rgba(255, 75, 75, 0.1); padding: 5px; border-radius: 5px; text-align: center;
+        }
         @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } }
         </style>
     """, unsafe_allow_html=True)
@@ -142,13 +146,10 @@ if check_password():
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         
-        # Carregamos as ATMs disponíveis
         atm_db = load_atms_db()
-        
-        # Seletor de ATM
         atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
         
-        # Lógica de preenchimento automático
+        # Preenchimento Automático
         if atm_sel != "Manual":
             config = atm_db[atm_sel]
             lt_default = int(config["lote"])
@@ -168,25 +169,30 @@ if check_password():
             dt = st.date_input("Data", datetime.now().date())
             atv = st.selectbox("Ativo", ["MNQ", "NQ"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-            ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
+            ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
         
         with f2:
             lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
             stp = st.number_input("Stop (Pts)", min_value=0.0, value=stp_default, step=0.25)
+            
+            # --- CÁLCULO DE RISCO EM TEMPO REAL ---
+            risco_calc = stp * MULTIPLIERS[atv] * lt
+            st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
+            
             up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
 
         with f3:
             st.write("**Saídas (Alocação)**")
             
-            # Gerenciamento de estado para parciais manuais
+            # Controle de Parciais Manuais
             if "num_parciais" not in st.session_state or atm_sel != st.session_state.get("last_atm"):
                 st.session_state.num_parciais = len(parciais_pre) if parciais_pre else 1
                 st.session_state.last_atm = atm_sel
 
             col_btn1, col_btn2 = st.columns(2)
-            if col_btn1.button("➕ Adicionar Parcial"):
+            if col_btn1.button("➕ Add Parcial"):
                 st.session_state.num_parciais += 1
-            if col_btn2.button("🧹 Limpar Campos"):
+            if col_btn2.button("🧹 Limpar"):
                 st.session_state.num_parciais = 1
                 st.rerun()
 
@@ -195,7 +201,7 @@ if check_password():
             for i in range(st.session_state.num_parciais):
                 c_pts, c_qtd = st.columns(2)
                 
-                # Preenche com valor da ATM se disponível
+                # Valores padrão
                 val_pts = float(parciais_pre[i]["pts"]) if i < len(parciais_pre) else 0.0
                 val_qtd = int(parciais_pre[i]["qtd"]) if i < len(parciais_pre) else (lt if i == 0 else 0)
                 
@@ -205,7 +211,7 @@ if check_password():
                 saidas.append({"pts": pts, "qtd": qtd})
                 aloc += qtd
             
-            # Validação visual
+            # Validação
             if lt != aloc:
                 diff = lt - aloc
                 st.markdown(f'<div class="piscante-erro">{"FALTAM" if diff > 0 else "SOBRAM"} {abs(diff)} CONTRATOS</div>', unsafe_allow_html=True)
@@ -214,10 +220,10 @@ if check_password():
 
         st.divider()
 
-        # Botões de ação rápida
         col_gain, col_loss = st.columns(2)
-        
         btn_registrar = False
+        
+        # Botões de Ação
         if col_gain.button("🟢 REGISTRAR GAIN", use_container_width=True, disabled=(lt != aloc)):
             btn_registrar = True
         if col_loss.button("🔴 REGISTRAR STOP FULL", use_container_width=True):
@@ -225,7 +231,7 @@ if check_password():
             btn_registrar = True
 
         if btn_registrar:
-            with st.spinner("Salvando operação..."):
+            with st.spinner("Salvando operação no Supabase..."):
                 res_fin = sum([s["pts"] * MULTIPLIERS[atv] * s["qtd"] for s in saidas])
                 pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
                 trade_id = str(uuid.uuid4())
@@ -243,8 +249,10 @@ if check_password():
                     "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                 }).execute()
                 
-                st.toast("Operação registrada com sucesso!", icon="✅")
-                time.sleep(1)
+                # --- CONFIRMAÇÃO VISUAL REFORÇADA ---
+                st.balloons() # Animação de Balões
+                st.success(f"✅ TRADE REGISTRADO! Resultado: ${res_fin:,.2f}")
+                time.sleep(2) # Tempo para ver a mensagem antes de atualizar
                 st.rerun()
 
     # --- 9. CONFIGURAR ATM ---
@@ -256,7 +264,7 @@ if check_password():
             lote_atm = c_l.number_input("Lote Total", min_value=1)
             stop_atm = c_s.number_input("Stop Padrão (Pts)", min_value=0.0)
             
-            st.write("Parciais Padrão")
+            st.write("Parcial Padrão (Exemplo)")
             c_p1, c_q1 = st.columns(2)
             p1_pts = c_p1.number_input("Pts Alvo 1", min_value=0.0)
             p1_qtd = c_q1.number_input("Qtd Contratos 1", min_value=1)
@@ -276,9 +284,9 @@ if check_password():
             df_h = df[df['usuario'] == st.session_state["logged_user"]].sort_values('created_at', ascending=False)
             for _, row in df_h.iterrows():
                 with st.container():
-                    col1, col2, col3 = st.columns([1.5, 2, 1])
-                    if row.get('prints'): col1.image(row['prints'], use_container_width=True)
-                    else: col1.info("Sem Print")
+                    c1, c2, c3 = st.columns([1.5, 2, 1])
+                    if row.get('prints'): c1.image(row['prints'], use_container_width=True)
+                    else: c1.info("Sem Print")
                     
                     col2.write(f"**{row['data']} - {row['ativo']} ({row['contexto']})**")
                     col2.write(f"Direção: {row['direcao']} | Lote: {row['lote']} | Médio: {row['pts_medio']:.1f}")
