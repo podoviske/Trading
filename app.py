@@ -47,11 +47,21 @@ st.markdown("""
     .card-res-win { font-size: 16px; font-weight: 800; color: #00FF88; }
     .card-res-loss { font-size: 16px; font-weight: 800; color: #FF4B4B; }
 
-    /* Métricas do Dashboard */
+    /* Métricas do Dashboard (COM HOVER) */
     .metric-container { 
-        background-color: #161616; border: 1px solid #262626; padding: 15px; 
-        border-radius: 10px; text-align: center; margin-bottom: 12px;
+        background-color: #161616; 
+        border: 1px solid #262626; 
+        padding: 15px; 
+        border-radius: 10px; 
+        text-align: center; 
+        margin-bottom: 12px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        transition: border-color 0.3s, transform 0.3s; /* Animação suave */
+    }
+    .metric-container:hover {
+        border-color: #B20000; /* Borda Vermelha ao passar o mouse */
+        transform: translateY(-3px); /* Leve flutuada */
+        cursor: pointer;
     }
     .metric-label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
     .metric-value { color: white; font-size: 24px; font-weight: 800; margin-top: 5px; }
@@ -157,7 +167,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD PROFISSIONAL ---
+    # --- 7. ABA: DASHBOARD PROFISSIONAL (CLEAN + INTERATIVO) ---
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
@@ -170,14 +180,12 @@ if check_password():
                 with st.expander("🔍 Filtros Avançados", expanded=True):
                     col_d1, col_d2, col_ctx = st.columns([1, 1, 2])
                     
-                    # Filtro de Data
                     min_date = df['data'].min()
                     max_date = df['data'].max()
                     
                     d_inicio = col_d1.date_input("Data Início", min_date)
                     d_fim = col_d2.date_input("Data Fim", max_date)
                     
-                    # Filtro de Contexto
                     all_contexts = list(df['contexto'].unique())
                     filters_ctx = col_ctx.multiselect("Filtrar Contextos", all_contexts, default=all_contexts)
 
@@ -237,7 +245,7 @@ if check_password():
 
                     st.markdown("---")
 
-                    # --- GRÁFICOS ---
+                    # --- GRÁFICOS (SEM MODEBAR) ---
                     g1, g2 = st.columns([2, 1])
                     
                     with g1:
@@ -245,18 +253,17 @@ if check_password():
                         fig_eq = px.area(df_filtered, x='data', y='equity', title="📈 Curva de Patrimônio (Equity)", template="plotly_dark")
                         fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
                         fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
-                        st.plotly_chart(fig_eq, use_container_width=True)
+                        st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
                         
                     with g2:
                         # Resultado por Contexto
                         ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-                        st.plotly_chart(fig_bar, use_container_width=True)
+                        st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
                     # Performance por Dia da Semana
                     st.markdown("### 📅 Performance por Dia da Semana")
                     df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
-                    # Tradução
                     dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
                     df_filtered['dia_pt'] = df_filtered['dia_semana'].map(dias_pt)
                     
@@ -264,7 +271,7 @@ if check_password():
                     
                     fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
                     fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
-                    st.plotly_chart(fig_day, use_container_width=True)
+                    st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
 
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
@@ -493,7 +500,7 @@ if check_password():
                     if st.button("👁️ Ver", key=f"btn_{row['id']}", use_container_width=True):
                         show_trade_details(row)
 
-    # --- 11. GERENCIAR USUÁRIOS (SEM ERRO DE DATA) ---
+    # --- 11. GERENCIAR USUÁRIOS ---
     elif selected == "Gerenciar Usuários":
         st.title("👥 Gestão de Usuários")
 
@@ -503,6 +510,7 @@ if check_password():
         def reset_user_form():
             st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
 
+        # Carrega sem ordernar por created_at
         res = supabase.table("users").select("*").execute()
         users_list = res.data
 
