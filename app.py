@@ -19,34 +19,50 @@ except Exception as e:
 # --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
-# --- CSS CUSTOMIZADO PARA CARDS ---
+# --- CSS CUSTOMIZADO ---
 st.markdown("""
     <style>
+    /* Card da Galeria */
     .trade-card {
-        background-color: #1E1E1E;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 20px;
+        background-color: #161616;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 15px;
         border: 1px solid #333;
-        transition: transform 0.2s;
+        transition: transform 0.2s, border-color 0.2s;
     }
     .trade-card:hover {
-        transform: scale(1.02);
+        transform: translateY(-3px);
         border-color: #B20000;
     }
-    .card-title { font-size: 16px; font-weight: bold; color: white; margin-bottom: 5px; }
-    .card-sub { font-size: 12px; color: #888; margin-bottom: 10px; }
-    .card-res-win { font-size: 18px; font-weight: bold; color: #00FF88; }
-    .card-res-loss { font-size: 18px; font-weight: bold; color: #FF4B4B; }
-    
+    .card-img-container {
+        width: 100%;
+        height: 140px;
+        background-color: #222;
+        border-radius: 5px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 10px;
+    }
+    .card-img { width: 100%; height: 100%; object-fit: cover; }
+    .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 2px; }
+    .card-sub { font-size: 11px; color: #888; margin-bottom: 8px; }
+    .card-res-win { font-size: 16px; font-weight: 800; color: #00FF88; }
+    .card-res-loss { font-size: 16px; font-weight: 800; color: #FF4B4B; }
+
+    /* Geral */
     [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
     .stApp { background-color: #0F0F0F; }
+    
     .metric-container { 
         background-color: #161616; border: 1px solid #262626; padding: 15px; 
         border-radius: 10px; text-align: center; margin-bottom: 12px;
     }
     .metric-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
     .metric-value { color: white; font-size: 22px; font-weight: bold; margin-top: 5px; }
+    
     .piscante-erro { 
         padding: 15px; border-radius: 5px; color: white; font-weight: bold; 
         text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; 
@@ -136,14 +152,12 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD ---
+    # --- 7. DASHBOARD ---
     if selected == "Dashboard":
         st.title("📊 Analytics Pessoal")
         df = load_trades_db()
-        
         if not df.empty:
             df_u = df[df['usuario'] == st.session_state["logged_user"]]
-            
             if not df_u.empty:
                 filtro_periodo = st.selectbox("📅 Período", ["Geral", "Hoje", "Esta Semana", "Este Mês"])
                 
@@ -187,7 +201,6 @@ if check_password():
     # --- 8. REGISTRAR TRADE ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
-        
         atm_db = load_atms_db()
         atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
         
@@ -298,7 +311,6 @@ if check_password():
             st.subheader("📋 Estratégias Salvas")
             if st.button("✨ Criar Nova (Limpar)", use_container_width=True):
                 reset_atm_form(); st.rerun()
-                
             if existing_atms:
                 for item in existing_atms:
                     with st.expander(f"📍 {item['nome']}", expanded=False):
@@ -355,7 +367,7 @@ if check_password():
                     st.toast("Criado!", icon="✨")
                 time.sleep(1); reset_atm_form(); st.rerun()
 
-    # --- 10. HISTÓRICO (GALERIA GRID) ---
+    # --- 10. HISTÓRICO (GALERIA 4 CARDS + MODAL GRANDE) ---
     elif selected == "Histórico":
         st.title("📜 Galeria de Trades")
         
@@ -372,49 +384,52 @@ if check_password():
             
             df_h = df_h.sort_values('created_at', ascending=False)
             
-            # Modal (usando experimental_dialog ou form manual)
-            @st.dialog("Detalhes do Trade")
+            # Modal de Detalhes (Grande)
+            @st.dialog("Detalhes da Operação", width="large")
             def show_trade_details(row):
+                # Imagem Grande no Topo
                 if row.get('prints'): st.image(row['prints'], use_container_width=True)
                 else: st.info("Sem Print disponível.")
                 
-                c1, c2 = st.columns(2)
-                c1.write(f"**Data:** {row['data']}")
-                c1.write(f"**Ativo:** {row['ativo']}")
-                c1.write(f"**Direção:** {row['direcao']}")
+                st.markdown("---")
                 
-                c2.write(f"**Lote:** {row['lote']}")
-                c2.write(f"**Pts Médio:** {row['pts_medio']:.2f}")
-                c2.write(f"**Contexto:** {row['contexto']}")
+                # Dados
+                c1, c2, c3 = st.columns(3)
+                c1.write(f"📅 **Data:** {row['data']}")
+                c1.write(f"📈 **Ativo:** {row['ativo']}")
+                
+                c2.write(f"⚖️ **Lote:** {row['lote']}")
+                c2.write(f"🎯 **Médio:** {row['pts_medio']:.2f} pts")
+                
+                c3.write(f"🔄 **Direção:** {row['direcao']}")
+                c3.write(f"🧠 **Contexto:** {row['contexto']}")
                 
                 res_c = "green" if row['resultado'] >= 0 else "red"
-                st.markdown(f"<h2 style='color:{res_c}; text-align:center;'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
+                st.markdown(f"<h1 style='color:{res_c}; text-align:center; font-size:40px;'>${row['resultado']:,.2f}</h1>", unsafe_allow_html=True)
                 
-                if st.button("🗑️ Deletar Permanentemente", type="primary", use_container_width=True):
+                if st.button("🗑️ DELETAR REGISTRO", type="primary", use_container_width=True):
                     supabase.table("trades").delete().eq("id", row['id']).execute()
                     st.rerun()
 
-            # Grid Layout (3 Colunas)
-            cols = st.columns(3)
+            # Grid Layout (4 Colunas)
+            cols = st.columns(4)
             for i, (index, row) in enumerate(df_h.iterrows()):
-                with cols[i % 3]: # Distribui entre as colunas
-                    # Card
+                with cols[i % 4]: # Distribui entre as 4 colunas
                     res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
                     res_fmt = f"${row['resultado']:,.2f}"
-                    img_html = f'<img src="{row["prints"]}" style="width:100%; border-radius:5px; height:150px; object-fit:cover;">' if row.get('prints') else '<div style="width:100%; height:150px; background:#333; border-radius:5px;"></div>'
+                    
+                    img_html = f'<img src="{row["prints"]}" class="card-img">' if row.get('prints') else '<div style="width:100%; height:100%; background:#333; display:flex; align-items:center; justify-content:center; color:#555;">Sem Foto</div>'
                     
                     st.markdown(f"""
                         <div class="trade-card">
-                            {img_html}
-                            <div style="margin-top:10px;">
-                                <div class="card-title">{row['ativo']} - {row['direcao']}</div>
-                                <div class="card-sub">{row['data']} • {row['contexto']}</div>
-                                <div class="{res_class}">{res_fmt}</div>
-                            </div>
+                            <div class="card-img-container">{img_html}</div>
+                            <div class="card-title">{row['ativo']} - {row['direcao']}</div>
+                            <div class="card-sub">{row['data']} • {row['contexto']}</div>
+                            <div class="{res_class}">{res_fmt}</div>
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    if st.button("👁️ Ver Detalhes", key=f"btn_{row['id']}", use_container_width=True):
+                    if st.button("👁️ Ver", key=f"btn_{row['id']}", use_container_width=True):
                         show_trade_details(row)
 
     # --- 11. GERENCIAR USUÁRIOS ---
