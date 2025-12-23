@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import plotly.express as px
+import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
 import json
 import uuid
@@ -22,7 +23,7 @@ st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="�
 # --- CSS CUSTOMIZADO ---
 st.markdown("""
     <style>
-    /* Cards */
+    /* Cards do Histórico */
     .trade-card {
         background-color: #161616;
         border-radius: 8px;
@@ -36,15 +37,9 @@ st.markdown("""
         border-color: #B20000;
     }
     .card-img-container {
-        width: 100%;
-        height: 140px;
-        background-color: #222;
-        border-radius: 5px;
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 10px;
+        width: 100%; height: 140px; background-color: #222;
+        border-radius: 5px; overflow: hidden; display: flex;
+        align-items: center; justify-content: center; margin-bottom: 10px;
     }
     .card-img { width: 100%; height: 100%; object-fit: cover; }
     .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 2px; }
@@ -52,16 +47,19 @@ st.markdown("""
     .card-res-win { font-size: 16px; font-weight: 800; color: #00FF88; }
     .card-res-loss { font-size: 16px; font-weight: 800; color: #FF4B4B; }
 
-    /* Geral */
-    [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
-    .stApp { background-color: #0F0F0F; }
-    
+    /* Métricas do Dashboard */
     .metric-container { 
         background-color: #161616; border: 1px solid #262626; padding: 15px; 
         border-radius: 10px; text-align: center; margin-bottom: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    .metric-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .metric-value { color: white; font-size: 22px; font-weight: bold; margin-top: 5px; }
+    .metric-label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+    .metric-value { color: white; font-size: 24px; font-weight: 800; margin-top: 5px; }
+    .metric-sub { font-size: 12px; margin-top: 2px; }
+
+    /* Geral */
+    [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
+    .stApp { background-color: #0F0F0F; }
     
     .piscante-erro { 
         padding: 15px; border-radius: 5px; color: white; font-weight: bold; 
@@ -139,8 +137,15 @@ if check_password():
         except:
             return {}
 
-    def card_metric(label, value, color="white"):
-        st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value" style="color: {color};">{value}</div></div>', unsafe_allow_html=True)
+    def card_metric(label, value, sub_value="", color="white"):
+        sub_html = f'<div class="metric-sub" style="color: #666;">{sub_value}</div>' if sub_value else ""
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">{label}</div>
+                <div class="metric-value" style="color: {color};">{value}</div>
+                {sub_html}
+            </div>
+        """, unsafe_allow_html=True)
 
     # --- 6. SIDEBAR ---
     with st.sidebar:
@@ -152,49 +157,115 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD ---
+    # --- 7. ABA: DASHBOARD PROFISSIONAL ---
     if selected == "Dashboard":
-        st.title("📊 Analytics Pessoal")
-        df = load_trades_db()
-        if not df.empty:
-            df_u = df[df['usuario'] == st.session_state["logged_user"]]
-            if not df_u.empty:
-                filtro_periodo = st.selectbox("📅 Período", ["Geral", "Hoje", "Esta Semana", "Este Mês"])
-                
-                if filtro_periodo == "Hoje":
-                    df_u = df_u[df_u['data'] == datetime.now().date()]
-                elif filtro_periodo == "Esta Semana":
-                    inicio_semana = datetime.now().date() - timedelta(days=datetime.now().weekday())
-                    df_u = df_u[df_u['data'] >= inicio_semana]
-                elif filtro_periodo == "Este Mês":
-                    inicio_mes = datetime.now().date().replace(day=1)
-                    df_u = df_u[df_u['data'] >= inicio_mes]
-
-                if df_u.empty:
-                    st.info(f"Sem trades registrados em: {filtro_periodo}")
-                else:
-                    t_pl = df_u['resultado'].sum()
-                    wins = len(df_u[df_u['resultado'] > 0])
-                    total = len(df_u)
-                    wr = (wins / total) * 100 if total > 0 else 0
+        st.title("📊 Central de Controle")
+        df_raw = load_trades_db()
+        
+        if not df_raw.empty:
+            df = df_raw[df_raw['usuario'] == st.session_state["logged_user"]]
+            
+            if not df.empty:
+                # --- FILTROS ---
+                with st.expander("🔍 Filtros Avançados", expanded=True):
+                    col_d1, col_d2, col_ctx = st.columns([1, 1, 2])
                     
-                    c1, c2, c3, c4 = st.columns(4)
-                    with c1: card_metric("P&L LIQUIDO", f"${t_pl:,.2f}", "#00FF88" if t_pl >= 0 else "#FF4B4B")
-                    with c2: card_metric("TRADES", str(total))
-                    with c3: card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
-                    with c4: card_metric("FATOR DE LUCRO", f"{(df_u[df_u['resultado']>0]['resultado'].sum() / abs(df_u[df_u['resultado']<0]['resultado'].sum()) if len(df_u[df_u['resultado']<0]) > 0 else 0):.2f}")
+                    # Filtro de Data
+                    min_date = df['data'].min()
+                    max_date = df['data'].max()
+                    
+                    d_inicio = col_d1.date_input("Data Início", min_date)
+                    d_fim = col_d2.date_input("Data Fim", max_date)
+                    
+                    # Filtro de Contexto
+                    all_contexts = list(df['contexto'].unique())
+                    filters_ctx = col_ctx.multiselect("Filtrar Contextos", all_contexts, default=all_contexts)
 
+                # Aplica Filtros
+                mask = (df['data'] >= d_inicio) & (df['data'] <= d_fim) & (df['contexto'].isin(filters_ctx))
+                df_filtered = df[mask].copy()
+
+                if df_filtered.empty:
+                    st.warning("⚠️ Nenhum trade encontrado com os filtros selecionados.")
+                else:
+                    # --- CÁLCULO DE KPIs ---
+                    total_trades = len(df_filtered)
+                    net_profit = df_filtered['resultado'].sum()
+                    
+                    wins = df_filtered[df_filtered['resultado'] > 0]
+                    losses = df_filtered[df_filtered['resultado'] < 0]
+                    
+                    gross_profit = wins['resultado'].sum()
+                    gross_loss = abs(losses['resultado'].sum())
+                    
+                    # Profit Factor
+                    pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+                    pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
+                    
+                    # Win Rate
+                    win_rate = (len(wins) / total_trades) * 100
+                    
+                    # Payoff (Risco:Retorno Real)
+                    avg_win = wins['resultado'].mean() if not wins.empty else 0
+                    avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
+                    payoff = avg_win / avg_loss if avg_loss > 0 else 0
+                    
+                    # Expectativa Matemática (Expectancy)
+                    loss_rate = (len(losses) / total_trades)
+                    expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
+                    
+                    # Drawdown Máximo
+                    df_filtered = df_filtered.sort_values('created_at')
+                    df_filtered['equity'] = df_filtered['resultado'].cumsum()
+                    df_filtered['peak'] = df_filtered['equity'].cummax()
+                    df_filtered['drawdown'] = df_filtered['equity'] - df_filtered['peak']
+                    max_dd = df_filtered['drawdown'].min()
+
+                    # --- EXIBIÇÃO KPIs (LINHA 1) ---
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B")
+                    with c2: card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000")
+                    with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white")
+                    with c4: card_metric("PAYOFF (RR)", f"{payoff:.2f}", f"Avg Win: ${avg_win:.0f} / Loss: ${avg_loss:.0f}", "white")
+                    
+                    # --- EXIBIÇÃO KPIs (LINHA 2) ---
+                    c5, c6, c7, c8 = st.columns(4)
+                    with c5: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B")
+                    with c6: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Queda do Topo", "#FF4B4B")
+                    with c7: card_metric("TOTAL TRADES", str(total_trades), "No Período", "white")
+                    with c8: card_metric("MELHOR TRADE", f"${df_filtered['resultado'].max():,.2f}", "Maior Gain", "#00FF88")
+
+                    st.markdown("---")
+
+                    # --- GRÁFICOS ---
                     g1, g2 = st.columns([2, 1])
+                    
                     with g1:
-                        df_u = df_u.sort_values('created_at')
-                        df_u['Acumulado'] = df_u['resultado'].cumsum()
-                        fig = px.area(df_u, x='data', y='Acumulado', title="Curva de Patrimônio", template="plotly_dark")
-                        fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
-                        st.plotly_chart(fig, use_container_width=True)
+                        # Curva de Patrimônio
+                        fig_eq = px.area(df_filtered, x='data', y='equity', title="📈 Curva de Patrimônio (Equity)", template="plotly_dark")
+                        fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
+                        fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
+                        st.plotly_chart(fig_eq, use_container_width=True)
+                        
                     with g2:
-                        fig_pie = px.pie(df_u, names='ativo', title="Distribuição por Ativo", template="plotly_dark", hole=0.4)
-                        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                        st.plotly_chart(fig_pie, use_container_width=True)
+                        # Resultado por Contexto
+                        ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
+                        fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+                        st.plotly_chart(fig_bar, use_container_width=True)
+
+                    # Performance por Dia da Semana
+                    st.markdown("### 📅 Performance por Dia da Semana")
+                    df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
+                    # Tradução
+                    dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
+                    df_filtered['dia_pt'] = df_filtered['dia_semana'].map(dias_pt)
+                    
+                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
+                    
+                    fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+                    fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
+                    st.plotly_chart(fig_day, use_container_width=True)
+
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
@@ -432,7 +503,6 @@ if check_password():
         def reset_user_form():
             st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
 
-        # Carrega sem ordernar por created_at para evitar o erro
         res = supabase.table("users").select("*").execute()
         users_list = res.data
 
