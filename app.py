@@ -74,16 +74,9 @@ st.markdown("""
     
     /* Ícone de Ajuda */
     .help-icon {
-        color: #555;
-        font-size: 12px;
-        border: 1px solid #444;
-        border-radius: 50%;
-        width: 14px;
-        height: 14px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        cursor: help;
+        color: #555; font-size: 12px; border: 1px solid #444;
+        border-radius: 50%; width: 14px; height: 14px;
+        display: inline-flex; align-items: center; justify-content: center;
     }
 
     /* Geral */
@@ -228,30 +221,25 @@ if check_password():
                     gross_profit = wins['resultado'].sum()
                     gross_loss = abs(losses['resultado'].sum())
                     
-                    # Profit Factor
                     pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
                     pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
                     
-                    # Win Rate
                     win_rate = (len(wins) / total_trades) * 100
                     
-                    # Payoff (Risco:Retorno Real)
                     avg_win = wins['resultado'].mean() if not wins.empty else 0
                     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
                     payoff = avg_win / avg_loss if avg_loss > 0 else 0
                     
-                    # Expectativa Matemática (Expectancy)
                     loss_rate = (len(losses) / total_trades)
                     expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
                     
-                    # Drawdown Máximo
                     df_filtered = df_filtered.sort_values('created_at')
                     df_filtered['equity'] = df_filtered['resultado'].cumsum()
                     df_filtered['peak'] = df_filtered['equity'].cummax()
                     df_filtered['drawdown'] = df_filtered['equity'] - df_filtered['peak']
                     max_dd = df_filtered['drawdown'].min()
 
-                    # --- EXIBIÇÃO KPIs COM TOOLTIPS ---
+                    # --- EXIBIÇÃO KPIs (TOOLTIPS ATIVADOS) ---
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: 
                         card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B",
@@ -259,7 +247,7 @@ if check_password():
                     
                     with c2: 
                         card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000",
-                        "Relação Lucro Bruto / Prejuízo Bruto. Indica quanto você ganha para cada dólar perdido. Acima de 1.5 é saudável.")
+                        "Relação Lucro Bruto / Prejuízo Bruto. Indica quanto você ganha para cada dólar perdido.")
                     
                     with c3: 
                         card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white",
@@ -269,7 +257,6 @@ if check_password():
                         card_metric("PAYOFF (RR)", f"{payoff:.2f}", f"Avg Win: ${avg_win:.0f} / Loss: ${avg_loss:.0f}", "white",
                         "Risco:Retorno Real. Média do valor dos ganhos dividida pela média do valor das perdas.")
                     
-                    # Linha 2
                     c5, c6, c7, c8 = st.columns(4)
                     with c5: 
                         card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B",
@@ -289,11 +276,11 @@ if check_password():
 
                     st.markdown("---")
 
-                    # --- GRÁFICOS (SEM MODEBAR) ---
+                    # --- GRÁFICOS (COM SELETOR DE VISTA) ---
                     g1, g2 = st.columns([2, 1])
                     
                     with g1:
-                        # Opção de Visualização
+                        # Seletor Trade a Trade vs Data
                         view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades (Padrão)", "Data (Tempo)"], horizontal=True)
                         
                         if view_mode == "Sequência de Trades (Padrão)":
@@ -316,7 +303,6 @@ if check_password():
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
-                    # Performance Dia
                     st.markdown("### 📅 Performance por Dia da Semana")
                     df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
                     dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
@@ -565,7 +551,6 @@ if check_password():
         def reset_user_form():
             st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
 
-        # Carrega sem ordernar por created_at
         res = supabase.table("users").select("*").execute()
         users_list = res.data
 
