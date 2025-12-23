@@ -45,11 +45,11 @@ st.markdown("""
     .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 2px; }
     .card-sub { font-size: 11px; color: #888; margin-bottom: 8px; }
     
-    /* Cores de Resultado nos Cards */
+    /* Cores de Resultado (Histórico e Modal) */
     .card-res-win { font-size: 16px; font-weight: 800; color: #B20000; } /* Vermelho Marca */
     .card-res-loss { font-size: 16px; font-weight: 800; color: #FF4B4B; } /* Vermelho Alerta */
 
-    /* Métricas do Dashboard (FIXED HEIGHT PARA ALINHAMENTO PERFEITO) */
+    /* Métricas do Dashboard (FIXED HEIGHT PARA ALINHAMENTO) */
     .metric-container { 
         background-color: #161616; 
         border: 1px solid #262626; 
@@ -60,9 +60,7 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         transition: border-color 0.3s, transform 0.3s;
         position: relative;
-        
-        /* Altura Mínima Fixa para garantir que todos tenham o mesmo tamanho */
-        min-height: 140px; 
+        min-height: 140px; /* Garante altura uniforme */
         display: flex;
         flex-direction: column;
         justify-content: center;
@@ -170,7 +168,7 @@ if check_password():
 
     # Função de Card
     def card_metric(label, value, sub_value="", color="white", help_text=""):
-        sub_html = f'<div class="metric-sub">{sub_value}</div>' if sub_value else '<div class="metric-sub">&nbsp;</div>' # Força altura
+        sub_html = f'<div class="metric-sub">{sub_value}</div>' if sub_value else '<div class="metric-sub">&nbsp;</div>'
         help_html = f'<span class="help-icon" title="{help_text}">?</span>' if help_text else ""
         
         st.markdown(f"""
@@ -230,20 +228,24 @@ if check_password():
                     gross_profit = wins['resultado'].sum()
                     gross_loss = abs(losses['resultado'].sum())
                     
+                    # 1. Financeiro
                     pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
                     pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
                     win_rate = (len(wins) / total_trades) * 100
                     
+                    # 2. Médias Financeiras
                     avg_win = wins['resultado'].mean() if not wins.empty else 0
                     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
                     payoff = avg_win / avg_loss if avg_loss > 0 else 0
                     loss_rate = (len(losses) / total_trades)
                     expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
                     
+                    # 3. Médias Técnicas
                     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
                     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
                     avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
 
+                    # 4. Risco
                     df_filtered = df_filtered.sort_values('created_at')
                     df_filtered['equity'] = df_filtered['resultado'].cumsum()
                     df_filtered['peak'] = df_filtered['equity'].cummax()
@@ -251,6 +253,8 @@ if check_password():
                     max_dd = df_filtered['drawdown'].min()
 
                     # --- EXIBIÇÃO KPIs (3 LINHAS) ---
+                    # Cores Ajustadas: #B20000 (Marca) para Gains
+                    
                     st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#B20000" if net_profit >= 0 else "#FF4B4B", "Resultado financeiro total (Lucro - Prejuízo).")
@@ -274,7 +278,7 @@ if check_password():
 
                     st.markdown("---")
 
-                    # --- GRÁFICOS (CORES AJUSTADAS: Dark Red -> Brand Red) ---
+                    # --- GRÁFICOS ---
                     g1, g2 = st.columns([2, 1])
                     with g1:
                         view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
@@ -295,7 +299,7 @@ if check_password():
                     with g2:
                         st.markdown("<br>", unsafe_allow_html=True) 
                         ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
-                        # CORRIGIDO: Escala "Dark Maroon" -> "Brand Red"
+                        # Gradiente: Vinho Escuro -> Vermelho Marca
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#440000", "#B20000"])
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
@@ -305,7 +309,7 @@ if check_password():
                     df_filtered['dia_pt'] = df_filtered['dia_semana'].map(dias_pt)
                     
                     day_perf = df_filtered.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
-                    # CORRIGIDO: Escala "Dark Maroon" -> "Brand Red"
+                    # Gradiente: Vinho Escuro -> Vermelho Marca
                     fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#440000", "#B20000"])
                     fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
                     st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
