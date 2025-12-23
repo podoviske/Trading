@@ -257,11 +257,10 @@ if check_password():
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # --- 9. CONFIGURAR ATM (REFEITA COM EDIÇÃO E MULTI-PARCIAIS) ---
+    # --- 9. CONFIGURAR ATM (COM EDIÇÃO) ---
     elif selected == "Configurar ATM":
         st.title("⚙️ Gerenciar ATMs")
 
-        # Inicializa estado do formulário se não existir
         if "atm_form_data" not in st.session_state:
             st.session_state.atm_form_data = {
                 "id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]
@@ -272,67 +271,50 @@ if check_password():
                 "id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]
             }
 
-        # Carrega ATMs do banco
         res = supabase.table("atm_configs").select("*").order("nome").execute()
         existing_atms = res.data
 
-        # Layout: Formulário à esquerda, Lista à direita
         c_form, c_list = st.columns([1.5, 1])
 
         with c_list:
             st.subheader("📋 Estratégias Salvas")
             if st.button("✨ Criar Nova (Limpar)", use_container_width=True):
-                reset_atm_form()
-                st.rerun()
+                reset_atm_form(); st.rerun()
                 
             if existing_atms:
                 for item in existing_atms:
                     with st.expander(f"📍 {item['nome']}", expanded=False):
                         st.write(f"**Lote:** {item['lote']} | **Stop:** {item['stop']}")
                         c_edit, c_del = st.columns(2)
-                        
-                        # Botão EDITAR
                         if c_edit.button("✏️ Editar", key=f"edit_{item['id']}"):
-                            # Carrega dados do banco para o formulário
                             p_data = item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])
                             st.session_state.atm_form_data = {
                                 "id": item['id'], "nome": item['nome'], "lote": item['lote'],
                                 "stop": item['stop'], "parciais": p_data
                             }
                             st.rerun()
-                            
-                        # Botão EXCLUIR
                         if c_del.button("🗑️ Excluir", key=f"del_{item['id']}"):
                             supabase.table("atm_configs").delete().eq("id", item['id']).execute()
-                            if st.session_state.atm_form_data["id"] == item['id']:
-                                reset_atm_form()
+                            if st.session_state.atm_form_data["id"] == item['id']: reset_atm_form()
                             st.rerun()
-            else:
-                st.info("Nenhuma estratégia salva.")
+            else: st.info("Nenhuma estratégia salva.")
 
         with c_form:
             form_data = st.session_state.atm_form_data
             titulo = f"✏️ Editando: {form_data['nome']}" if form_data["id"] else "✨ Nova Estratégia"
             st.subheader(titulo)
             
-            # Campos do Formulário
             new_nome = st.text_input("Nome da Estratégia", value=form_data["nome"])
-            
             c_l, c_s = st.columns(2)
             new_lote = c_l.number_input("Lote Total", min_value=1, value=int(form_data["lote"]))
             new_stop = c_s.number_input("Stop Padrão (Pts)", min_value=0.0, value=float(form_data["stop"]), step=0.25)
             
             st.markdown("---")
-            st.write("🎯 Configuração de Alvos (Parciais)")
-            
-            # Botões para adicionar/remover alvos dinamicamente
+            st.write("🎯 Configuração de Alvos")
             c_add, c_rem = st.columns([1, 4])
-            if c_add.button("➕ Adicionar Alvo"):
-                form_data["parciais"].append({"pts": 0.0, "qtd": 1})
-            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1:
-                form_data["parciais"].pop()
+            if c_add.button("➕ Adicionar Alvo"): form_data["parciais"].append({"pts": 0.0, "qtd": 1})
+            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1: form_data["parciais"].pop()
             
-            # Renderiza os inputs de parciais
             updated_partials = []
             total_aloc = 0
             for i, p in enumerate(form_data["parciais"]):
@@ -342,33 +324,18 @@ if check_password():
                 updated_partials.append({"pts": p_pts, "qtd": p_qtd})
                 total_aloc += p_qtd
             
-            # Aviso de alocação
-            if total_aloc != new_lote:
-                st.warning(f"⚠️ Atenção: A soma das parciais ({total_aloc}) está diferente do Lote Total ({new_lote}).")
-            
+            if total_aloc != new_lote: st.warning(f"⚠️ Atenção: Soma das parciais ({total_aloc}) difere do Lote Total ({new_lote}).")
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # Botão Salvar (Insert ou Update)
             if st.button("💾 SALVAR ESTRATÉGIA", use_container_width=True):
-                payload = {
-                    "nome": new_nome,
-                    "lote": new_lote,
-                    "stop": new_stop,
-                    "parciais": updated_partials
-                }
-                
+                payload = {"nome": new_nome, "lote": new_lote, "stop": new_stop, "parciais": updated_partials}
                 if form_data["id"]:
-                    # Update
                     supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute()
-                    st.toast("Estratégia atualizada com sucesso!", icon="✅")
+                    st.toast("Atualizado!", icon="✅")
                 else:
-                    # Insert
                     supabase.table("atm_configs").insert(payload).execute()
-                    st.toast("Estratégia criada com sucesso!", icon="✨")
-                
-                time.sleep(1)
-                reset_atm_form()
-                st.rerun()
+                    st.toast("Criado!", icon="✨")
+                time.sleep(1); reset_atm_form(); st.rerun()
 
     # --- 10. HISTÓRICO ---
     elif selected == "Histórico":
@@ -399,20 +366,24 @@ if check_password():
                     res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
                     c3.markdown(f"<h2 style='color:{res_c}; text-align:right;'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
                     if c3.button("🗑️ Deletar", key=row['id'], use_container_width=True):
-                        supabase.table("trades").delete().eq("id", row['id']).execute()
-                        st.rerun()
+                        supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
                     st.divider()
 
-    # --- 11. GERENCIAR USUÁRIOS ---
+    # --- 11. GERENCIAR USUÁRIOS (CORRIGIDO) ---
     elif selected == "Gerenciar Usuários":
         st.title("👥 Usuários do Terminal")
         res = supabase.table("users").select("*").execute()
         users_df = pd.DataFrame(res.data)
+        
         with st.expander("Novo Usuário"):
             nu = st.text_input("Username")
             np = st.text_input("Password", type="password")
             if st.button("Criar Acesso"):
                 supabase.table("users").insert({"username": nu, "password": np}).execute()
                 st.success("Usuário Criado!"); st.rerun()
+        
         if not users_df.empty:
-            st.table(users_df[['username', 'created_at']])
+            # Mostra colunas seguras
+            cols_show = ['username']
+            if 'created_at' in users_df.columns: cols_show.append('created_at')
+            st.table(users_df[cols_show])
