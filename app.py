@@ -20,7 +20,7 @@ except Exception as e:
 # --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
-# --- CSS CUSTOMIZADO (ORIGINAL VERSÃO 2 MANTIDO) ---
+# --- CSS CUSTOMIZADO (MANTIDO 100%) ---
 st.markdown("""
     <style>
     /* Cards do Histórico */
@@ -100,7 +100,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. SISTEMA DE LOGIN (ATUALIZADO COM ROLE) ---
+# --- 3. SISTEMA DE LOGIN (ROLE-BASED) ---
 def check_password():
     def password_entered():
         u = st.session_state.get("username_input")
@@ -213,7 +213,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD (COMPLETO) ---
+    # --- 7. ABA: DASHBOARD (COMPLETO E RESTAURADO) ---
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
@@ -348,15 +348,15 @@ if check_password():
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. REGISTRAR TRADE (CORRIGIDO ATM + GRUPO) ---
+    # --- 8. REGISTRAR TRADE (ATUALIZADO COM GRUPO PARA MASTER/ADMIN) ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_db = load_atms_db()
-        df_c = load_contas_config()
+        df_contas_raw = load_contas_config()
         
         atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
         
-        # Lógica de Carregamento de ATM Corrigida
+        # Correção do Bug de Estado do ATM
         if atm_sel != "Manual":
             config = atm_db[atm_sel]
             lt_default = int(config["lote"])
@@ -377,10 +377,16 @@ if check_password():
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
             ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
             
-            # Seletor de Grupo para Master/Admin
-            grupo_sel = "Geral"
-            if ROLE in ['master', 'admin'] and not df_c.empty:
-                grupo_sel = st.selectbox("🎯 Vincular ao Grupo", sorted(df_c['grupo_nome'].unique()))
+            # --- MODIFICAÇÃO: SELETOR DE GRUPO (SÓ MASTER/ADMIN) ---
+            grupo_sel_trade = "Geral"
+            if ROLE in ["master", "admin"]:
+                if not df_contas_raw.empty:
+                    # Lista de grupos cadastrados
+                    lista_grupos = sorted(list(df_contas_raw['grupo_nome'].unique()))
+                    grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
+                else:
+                    st.caption("⚠️ Nenhum grupo encontrado na aba Contas.")
+            # -------------------------------------------------------
 
         with f2:
             lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
@@ -392,7 +398,7 @@ if check_password():
 
         with f3:
             st.write("**Saídas (Alocação)**")
-            # Força o reset do session_state se mudar a ATM
+            # Lógica de Reset de Parciais ao mudar ATM
             if "num_parciais" not in st.session_state or atm_sel != st.session_state.get("last_atm"):
                 st.session_state.num_parciais = len(parciais_pre) if parciais_pre else 1
                 st.session_state.last_atm = atm_sel
@@ -405,11 +411,11 @@ if check_password():
             aloc = 0
             for i in range(st.session_state.num_parciais):
                 c_pts, c_qtd = st.columns(2)
-                # Pega valores do preset se existir
+                # Valores padrão vindos do ATM ou zero
                 val_pts = float(parciais_pre[i]["pts"]) if i < len(parciais_pre) else 0.0
                 val_qtd = int(parciais_pre[i]["qtd"]) if i < len(parciais_pre) else (lt if i == 0 else 0)
                 
-                # Input único usando key baseada na ATM para atualizar
+                # Keys únicas para não bugar o Streamlit
                 pts = c_pts.number_input(f"Pts Alvo {i+1}", value=val_pts, key=f"p_pts_{i}_{atm_sel}", step=0.25)
                 qtd = c_qtd.number_input(f"Contratos {i+1}", value=val_qtd, key=f"p_qtd_{i}_{atm_sel}", min_value=0)
                 saidas.append({"pts": pts, "qtd": qtd})
@@ -442,7 +448,7 @@ if check_password():
                     supabase.table("trades").insert({
                         "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
                         "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
-                        "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel,
+                        "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
                         "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                     }).execute()
                     st.balloons() 
@@ -535,7 +541,8 @@ if check_password():
             st.markdown("---")
             st.write("🎯 Configuração de Alvos")
             c_add, c_rem = st.columns([1, 4])
-            # Correção do Bug: Atualiza session_state e rerun
+            
+            # Bug Fix: Atualizar session e dar rerun
             if c_add.button("➕ Adicionar Alvo"): 
                 st.session_state.atm_form_data["parciais"].append({"pts": 0.0, "qtd": 1})
                 st.rerun()
@@ -573,19 +580,18 @@ if check_password():
         if not df.empty:
             df_h = df[df['usuario'] == USER]
             
-            with st.expander("🔍 Filtros", expanded=True):
+            # Filtros dependem do cargo
+            if ROLE in ['master', 'admin']:
                 c_f1, c_f2, c_f3, c_f4 = st.columns(4)
-                filtro_ativo = c_f1.multiselect("Ativo", ["NQ", "MNQ"])
-                filtro_res = c_f2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
-                filtro_ctx = c_f3.multiselect("Contexto", list(df_h['contexto'].unique()))
-                
-                # Filtro de Grupo (Master/Admin)
-                if ROLE in ['master', 'admin']:
-                    opcoes_grupo = sorted(list(df_h['grupo_vinculo'].unique()))
-                    filtro_grp = c_f4.multiselect("Grupo", opcoes_grupo)
-                else:
-                    filtro_grp = []
+                filtro_grp = c_f4.multiselect("Filtrar Grupos", sorted(list(df_h['grupo_vinculo'].unique())))
+            else:
+                c_f1, c_f2, c_f3 = st.columns(3)
+                filtro_grp = []
 
+            filtro_ativo = c_f1.multiselect("Filtrar Ativo", ["NQ", "MNQ"])
+            filtro_res = c_f2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
+            filtro_ctx = c_f3.multiselect("Filtrar Contexto", sorted(list(df_h['contexto'].unique())))
+            
             if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
             if filtro_ctx: df_h = df_h[df_h['contexto'].isin(filtro_ctx)]
             if filtro_grp: df_h = df_h[df_h['grupo_vinculo'].isin(filtro_grp)]
@@ -604,8 +610,11 @@ if check_password():
                 c1.write(f"📈 **Ativo:** {row['ativo']}")
                 c2.write(f"⚖️ **Lote:** {row['lote']}")
                 c2.write(f"🎯 **Médio:** {row['pts_medio']:.2f} pts")
-                c3.write(f"📂 **Grupo:** {row['grupo_vinculo']}")
+                c3.write(f"🔄 **Direção:** {row['direcao']}")
                 c3.write(f"🧠 **Contexto:** {row['contexto']}")
+                
+                # Exibir Grupo no Modal
+                st.write(f"📂 **Grupo Vinculado:** {row['grupo_vinculo']}")
                 
                 res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
                 st.markdown(f"<h1 style='color:{res_c}; text-align:center; font-size:40px;'>${row['resultado']:,.2f}</h1>", unsafe_allow_html=True)
@@ -634,8 +643,8 @@ if check_password():
 
     # --- 12. GERENCIAR USUÁRIOS (SÓ ADMIN) ---
     elif selected == "Gerenciar Usuários":
-        if ROLE != 'admin':
-            st.error("Acesso Negado. Contate o Administrador.")
+        if ROLE != "admin":
+            st.error("Acesso Negado.")
         else:
             st.title("👥 Gestão de Usuários")
 
@@ -660,9 +669,10 @@ if check_password():
                         with st.container():
                             c1, c2, c3 = st.columns([2, 2, 1])
                             c1.write(f"👤 **{u['username']}**")
-                            # Mostra o cargo com ícone
-                            role_icon = "👑" if u.get('role') == 'admin' else ("🛡️" if u.get('role') == 'master' else "👤")
-                            c2.write(f"{role_icon} {u.get('role', 'user')}")
+                            
+                            # Ícone de Cargo
+                            icon_role = "👑" if u.get('role') == 'admin' else ("🛡️" if u.get('role') == 'master' else "👤")
+                            c2.write(f"{icon_role} {u.get('role', 'user')}")
                             
                             col_edit, col_del = st.columns(2)
                             if col_edit.button("✏️", key=f"u_edit_{u['id']}"):
@@ -683,10 +693,10 @@ if check_password():
                 form_user = st.text_input("Login (Username)", value=u_data["username"])
                 form_pass = st.text_input("Senha (Password)", value=u_data["password"], type="default")
                 
-                # SELETOR DE CARGO
-                role_options = ["user", "master", "admin"]
-                current_role = u_data["role"] if u_data["role"] in role_options else "user"
-                form_role = st.selectbox("Nível de Acesso", role_options, index=role_options.index(current_role))
+                # Seletor de Cargo
+                role_opts = ["user", "master", "admin"]
+                curr_role = u_data["role"] if u_data["role"] in role_opts else "user"
+                form_role = st.selectbox("Nível de Acesso", role_opts, index=role_opts.index(curr_role))
                 
                 if st.button("💾 SALVAR USUÁRIO", use_container_width=True):
                     if u_data["id"]:
