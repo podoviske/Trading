@@ -22,7 +22,7 @@ st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="�
 # --- CSS CUSTOMIZADO ---
 st.markdown("""
     <style>
-    /* Card da Galeria */
+    /* Cards */
     .trade-card {
         background-color: #161616;
         border-radius: 8px;
@@ -152,7 +152,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. DASHBOARD ---
+    # --- 7. ABA: DASHBOARD ---
     if selected == "Dashboard":
         st.title("📊 Analytics Pessoal")
         df = load_trades_db()
@@ -367,57 +367,53 @@ if check_password():
                     st.toast("Criado!", icon="✨")
                 time.sleep(1); reset_atm_form(); st.rerun()
 
-    # --- 10. HISTÓRICO (GALERIA 4 CARDS + MODAL GRANDE) ---
+    # --- 10. HISTÓRICO (COM NOVO FILTRO DE CONTEXTO) ---
     elif selected == "Histórico":
         st.title("📜 Galeria de Trades")
         
-        col_f1, col_f2 = st.columns(2)
-        filtro_ativo = col_f1.multiselect("Filtrar por Ativo", ["NQ", "MNQ"])
-        filtro_res = col_f2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
+        # Filtros em 3 colunas
+        c_f1, c_f2, c_f3 = st.columns(3)
+        filtro_ativo = c_f1.multiselect("Filtrar Ativo", ["NQ", "MNQ"])
+        filtro_res = c_f2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
+        filtro_ctx = c_f3.multiselect("Filtrar Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
         
         df = load_trades_db()
         if not df.empty:
             df_h = df[df['usuario'] == st.session_state["logged_user"]]
+            
+            # Aplica Filtros
             if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
+            if filtro_ctx: df_h = df_h[df_h['contexto'].isin(filtro_ctx)]
             if filtro_res == "Wins": df_h = df_h[df_h['resultado'] > 0]
             if filtro_res == "Losses": df_h = df_h[df_h['resultado'] < 0]
             
             df_h = df_h.sort_values('created_at', ascending=False)
             
-            # Modal de Detalhes (Grande)
+            # Modal de Detalhes
             @st.dialog("Detalhes da Operação", width="large")
             def show_trade_details(row):
-                # Imagem Grande no Topo
                 if row.get('prints'): st.image(row['prints'], use_container_width=True)
                 else: st.info("Sem Print disponível.")
-                
                 st.markdown("---")
-                
-                # Dados
                 c1, c2, c3 = st.columns(3)
                 c1.write(f"📅 **Data:** {row['data']}")
                 c1.write(f"📈 **Ativo:** {row['ativo']}")
-                
                 c2.write(f"⚖️ **Lote:** {row['lote']}")
                 c2.write(f"🎯 **Médio:** {row['pts_medio']:.2f} pts")
-                
                 c3.write(f"🔄 **Direção:** {row['direcao']}")
                 c3.write(f"🧠 **Contexto:** {row['contexto']}")
-                
                 res_c = "green" if row['resultado'] >= 0 else "red"
                 st.markdown(f"<h1 style='color:{res_c}; text-align:center; font-size:40px;'>${row['resultado']:,.2f}</h1>", unsafe_allow_html=True)
-                
                 if st.button("🗑️ DELETAR REGISTRO", type="primary", use_container_width=True):
                     supabase.table("trades").delete().eq("id", row['id']).execute()
                     st.rerun()
 
-            # Grid Layout (4 Colunas)
+            # Grid 4 Colunas
             cols = st.columns(4)
             for i, (index, row) in enumerate(df_h.iterrows()):
-                with cols[i % 4]: # Distribui entre as 4 colunas
+                with cols[i % 4]:
                     res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
                     res_fmt = f"${row['resultado']:,.2f}"
-                    
                     img_html = f'<img src="{row["prints"]}" class="card-img">' if row.get('prints') else '<div style="width:100%; height:100%; background:#333; display:flex; align-items:center; justify-content:center; color:#555;">Sem Foto</div>'
                     
                     st.markdown(f"""
@@ -428,24 +424,67 @@ if check_password():
                             <div class="{res_class}">{res_fmt}</div>
                         </div>
                     """, unsafe_allow_html=True)
-                    
                     if st.button("👁️ Ver", key=f"btn_{row['id']}", use_container_width=True):
                         show_trade_details(row)
 
-    # --- 11. GERENCIAR USUÁRIOS ---
+    # --- 11. GERENCIAR USUÁRIOS (COM EDIÇÃO) ---
     elif selected == "Gerenciar Usuários":
-        st.title("👥 Usuários do Terminal")
-        res = supabase.table("users").select("*").execute()
-        users_df = pd.DataFrame(res.data)
-        
-        with st.expander("Novo Usuário"):
-            nu = st.text_input("Username")
-            np = st.text_input("Password", type="password")
-            if st.button("Criar Acesso"):
-                supabase.table("users").insert({"username": nu, "password": np}).execute()
-                st.success("Usuário Criado!"); st.rerun()
-        
-        if not users_df.empty:
-            cols_show = ['username']
-            if 'created_at' in users_df.columns: cols_show.append('created_at')
-            st.table(users_df[cols_show])
+        st.title("👥 Gestão de Usuários")
+
+        # Estado para formulário de usuário
+        if "user_form_data" not in st.session_state:
+            st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
+
+        def reset_user_form():
+            st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
+
+        # Busca usuários
+        res = supabase.table("users").select("*").order("created_at").execute()
+        users_list = res.data
+
+        c_form, c_list = st.columns([1, 1.5])
+
+        with c_list:
+            st.subheader("📋 Usuários Ativos")
+            if st.button("✨ Criar Novo Usuário", use_container_width=True):
+                reset_user_form(); st.rerun()
+            
+            if users_list:
+                for u in users_list:
+                    with st.container():
+                        c1, c2, c3 = st.columns([2, 2, 1])
+                        c1.write(f"👤 **{u['username']}**")
+                        c2.caption("******") # Protege a senha visualmente
+                        
+                        col_edit, col_del = st.columns(2)
+                        # Botão EDITAR
+                        if col_edit.button("✏️", key=f"u_edit_{u['id']}"):
+                            st.session_state.user_form_data = {"id": u['id'], "username": u['username'], "password": u['password']}
+                            st.rerun()
+                        # Botão EXCLUIR
+                        if col_del.button("🗑️", key=f"u_del_{u['id']}"):
+                            supabase.table("users").delete().eq("id", u['id']).execute()
+                            if st.session_state.user_form_data["id"] == u['id']: reset_user_form()
+                            st.rerun()
+                        st.divider()
+            else: st.info("Nenhum usuário encontrado.")
+
+        with c_form:
+            u_data = st.session_state.user_form_data
+            titulo = f"✏️ Editando: {u_data['username']}" if u_data["id"] else "✨ Novo Usuário"
+            st.subheader(titulo)
+            
+            form_user = st.text_input("Login (Username)", value=u_data["username"])
+            form_pass = st.text_input("Senha (Password)", value=u_data["password"], type="default") # Mostra senha ao editar
+            
+            if st.button("💾 SALVAR USUÁRIO", use_container_width=True):
+                if u_data["id"]:
+                    # Update
+                    supabase.table("users").update({"username": form_user, "password": form_pass}).eq("id", u_data["id"]).execute()
+                    st.toast("Usuário atualizado!", icon="✅")
+                else:
+                    # Insert
+                    supabase.table("users").insert({"username": form_user, "password": form_pass}).execute()
+                    st.toast("Usuário criado!", icon="✨")
+                
+                time.sleep(1); reset_user_form(); st.rerun()
