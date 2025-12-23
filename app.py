@@ -19,6 +19,46 @@ except Exception as e:
 # --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
+# --- CSS CUSTOMIZADO PARA CARDS ---
+st.markdown("""
+    <style>
+    .trade-card {
+        background-color: #1E1E1E;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 20px;
+        border: 1px solid #333;
+        transition: transform 0.2s;
+    }
+    .trade-card:hover {
+        transform: scale(1.02);
+        border-color: #B20000;
+    }
+    .card-title { font-size: 16px; font-weight: bold; color: white; margin-bottom: 5px; }
+    .card-sub { font-size: 12px; color: #888; margin-bottom: 10px; }
+    .card-res-win { font-size: 18px; font-weight: bold; color: #00FF88; }
+    .card-res-loss { font-size: 18px; font-weight: bold; color: #FF4B4B; }
+    
+    [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
+    .stApp { background-color: #0F0F0F; }
+    .metric-container { 
+        background-color: #161616; border: 1px solid #262626; padding: 15px; 
+        border-radius: 10px; text-align: center; margin-bottom: 12px;
+    }
+    .metric-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .metric-value { color: white; font-size: 22px; font-weight: bold; margin-top: 5px; }
+    .piscante-erro { 
+        padding: 15px; border-radius: 5px; color: white; font-weight: bold; 
+        text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; 
+    }
+    .risco-alert {
+        color: #FF4B4B; font-weight: bold; font-size: 16px; margin-top: 5px;
+        background-color: rgba(255, 75, 75, 0.1); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #FF4B4B;
+    }
+    @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- 3. SISTEMA DE LOGIN ---
 def check_password():
     def password_entered():
@@ -61,30 +101,8 @@ def check_password():
     return True
 
 if check_password():
-    # --- 4. CONSTANTES E ESTILOS ---
+    # --- 4. CONSTANTES ---
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
-
-    st.markdown("""
-        <style>
-        [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
-        .stApp { background-color: #0F0F0F; }
-        .metric-container { 
-            background-color: #161616; border: 1px solid #262626; padding: 15px; 
-            border-radius: 10px; text-align: center; margin-bottom: 12px;
-        }
-        .metric-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
-        .metric-value { color: white; font-size: 22px; font-weight: bold; margin-top: 5px; }
-        .piscante-erro { 
-            padding: 15px; border-radius: 5px; color: white; font-weight: bold; 
-            text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; 
-        }
-        .risco-alert {
-            color: #FF4B4B; font-weight: bold; font-size: 16px; margin-top: 5px;
-            background-color: rgba(255, 75, 75, 0.1); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #FF4B4B;
-        }
-        @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } }
-        </style>
-    """, unsafe_allow_html=True)
 
     # --- 5. FUNÇÕES DE DADOS ---
     def load_trades_db():
@@ -257,7 +275,7 @@ if check_password():
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # --- 9. CONFIGURAR ATM (COM EDIÇÃO) ---
+    # --- 9. CONFIGURAR ATM ---
     elif selected == "Configurar ATM":
         st.title("⚙️ Gerenciar ATMs")
 
@@ -337,9 +355,10 @@ if check_password():
                     st.toast("Criado!", icon="✨")
                 time.sleep(1); reset_atm_form(); st.rerun()
 
-    # --- 10. HISTÓRICO ---
+    # --- 10. HISTÓRICO (GALERIA GRID) ---
     elif selected == "Histórico":
-        st.title("📜 Histórico de Operações")
+        st.title("📜 Galeria de Trades")
+        
         col_f1, col_f2 = st.columns(2)
         filtro_ativo = col_f1.multiselect("Filtrar por Ativo", ["NQ", "MNQ"])
         filtro_res = col_f2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
@@ -352,24 +371,53 @@ if check_password():
             if filtro_res == "Losses": df_h = df_h[df_h['resultado'] < 0]
             
             df_h = df_h.sort_values('created_at', ascending=False)
-            for _, row in df_h.iterrows():
-                with st.container():
-                    c1, c2, c3 = st.columns([1.2, 3, 1])
-                    if row.get('prints'): c1.image(row['prints'], use_container_width=True)
-                    else: c1.markdown("<div style='height:100px; background:#222; display:flex; align-items:center; justify-content:center; color:#555;'>Sem Foto</div>", unsafe_allow_html=True)
-                    
-                    data_fmt = pd.to_datetime(row['data']).strftime('%d/%m/%Y')
-                    c2.markdown(f"### {row['ativo']} - {row['direcao']}")
-                    c2.write(f"📅 **{data_fmt}** | Contexto: *{row['contexto']}*")
-                    c2.write(f"Lote: `{row['lote']}` | Médio: `{row['pts_medio']:.2f}` pts")
-                    
-                    res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
-                    c3.markdown(f"<h2 style='color:{res_c}; text-align:right;'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
-                    if c3.button("🗑️ Deletar", key=row['id'], use_container_width=True):
-                        supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
-                    st.divider()
+            
+            # Modal (usando experimental_dialog ou form manual)
+            @st.dialog("Detalhes do Trade")
+            def show_trade_details(row):
+                if row.get('prints'): st.image(row['prints'], use_container_width=True)
+                else: st.info("Sem Print disponível.")
+                
+                c1, c2 = st.columns(2)
+                c1.write(f"**Data:** {row['data']}")
+                c1.write(f"**Ativo:** {row['ativo']}")
+                c1.write(f"**Direção:** {row['direcao']}")
+                
+                c2.write(f"**Lote:** {row['lote']}")
+                c2.write(f"**Pts Médio:** {row['pts_medio']:.2f}")
+                c2.write(f"**Contexto:** {row['contexto']}")
+                
+                res_c = "green" if row['resultado'] >= 0 else "red"
+                st.markdown(f"<h2 style='color:{res_c}; text-align:center;'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
+                
+                if st.button("🗑️ Deletar Permanentemente", type="primary", use_container_width=True):
+                    supabase.table("trades").delete().eq("id", row['id']).execute()
+                    st.rerun()
 
-    # --- 11. GERENCIAR USUÁRIOS (CORRIGIDO) ---
+            # Grid Layout (3 Colunas)
+            cols = st.columns(3)
+            for i, (index, row) in enumerate(df_h.iterrows()):
+                with cols[i % 3]: # Distribui entre as colunas
+                    # Card
+                    res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
+                    res_fmt = f"${row['resultado']:,.2f}"
+                    img_html = f'<img src="{row["prints"]}" style="width:100%; border-radius:5px; height:150px; object-fit:cover;">' if row.get('prints') else '<div style="width:100%; height:150px; background:#333; border-radius:5px;"></div>'
+                    
+                    st.markdown(f"""
+                        <div class="trade-card">
+                            {img_html}
+                            <div style="margin-top:10px;">
+                                <div class="card-title">{row['ativo']} - {row['direcao']}</div>
+                                <div class="card-sub">{row['data']} • {row['contexto']}</div>
+                                <div class="{res_class}">{res_fmt}</div>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("👁️ Ver Detalhes", key=f"btn_{row['id']}", use_container_width=True):
+                        show_trade_details(row)
+
+    # --- 11. GERENCIAR USUÁRIOS ---
     elif selected == "Gerenciar Usuários":
         st.title("👥 Usuários do Terminal")
         res = supabase.table("users").select("*").execute()
@@ -383,7 +431,6 @@ if check_password():
                 st.success("Usuário Criado!"); st.rerun()
         
         if not users_df.empty:
-            # Mostra colunas seguras
             cols_show = ['username']
             if 'created_at' in users_df.columns: cols_show.append('created_at')
             st.table(users_df[cols_show])
