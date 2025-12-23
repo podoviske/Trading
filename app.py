@@ -367,11 +367,10 @@ if check_password():
                     st.toast("Criado!", icon="✨")
                 time.sleep(1); reset_atm_form(); st.rerun()
 
-    # --- 10. HISTÓRICO (COM NOVO FILTRO DE CONTEXTO) ---
+    # --- 10. HISTÓRICO ---
     elif selected == "Histórico":
         st.title("📜 Galeria de Trades")
         
-        # Filtros em 3 colunas
         c_f1, c_f2, c_f3 = st.columns(3)
         filtro_ativo = c_f1.multiselect("Filtrar Ativo", ["NQ", "MNQ"])
         filtro_res = c_f2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
@@ -380,8 +379,6 @@ if check_password():
         df = load_trades_db()
         if not df.empty:
             df_h = df[df['usuario'] == st.session_state["logged_user"]]
-            
-            # Aplica Filtros
             if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
             if filtro_ctx: df_h = df_h[df_h['contexto'].isin(filtro_ctx)]
             if filtro_res == "Wins": df_h = df_h[df_h['resultado'] > 0]
@@ -389,7 +386,6 @@ if check_password():
             
             df_h = df_h.sort_values('created_at', ascending=False)
             
-            # Modal de Detalhes
             @st.dialog("Detalhes da Operação", width="large")
             def show_trade_details(row):
                 if row.get('prints'): st.image(row['prints'], use_container_width=True)
@@ -408,7 +404,6 @@ if check_password():
                     supabase.table("trades").delete().eq("id", row['id']).execute()
                     st.rerun()
 
-            # Grid 4 Colunas
             cols = st.columns(4)
             for i, (index, row) in enumerate(df_h.iterrows()):
                 with cols[i % 4]:
@@ -427,19 +422,18 @@ if check_password():
                     if st.button("👁️ Ver", key=f"btn_{row['id']}", use_container_width=True):
                         show_trade_details(row)
 
-    # --- 11. GERENCIAR USUÁRIOS (COM EDIÇÃO) ---
+    # --- 11. GERENCIAR USUÁRIOS (SEM ERRO DE DATA) ---
     elif selected == "Gerenciar Usuários":
         st.title("👥 Gestão de Usuários")
 
-        # Estado para formulário de usuário
         if "user_form_data" not in st.session_state:
             st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
 
         def reset_user_form():
             st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
 
-        # Busca usuários
-        res = supabase.table("users").select("*").order("created_at").execute()
+        # Carrega sem ordernar por created_at para evitar o erro
+        res = supabase.table("users").select("*").execute()
         users_list = res.data
 
         c_form, c_list = st.columns([1, 1.5])
@@ -454,14 +448,12 @@ if check_password():
                     with st.container():
                         c1, c2, c3 = st.columns([2, 2, 1])
                         c1.write(f"👤 **{u['username']}**")
-                        c2.caption("******") # Protege a senha visualmente
+                        c2.caption("******") 
                         
                         col_edit, col_del = st.columns(2)
-                        # Botão EDITAR
                         if col_edit.button("✏️", key=f"u_edit_{u['id']}"):
                             st.session_state.user_form_data = {"id": u['id'], "username": u['username'], "password": u['password']}
                             st.rerun()
-                        # Botão EXCLUIR
                         if col_del.button("🗑️", key=f"u_del_{u['id']}"):
                             supabase.table("users").delete().eq("id", u['id']).execute()
                             if st.session_state.user_form_data["id"] == u['id']: reset_user_form()
@@ -475,15 +467,13 @@ if check_password():
             st.subheader(titulo)
             
             form_user = st.text_input("Login (Username)", value=u_data["username"])
-            form_pass = st.text_input("Senha (Password)", value=u_data["password"], type="default") # Mostra senha ao editar
+            form_pass = st.text_input("Senha (Password)", value=u_data["password"], type="default")
             
             if st.button("💾 SALVAR USUÁRIO", use_container_width=True):
                 if u_data["id"]:
-                    # Update
                     supabase.table("users").update({"username": form_user, "password": form_pass}).eq("id", u_data["id"]).execute()
                     st.toast("Usuário atualizado!", icon="✅")
                 else:
-                    # Insert
                     supabase.table("users").insert({"username": form_user, "password": form_pass}).execute()
                     st.toast("Usuário criado!", icon="✨")
                 
