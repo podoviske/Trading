@@ -14,12 +14,12 @@ try:
     key: str = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 except Exception as e:
-    st.error("Erro crítico: Verifique as chaves nos Secrets do Streamlit.")
+    st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
 
 # --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
-# --- 3. SISTEMA DE LOGIN SEGURO ---
+# --- 3. SISTEMA DE LOGIN ---
 def check_password():
     def password_entered():
         u = st.session_state.get("username_input")
@@ -32,7 +32,7 @@ def check_password():
             else:
                 st.session_state["password_correct"] = False
         except Exception as e:
-            st.error(f"Erro de conexão com o banco: {e}")
+            st.error(f"Erro de conexão (Verifique as Keys): {e}")
 
     if "password_correct" not in st.session_state or not st.session_state["password_correct"]:
         st.markdown("""
@@ -102,7 +102,7 @@ if check_password():
             return {}
 
     def card_metric(label, value, color="white"):
-        st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value" style="color:{color};">{value}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value" style="color: {color};">{value}</div></div>', unsafe_allow_html=True)
 
     # --- 6. SIDEBAR ---
     with st.sidebar:
@@ -114,7 +114,7 @@ if check_password():
 
     atm_db = load_atms_db()
 
-    # --- 7. DASHBOARD ---
+    # --- 7. ABA: DASHBOARD ---
     if selected == "Dashboard":
         st.title("📊 Analytics Pessoal")
         df = load_trades_db()
@@ -162,7 +162,7 @@ if check_password():
             for i in range(len(parciais_list) if parciais_list else 1):
                 c_pts, c_qtd = st.columns(2)
                 p_val = parciais_list[i] if i < len(parciais_list) else {"pts": 0.0, "qtd": lt}
-                pts = c_pts.number_input(f"Pts Alvo {i+1}", value=float(p_val["pts"]), key=f"pts_{i}")
+                pts = c_pts.number_input(f"Pts P{i+1}", value=float(p_val["pts"]), key=f"pts_{i}")
                 qtd = c_qtd.number_input(f"Qtd Contratos {i+1}", value=int(p_val["qtd"]), key=f"qtd_{i}")
                 saidas.append({"pts": pts, "qtd": qtd})
                 aloc += qtd
@@ -222,7 +222,7 @@ if check_password():
                     c2.write(f"**{row['data']} - {row['ativo']} ({row['contexto']})**")
                     c2.write(f"Lote: {row['lote']} | Pts Médio: {row['pts_medio']:.1f} | {row['direcao']}")
                     res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
-                    c3.markdown(f"<h2 style='color:{res_c}'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
+                    col3.markdown(f"<h2 style='color:{res_c}'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
                     if c3.button("Deletar", key=row['id']):
                         supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
                     st.divider()
