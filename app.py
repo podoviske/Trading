@@ -9,13 +9,12 @@ import time
 from supabase import create_client, Client
 
 # --- 1. CONEXÃO SUPABASE ---
-# Verifique se SUPABASE_URL e SUPABASE_KEY estão exatamente assim nos Secrets
 try:
     url: str = st.secrets["SUPABASE_URL"]
     key: str = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 except Exception as e:
-    st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
+    st.error("Erro crítico: Verifique as chaves nos Secrets do Streamlit.")
 
 # --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
@@ -26,7 +25,6 @@ def check_password():
         u = st.session_state.get("username_input")
         p = st.session_state.get("password_input")
         try:
-            # Busca o operador na tabela 'users' do Supabase
             res = supabase.table("users").select("*").eq("username", u).eq("password", p).execute()
             if res.data:
                 st.session_state["password_correct"] = True
@@ -34,7 +32,7 @@ def check_password():
             else:
                 st.session_state["password_correct"] = False
         except Exception as e:
-            st.error(f"Erro de conexão (API Key/URL): {e}")
+            st.error(f"Erro de conexão com o banco: {e}")
 
     if "password_correct" not in st.session_state or not st.session_state["password_correct"]:
         st.markdown("""
@@ -63,7 +61,7 @@ def check_password():
     return True
 
 if check_password():
-    # --- 4. CONSTANTES E ESTILO ---
+    # --- 4. CONSTANTES E ESTILOS ---
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
 
     st.markdown("""
@@ -84,7 +82,7 @@ if check_password():
         </style>
     """, unsafe_allow_html=True)
 
-    # --- 5. FUNÇÕES DE BANCO DE DADOS ---
+    # --- 5. FUNÇÕES DE DADOS ---
     def load_trades_db():
         try:
             res = supabase.table("trades").select("*").execute()
@@ -104,31 +102,19 @@ if check_password():
             return {}
 
     def card_metric(label, value, color="white"):
-        st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">{label}</div>
-                <div class="metric-value" style="color: {color};">{value}</div>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value" style="color:{color};">{value}</div></div>', unsafe_allow_html=True)
 
-    # --- 6. BARRA LATERAL (SIDEBAR) ---
+    # --- 6. SIDEBAR ---
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
-        if st.session_state["logged_user"] == "admin": 
-            menu.append("Gerenciar Usuários")
-        
-        selected = option_menu(None, menu, 
-            icons=["grid", "currency-dollar", "gear", "clock", "people"], 
-            styles={"nav-link-selected": {"background-color": "#B20000"}})
-        
-        if st.button("Sair / Logout"): 
-            st.session_state.clear()
-            st.rerun()
+        if st.session_state["logged_user"] == "admin": menu.append("Gerenciar Usuários")
+        selected = option_menu(None, menu, icons=["grid", "currency-dollar", "gear", "clock", "people"], styles={"nav-link-selected": {"background-color": "#B20000"}})
+        if st.button("Sair"): st.session_state.clear(); st.rerun()
 
     atm_db = load_atms_db()
 
-    # --- 7. ABA: DASHBOARD ---
+    # --- 7. DASHBOARD ---
     if selected == "Dashboard":
         st.title("📊 Analytics Pessoal")
         df = load_trades_db()
@@ -140,8 +126,8 @@ if check_password():
                 with c1: card_metric("P&L TOTAL", f"${t_pl:,.2f}", "#00FF88" if t_pl >= 0 else "#FF4B4B")
                 with c2: card_metric("TRADES", str(len(df_u)))
                 with c3:
-                    win_rate = (len(df_u[df_u['resultado'] > 0]) / len(df_u)) * 100 if len(df_u) > 0 else 0
-                    card_metric("WIN RATE", f"{win_rate:.1f}%", "#B20000")
+                    wr = (len(df_u[df_u['resultado'] > 0]) / len(df_u)) * 100
+                    card_metric("WIN RATE", f"{wr:.1f}%", "#B20000")
                 with c4: card_metric("USER", st.session_state["logged_user"])
                 
                 df_u = df_u.sort_values('created_at')
@@ -149,10 +135,10 @@ if check_password():
                 fig = px.area(df_u, x=range(len(df_u)), y='Acumulado', title="Curva de Patrimônio", template="plotly_dark")
                 fig.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.info("Sem operações registradas para este usuário.")
+            else: st.info("Sem operações registradas.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. ABA: REGISTRAR TRADE ---
+    # --- 8. REGISTRAR TRADE ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_sel = st.selectbox("🎯 Escolher ATM", ["Manual"] + list(atm_db.keys()))
@@ -167,16 +153,13 @@ if check_password():
         with f2:
             lt = st.number_input("Contratos", min_value=1, value=int(config["lote"]))
             stp = st.number_input("Stop (Pts)", min_value=0.0, value=float(config["stop"]))
-            up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
+            up = st.file_uploader("📸 Print", type=['png', 'jpg', 'jpeg'])
         with f3:
             st.write("**Saídas (Alocação)**")
             parciais_list = json.loads(config["parciais"]) if isinstance(config["parciais"], str) else config["parciais"]
             saidas = []
             aloc = 0
-            
-            # Garante pelo menos um campo de entrada
-            num_campos = len(parciais_list) if parciais_list else 1
-            for i in range(num_campos):
+            for i in range(len(parciais_list) if parciais_list else 1):
                 c_pts, c_qtd = st.columns(2)
                 p_val = parciais_list[i] if i < len(parciais_list) else {"pts": 0.0, "qtd": lt}
                 pts = c_pts.number_input(f"Pts Alvo {i+1}", value=float(p_val["pts"]), key=f"pts_{i}")
@@ -190,12 +173,11 @@ if check_password():
                 st.success("✅ Posição Sincronizada")
 
         if st.button("💾 REGISTRAR TRADE", use_container_width=True) and lt == aloc:
-            with st.spinner("Salvando no Supabase..."):
+            with st.spinner("Salvando..."):
                 res_fin = sum([s["pts"] * MULTIPLIERS[atv] * s["qtd"] for s in saidas])
                 pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
                 trade_id = str(uuid.uuid4())
                 img_url = ""
-                
                 if up:
                     file_path = f"{trade_id}.png"
                     supabase.storage.from_("prints").upload(file_path, up.getvalue())
@@ -207,63 +189,54 @@ if check_password():
                     "prints": img_url, "usuario": st.session_state["logged_user"],
                     "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                 }).execute()
-                st.success("🎯 Trade Registrado com Sucesso!")
-                time.sleep(1); st.rerun()
+                st.success("🎯 Trade Registrado!"); time.sleep(1); st.rerun()
 
-    # --- 9. ABA: CONFIGURAR ATM ---
+    # --- 9. CONFIGURAR ATM ---
     elif selected == "Configurar ATM":
         st.title("⚙️ Editor de ATM")
-        with st.expander("✨ Criar Novo Template", expanded=True):
+        with st.expander("✨ Novo Template", expanded=True):
             nome_atm = st.text_input("Nome da Estratégia")
             c_l, c_s = st.columns(2)
             lote_atm = c_l.number_input("Lote Total", min_value=1)
             stop_atm = c_s.number_input("Stop Padrão (Pts)", min_value=0.0)
             
-            st.write("Configurar Parcial de Teste")
+            st.write("Parciais")
             p1_pts = st.number_input("Pts Alvo 1", min_value=0.0)
             p1_qtd = st.number_input("Qtd Alvo 1", min_value=1)
-            
-            if st.button("💾 Salvar ATM no Banco"):
+            if st.button("💾 Salvar ATM"):
                 parciais_json = [{"pts": p1_pts, "qtd": p1_qtd}]
-                supabase.table("atm_configs").insert({
-                    "nome": nome_atm, "lote": lote_atm, "stop": stop_atm, "parciais": parciais_json
-                }).execute()
-                st.success("Configuração ATM Salva!"); st.rerun()
+                supabase.table("atm_configs").insert({"nome": nome_atm, "lote": lote_atm, "stop": stop_atm, "parciais": parciais_json}).execute()
+                st.success("ATM Salva!"); st.rerun()
 
-    # --- 10. ABA: HISTÓRICO ---
+    # --- 10. HISTÓRICO ---
     elif selected == "Histórico":
-        st.title("📜 Galeria de Operações")
+        st.title("📜 Histórico")
         df = load_trades_db()
         if not df.empty:
             df_h = df[df['usuario'] == st.session_state["logged_user"]].sort_values('created_at', ascending=False)
             for _, row in df_h.iterrows():
                 with st.container():
-                    col1, col2, col3 = st.columns([1.5, 2, 1])
-                    if row.get('prints'): col1.image(row['prints'], use_container_width=True)
-                    else: col1.info("Sem imagem anexada")
-                    
-                    col2.write(f"**{row['data']} - {row['ativo']} ({row['contexto']})**")
-                    col2.write(f"Direção: {row['direcao']} | Lote: {row['lote']} | Médio: {row['pts_medio']:.1f}")
-                    
+                    c1, c2, c3 = st.columns([1.5, 2, 1])
+                    if row.get('prints'): c1.image(row['prints'], use_container_width=True)
+                    else: c1.info("Sem Print")
+                    c2.write(f"**{row['data']} - {row['ativo']} ({row['contexto']})**")
+                    c2.write(f"Lote: {row['lote']} | Pts Médio: {row['pts_medio']:.1f} | {row['direcao']}")
                     res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
-                    col3.markdown(f"<h2 style='color:{res_c}'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
-                    if col3.button("Deletar Trade", key=row['id']):
-                        supabase.table("trades").delete().eq("id", row['id']).execute()
-                        st.rerun()
+                    c3.markdown(f"<h2 style='color:{res_c}'>${row['resultado']:,.2f}</h2>", unsafe_allow_html=True)
+                    if c3.button("Deletar", key=row['id']):
+                        supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
                     st.divider()
 
-    # --- 11. ABA: GERENCIAR USUÁRIOS ---
+    # --- 11. GERENCIAR USUÁRIOS ---
     elif selected == "Gerenciar Usuários":
-        st.title("👥 Gestão de Operadores")
+        st.title("👥 Usuários")
         res = supabase.table("users").select("*").execute()
         users_df = pd.DataFrame(res.data)
-        
-        with st.expander("Cadastrar Novo Usuário"):
+        with st.expander("Novo Usuário"):
             nu = st.text_input("Username")
             np = st.text_input("Password", type="password")
-            if st.button("Criar Acesso"):
+            if st.button("Criar"):
                 supabase.table("users").insert({"username": nu, "password": np}).execute()
-                st.success("Usuário criado no banco!"); st.rerun()
-        
+                st.success("Criado!"); st.rerun()
         if not users_df.empty:
             st.table(users_df[['username', 'created_at']])
