@@ -69,7 +69,7 @@ st.markdown("""
         letter-spacing: 1px; font-weight: 600; display: flex; 
         justify-content: center; align-items: center; gap: 5px;
     }
-    .metric-value { color: white; font-size: 24px; font-weight: 800; margin-top: 5px; }
+    .metric-value { color: white; font-size: 22px; font-weight: 800; margin-top: 5px; }
     .metric-sub { font-size: 12px; margin-top: 2px; }
     
     /* Ícone de Ajuda */
@@ -221,69 +221,77 @@ if check_password():
                     gross_profit = wins['resultado'].sum()
                     gross_loss = abs(losses['resultado'].sum())
                     
+                    # 1. Financeiro
                     pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
                     pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
-                    
                     win_rate = (len(wins) / total_trades) * 100
                     
+                    # 2. Médias Financeiras
                     avg_win = wins['resultado'].mean() if not wins.empty else 0
                     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
                     payoff = avg_win / avg_loss if avg_loss > 0 else 0
-                    
                     loss_rate = (len(losses) / total_trades)
                     expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
                     
+                    # 3. Médias Técnicas (Novas)
+                    avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
+                    avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
+                    avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
+
+                    # 4. Risco
                     df_filtered = df_filtered.sort_values('created_at')
                     df_filtered['equity'] = df_filtered['resultado'].cumsum()
                     df_filtered['peak'] = df_filtered['equity'].cummax()
                     df_filtered['drawdown'] = df_filtered['equity'] - df_filtered['peak']
                     max_dd = df_filtered['drawdown'].min()
 
-                    # --- EXIBIÇÃO KPIs (TOOLTIPS ATIVADOS) ---
+                    # --- EXIBIÇÃO KPIs (3 LINHAS) ---
+                    
+                    # Linha 1: Resumo Financeiro
+                    st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: 
-                        card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B",
-                        "Resultado financeiro total (Lucro - Prejuízo) no período selecionado.")
-                    
+                        card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "O dinheiro que sobra no bolso.")
                     with c2: 
-                        card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000",
-                        "Relação Lucro Bruto / Prejuízo Bruto. Indica quanto você ganha para cada dólar perdido.")
-                    
+                        card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000", "Quantos dólares você ganha para cada dólar que perde.")
                     with c3: 
-                        card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white",
-                        "Porcentagem de acerto. Quantos trades fecharam positivos em relação ao total.")
-                    
+                        card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white", "Taxa de acerto das operações.")
                     with c4: 
-                        card_metric("PAYOFF (RR)", f"{payoff:.2f}", f"Avg Win: ${avg_win:.0f} / Loss: ${avg_loss:.0f}", "white",
-                        "Risco:Retorno Real. Média do valor dos ganhos dividida pela média do valor das perdas.")
+                        card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B", "Quanto você estatisticamente lucra a cada clique.")
                     
+                    # Linha 2: Médias Financeiras (Risco x Retorno)
+                    st.markdown("##### 💲 Médias Financeiras & Risco")
                     c5, c6, c7, c8 = st.columns(4)
                     with c5: 
-                        card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B",
-                        "Valor esperado por operação a longo prazo. Se positivo, seu sistema é lucrativo estatisticamente.")
-                    
+                        card_metric("MÉDIA GAIN ($)", f"${avg_win:,.2f}", "", "#00FF88", "Valor médio financeiro das suas vitórias.")
                     with c6: 
-                        card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Queda do Topo", "#FF4B4B",
-                        "A maior queda de capital registrada desde um topo histórico até o fundo subsequente.")
-                    
+                        card_metric("MÉDIA LOSS ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B", "Valor médio financeiro das suas derrotas.")
                     with c7: 
-                        card_metric("TOTAL TRADES", str(total_trades), "No Período", "white",
-                        "Quantidade total de operações realizadas no período selecionado.")
-                    
+                        card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real", "white", "Quantas vezes seu Gain médio é maior que seu Loss médio.")
                     with c8: 
-                        card_metric("MELHOR TRADE", f"${df_filtered['resultado'].max():,.2f}", "Maior Gain", "#00FF88",
-                        "O maior lucro obtido em uma única operação no período.")
+                        card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B", "O máximo que sua conta caiu desde um topo histórico.")
+
+                    # Linha 3: Performance Técnica
+                    st.markdown("##### 🎯 Performance Técnica")
+                    c9, c10, c11, c12 = st.columns(4)
+                    with c9: 
+                        card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88", "Média de pontos capturados nos trades vencedores.")
+                    with c10: 
+                        card_metric("PTS MÉDIOS (LOSS)", f"{avg_pts_loss:.2f} pts", "", "#FF4B4B", "Média de pontos perdidos nos trades perdedores.")
+                    with c11: 
+                        card_metric("LOTE MÉDIO", f"{avg_lot:.1f}", "Contratos", "white", "Tamanho médio da sua mão nas operações.")
+                    with c12: 
+                        card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações no período.")
 
                     st.markdown("---")
 
-                    # --- GRÁFICOS (COM SELETOR DE VISTA) ---
+                    # --- GRÁFICOS (SEM MODEBAR) ---
                     g1, g2 = st.columns([2, 1])
-                    
                     with g1:
                         # Seletor Trade a Trade vs Data
-                        view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades (Padrão)", "Data (Tempo)"], horizontal=True)
+                        view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
                         
-                        if view_mode == "Sequência de Trades (Padrão)":
+                        if view_mode == "Sequência de Trades":
                             df_filtered['trade_seq'] = range(1, len(df_filtered) + 1)
                             x_axis = 'trade_seq'
                             x_title = "Quantidade de Trades"
@@ -298,11 +306,13 @@ if check_password():
                         st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
                         
                     with g2:
-                        st.markdown("<br><br>", unsafe_allow_html=True)
+                        # Resultado por Contexto
+                        st.markdown("<br>", unsafe_allow_html=True) 
                         ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
+                    # Performance Dia
                     st.markdown("### 📅 Performance por Dia da Semana")
                     df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
                     dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
@@ -551,6 +561,7 @@ if check_password():
         def reset_user_form():
             st.session_state.user_form_data = {"id": None, "username": "", "password": ""}
 
+        # Carrega sem ordernar por created_at
         res = supabase.table("users").select("*").execute()
         users_list = res.data
 
