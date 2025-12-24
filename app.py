@@ -159,7 +159,7 @@ if check_password():
                 df['created_at'] = pd.to_datetime(df['created_at'])
                 if 'grupo_vinculo' not in df.columns: 
                     df['grupo_vinculo'] = 'Geral'
-                if 'comportamento' not in df.columns:  # GARANTIA DE COLUNA
+                if 'comportamento' not in df.columns:
                     df['comportamento'] = 'Normal'
             return df
         except:
@@ -460,15 +460,15 @@ if check_password():
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # --- 9. ABA CONTAS (SEPARAÇÃO COMPLETA: GRUPO vs CONTA) ---
+    # --- 9. ABA CONTAS (COM MONITOR DE PERFORMANCE NA ABA 4) ---
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
         else:
-            # Abas internas para organizar
-            tab_grupo, tab_conta, tab_visao = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📊 Visão Geral"])
+            # --- ATUALIZAÇÃO AQUI: ADICIONADA A ABA "Monitor de Performance" ---
+            tab_grupo, tab_conta, tab_visao, tab_monitor = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📊 Visão Geral", "🚀 Monitor de Performance"])
             
             # --- ABA 1: CRIAR GRUPO ---
             with tab_grupo:
@@ -507,8 +507,9 @@ if check_password():
                         grupo_selecionado = st.selectbox("Selecione o Grupo", sorted(df_g['nome'].unique()))
                         
                         conta_id = st.text_input("Identificador da Conta (Ex: PA-001, 50k-01)")
-                        saldo_ini = st.number_input("Saldo Inicial ($)", value=50000.0, step=100.0)
-                        fase_atual = st.selectbox("Fase Atual", ["Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"])
+                        # MUDANÇA APEX: SALDO ATUAL
+                        saldo_ini = st.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
+                        fase_atual = st.selectbox("Fase Atual", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"])
                         
                         if st.form_submit_button("Salvar Conta"):
                             if conta_id:
@@ -526,10 +527,9 @@ if check_password():
 
             # --- ABA 3: VISÃO GERAL (SALDO INTELIGENTE) ---
             with tab_visao:
-                st.subheader("📋 Acompanhamento de Saldo em Tempo Real")
+                st.subheader("📋 Acompanhamento de Saldo Individual")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
-                
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
                 
                 if not df_c.empty:
@@ -569,8 +569,8 @@ if check_password():
                                 # Botão de Editar com Popover
                                 with c_edit.popover("⚙️"):
                                     st.write(f"Editar {row['conta_identificador']}")
-                                    n_fase = st.selectbox("Nova Fase", ["Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"], key=f"nf_{row['id']}")
-                                    n_saldo = st.number_input("Novo Saldo Inicial", value=float(row['saldo_inicial']), key=f"ns_{row['id']}")
+                                    n_fase = st.selectbox("Nova Fase", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"], key=f"nf_{row['id']}")
+                                    n_saldo = st.number_input("Ajustar Saldo Real", value=float(row['saldo_inicial']), key=f"ns_{row['id']}")
                                     if st.button("Salvar Alterações", key=f"save_{row['id']}"):
                                         supabase.table("contas_config").update({"fase": n_fase, "saldo_inicial": n_saldo}).eq("id", row['id']).execute()
                                         st.rerun()
@@ -588,6 +588,107 @@ if check_password():
                                 st.progress(0.0)
                 else:
                     st.info("Nenhuma conta configurada.")
+
+            # --- ABA 4: MONITOR DE PERFORMANCE (NOVA) ---
+            with tab_monitor:
+                st.subheader("📈 Análise de Performance por Grupo")
+                df_c = load_contas_config()
+                df_t = load_trades_db()
+                if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
+
+                if not df_c.empty:
+                    grps = sorted(df_c['grupo_nome'].unique())
+                    sel_g = st.selectbox("Selecione o Grupo para Analisar", grps)
+
+                    # Filtra dados
+                    contas_g = df_c[df_c['grupo_nome'] == sel_g]
+                    trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
+
+                    if not contas_g.empty:
+                        # Pega a primeira conta como referência para a fase e saldo base
+                        ref_conta = contas_g.iloc[0]
+                        fase = ref_conta['fase']
+                        saldo_base = float(ref_conta['saldo_inicial']) # Saldo cadastrado
+                        lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
+                        
+                        # Saldo Unitário Estimado
+                        saldo_atual_unitario = saldo_base + lucro_total_grupo
+
+                        # Regras Apex
+                        meta_alvo = 0.0
+                        base_progresso = 150000.0
+                        
+                        if "Fase 1" in fase: meta_alvo = 159000.0; base_progresso = 150000.0
+                        elif "Fase 2" in fase: meta_alvo = 155100.0; base_progresso = 150000.0
+                        elif "Fase 3" in fase: meta_alvo = 160000.0; base_progresso = 155100.0
+                        elif "Fase 4" in fase: meta_alvo = 0.0; base_progresso = 150100.0
+
+                        # Cálculo do Stop (Trailing Apex 150k)
+                        if not trades_g.empty:
+                            equity_curve = trades_g.sort_values('created_at')['resultado'].cumsum() + saldo_base
+                            hwm = max(saldo_base, equity_curve.max())
+                        else:
+                            hwm = saldo_base
+                        
+                        trailing_stop = hwm - 5000.0
+                        stop_real = 150100.0 if (saldo_base > 155100 or trailing_stop > 150100) else min(trailing_stop, 150100.0)
+                        buffer_vida = saldo_atual_unitario - stop_real
+
+                        # Métricas do Grupo
+                        col1, col2, col3, col4 = st.columns(4)
+                        col1.metric("Saldo Unitário", f"${saldo_atual_unitario:,.2f}")
+                        col2.metric("Lucro Total (Unitário)", f"${lucro_total_grupo:+,.2f}", f"{len(contas_g)} contas")
+                        col3.metric("Buffer de Vida", f"${buffer_vida:,.2f}", "Até quebrar")
+                        
+                        falta = meta_alvo - saldo_atual_unitario
+                        if meta_alvo > 0:
+                            col4.metric("Falta para Meta", f"${falta:,.2f}", f"Alvo: ${meta_alvo:,.0f}")
+                        else:
+                            col4.metric("Modo Saque", "Sem Teto")
+
+                        st.divider()
+
+                        # Gráfico de Evolução e Projeção
+                        c_graf, c_proj = st.columns([2, 1])
+                        
+                        with c_graf:
+                            st.markdown("##### 🌊 Curva de Evolução")
+                            if not trades_g.empty:
+                                df_evo = trades_g.sort_values('created_at').copy()
+                                df_evo['saldo_acc'] = df_evo['resultado'].cumsum() + saldo_base
+                                fig = px.area(df_evo, x='created_at', y='saldo_acc', template="plotly_dark")
+                                fig.add_hline(y=meta_alvo, line_dash="dot", line_color="green", annotation_text="Meta") if meta_alvo > 0 else None
+                                fig.add_hline(y=stop_real, line_dash="dash", line_color="red", annotation_text="Stop")
+                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.info("Sem trades registrados neste grupo para gerar gráfico.")
+
+                        with c_proj:
+                            st.markdown("##### 🎯 Projeção")
+                            # Barra de Progresso
+                            if meta_alvo > 0:
+                                total_path = meta_alvo - base_progresso
+                                done_path = saldo_atual_unitario - base_progresso
+                                pct = min(1.0, max(0.0, done_path / total_path)) if total_path > 0 else 0
+                                st.write(f"Progresso da Fase: {pct*100:.1f}%")
+                                st.progress(pct)
+                            
+                            # Faltam X Trades
+                            media_grupo = trades_g['resultado'].mean() if not trades_g.empty else 0
+                            if meta_alvo > 0 and falta > 0 and media_grupo > 0:
+                                trades_nec = int(falta / media_grupo) + 1
+                                st.info(f"Faltam **{trades_nec} trades** na média do grupo (${media_grupo:.0f})")
+                            elif meta_alvo > 0 and falta <= 0:
+                                st.success("Meta Atingida!")
+                            elif meta_alvo == 0:
+                                st.success("Fase de Renda (Saque Livre)")
+                            else:
+                                st.warning("Opere mais para projetar.")
+
+                    else:
+                        st.info("Este grupo não possui contas vinculadas.")
+                else:
+                    st.info("Cadastre contas para ver o monitor.")
 
     # --- 10. CONFIGURAR ATM ---
     elif selected == "Configurar ATM":
