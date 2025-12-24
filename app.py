@@ -159,6 +159,8 @@ if check_password():
                 df['created_at'] = pd.to_datetime(df['created_at'])
                 if 'grupo_vinculo' not in df.columns: 
                     df['grupo_vinculo'] = 'Geral'
+                if 'comportamento' not in df.columns:
+                    df['comportamento'] = 'Normal'
             return df
         except:
             return pd.DataFrame()
@@ -217,7 +219,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD ---
+    # --- 7. ABA: DASHBOARD (LÓGICA APEX 150K ADICIONADA) ---
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
@@ -256,6 +258,89 @@ if check_password():
                 if df_filtered.empty:
                     st.warning("⚠️ Nenhum trade encontrado com os filtros selecionados.")
                 else:
+                    # ==============================================================================
+                    # 🛡️ PAINEL DE GESTÃO DE RISCO APEX 150K (NOVO)
+                    # ==============================================================================
+                    if sel_grupo != "Todos" and ROLE in ['master', 'admin']:
+                        st.markdown(f"### 🛡️ Visão do Grupo: {sel_grupo} (Lógica Apex 150k)")
+                        df_contas = load_contas_config()
+                        contas_g = df_contas[df_contas['grupo_nome'] == sel_grupo]
+                        
+                        if not contas_g.empty:
+                            # 1. Dados Base
+                            ref = contas_g.iloc[0]
+                            fase = ref['fase']
+                            saldo_cadastrado = float(ref['saldo_inicial']) # Ex: 150500.0 (Saldo Atual na corretora)
+                            lucro_app = df_filtered['resultado'].sum() # Lucro feito no app neste filtro
+                            
+                            # Saldo Estimado = O que disse que tinha + O que fez agora
+                            saldo_estimado = saldo_cadastrado + lucro_app
+                            
+                            # 2. Cálculo do Trailing Drawdown (Regra 150k + $5k Drawdown)
+                            # O Trailing sobe com o High Water Mark (HWM)
+                            # Simulação HWM: Equity curve do período somada ao saldo inicial
+                            equity_curve = df_filtered.sort_values('created_at')['resultado'].cumsum() + saldo_cadastrado
+                            
+                            # Se não operou, HWM é o saldo cadastrado. Se operou, é o pico da curva.
+                            hwm = max(saldo_cadastrado, equity_curve.max()) if not equity_curve.empty else saldo_cadastrado
+                            
+                            # Stop Teórico = HWM - 5000
+                            trailing_stop = hwm - 5000.0
+                            
+                            # TRAVA DO STOP: Para em 150.100
+                            # Se o saldo inicial já era > 155.100, o stop já estava travado em 150.100
+                            # Se o Trailing Teórico subiu acima de 150.100, ele trava lá.
+                            stop_real = min(trailing_stop, 150100.0)
+                            if saldo_cadastrado > 155100: stop_real = 150100.0
+                            elif trailing_stop > 150100: stop_real = 150100.0
+                            
+                            # 3. Buffer de Vida
+                            buffer_vida = saldo_estimado - stop_real
+                            
+                            # 4. Metas por Fase
+                            meta_alvo = 0.0
+                            msg_fase = ""
+                            
+                            if "Fase 1" in fase: # 150k -> 159k
+                                meta_alvo = 159000.0
+                                msg_fase = "Teste (Goal: $9k)"
+                            elif "Fase 2" in fase: # 150k -> 155.1k (Travar Stop)
+                                meta_alvo = 155100.0
+                                msg_fase = "Colchão (Travar Stop)"
+                            elif "Fase 3" in fase: # 155k -> 160k (Dobra)
+                                meta_alvo = 160000.0
+                                msg_fase = "Dobrar Colchão"
+                            elif "Fase 4" in fase: # Saque
+                                meta_alvo = 0.0
+                                msg_fase = "Renda (Saques)"
+                                
+                            falta_meta = meta_alvo - saldo_estimado
+                            
+                            # --- VISUALIZAÇÃO APEX ---
+                            k1, k2, k3, k4 = st.columns(4)
+                            k1.metric("Contas", f"{len(contas_g)}", f"Fase: {msg_fase}")
+                            k2.metric("Saldo Unitário", f"${saldo_estimado:,.2f}", f"Stop: ${stop_real:,.0f}")
+                            
+                            cor_buff = "inverse" if buffer_vida < 2500 else "normal"
+                            k3.metric("🔥 Buffer (Vida)", f"${buffer_vida:,.2f}", "Até Quebrar", delta_color=cor_buff)
+                            
+                            if meta_alvo > 0 and falta_meta > 0:
+                                k4.metric("🎯 Falta Meta", f"${falta_meta:,.2f}", f"Alvo: ${meta_alvo:,.0f}")
+                            elif "Fase 4" in fase or (meta_alvo > 0 and falta_meta <= 0):
+                                # Saque: Deixa 2500 de margem, saca o resto
+                                saque_disp = max(0, saldo_estimado - 152600) * len(contas_g)
+                                k4.metric("💰 Saque Disp.", f"${saque_disp:,.2f}", "Total do Grupo")
+                                
+                            # Barra de Progresso
+                            media_trade = df_filtered['resultado'].mean()
+                            if meta_alvo > 0 and falta_meta > 0 and media_trade > 0:
+                                trades_restantes = int(falta_meta / media_trade) + 1
+                                st.info(f"🧠 **Foco:** Faltam cerca de **{trades_restantes} trades bem feitos** (média ${media_trade:.0f}) para bater a meta.")
+                            
+                        st.markdown("---")
+                    
+                    # ==============================================================================
+
                     # --- CÁLCULO DE KPIs (COMPLETO) ---
                     total_trades = len(df_filtered)
                     net_profit = df_filtered['resultado'].sum()
@@ -347,7 +432,7 @@ if check_password():
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. REGISTRAR TRADE (LAYOUT OTIMIZADO) ---
+    # --- 8. REGISTRAR TRADE (COM PSICOLOGIA) ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_db = load_atms_db()
@@ -387,10 +472,10 @@ if check_password():
             dt = st.date_input("Data", datetime.now().date())
             atv = st.selectbox("Ativo", ["MNQ", "NQ"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-            ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
-            # --- MODIFICAÇÃO SOLICITADA: CAMPO ESTADO MENTAL ---
+            ctx = st.selectbox("Contexto", ["Tendência", "Lateralidade", "Rompimento", "Contra-Tendência", "Outro"])
+            # --- MODIFICAÇÃO: CAMPO ESTADO MENTAL ---
             psi = st.selectbox("Estado Mental", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Fomo", "Neutro"])
-            # ---------------------------------------------------
+            # ----------------------------------------
         with f2:
             lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
             stp = st.number_input("Stop (Pts)", min_value=0.0, value=stp_default, step=0.25)
@@ -449,7 +534,7 @@ if check_password():
                         "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
                         "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
                         "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
-                        "comportamento": psi, # --- MODIFICAÇÃO: SALVANDO O ESTADO MENTAL ---
+                        "comportamento": psi, # --- SALVA O ESTADO MENTAL ---
                         "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                     }).execute()
                     st.balloons() 
@@ -505,8 +590,9 @@ if check_password():
                         grupo_selecionado = st.selectbox("Selecione o Grupo", sorted(df_g['nome'].unique()))
                         
                         conta_id = st.text_input("Identificador da Conta (Ex: PA-001, 50k-01)")
-                        saldo_ini = st.number_input("Saldo Inicial ($)", value=50000.0, step=100.0)
-                        fase_atual = st.selectbox("Fase Atual", ["Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"])
+                        # MUDANÇA APEX: SALDO ATUAL
+                        saldo_ini = st.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
+                        fase_atual = st.selectbox("Fase Atual", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"])
                         
                         if st.form_submit_button("Salvar Conta"):
                             if conta_id:
@@ -524,7 +610,7 @@ if check_password():
 
             # --- ABA 3: VISÃO GERAL (SALDO INTELIGENTE) ---
             with tab_visao:
-                st.subheader("📋 Acompanhamento de Saldo em Tempo Real")
+                st.subheader("📋 Acompanhamento de Saldo Individual")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
                 
@@ -550,7 +636,6 @@ if check_password():
                                 
                                 c_info, c_edit, c_del = st.columns([3, 0.5, 0.5])
                                 
-                                # HTML corrigido para o bug visual
                                 c_info.markdown(
                                     f"""
                                     <div style='background-color: #222; padding: 10px; border-radius: 5px; margin-bottom: 5px;'>
@@ -564,11 +649,10 @@ if check_password():
                                     unsafe_allow_html=True
                                 )
                                 
-                                # Botão de Editar com Popover
                                 with c_edit.popover("⚙️"):
                                     st.write(f"Editar {row['conta_identificador']}")
-                                    n_fase = st.selectbox("Nova Fase", ["Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"], key=f"nf_{row['id']}")
-                                    n_saldo = st.number_input("Novo Saldo Inicial", value=float(row['saldo_inicial']), key=f"ns_{row['id']}")
+                                    n_fase = st.selectbox("Nova Fase", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"], key=f"nf_{row['id']}")
+                                    n_saldo = st.number_input("Ajustar Saldo Real", value=float(row['saldo_inicial']), key=f"ns_{row['id']}")
                                     if st.button("Salvar Alterações", key=f"save_{row['id']}"):
                                         supabase.table("contas_config").update({"fase": n_fase, "saldo_inicial": n_saldo}).eq("id", row['id']).execute()
                                         st.rerun()
@@ -576,14 +660,6 @@ if check_password():
                                 if c_del.button("🗑️", key=f"del_acc_{row['id']}"):
                                     supabase.table("contas_config").delete().eq("id", row['id']).execute()
                                     st.rerun()
-                            
-                            # Barra de Progresso Visual (Meta visual de +$3000 de lucro)
-                            if lucro_grupo > 0:
-                                prog = min(1.0, lucro_grupo / 3000)
-                                st.progress(prog)
-                                st.caption(f"Meta Colchão ($3k): {prog*100:.1f}%")
-                            else:
-                                st.progress(0.0)
                 else:
                     st.info("Nenhuma conta configurada.")
 
