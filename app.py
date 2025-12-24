@@ -20,7 +20,7 @@ except Exception as e:
 # --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
-# --- CSS CUSTOMIZADO (MANTIDO INTEGRALMENTE) ---
+# --- CSS CUSTOMIZADO ---
 st.markdown("""
     <style>
     /* Cards do Histórico */
@@ -157,7 +157,8 @@ if check_password():
             if not df.empty:
                 df['data'] = pd.to_datetime(df['data']).dt.date
                 df['created_at'] = pd.to_datetime(df['created_at'])
-                if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
+                if 'grupo_vinculo' not in df.columns: 
+                    df['grupo_vinculo'] = 'Geral'
             return df
         except:
             return pd.DataFrame()
@@ -211,6 +212,7 @@ if check_password():
             icons.append("people")
             
         selected = option_menu(None, menu, icons=icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
+        
         if st.button("Sair / Logout"): 
             st.session_state.clear()
             st.rerun()
@@ -224,10 +226,12 @@ if check_password():
             df = df_raw[df_raw['usuario'] == USER]
             
             if not df.empty:
-                # --- FILTROS ---
+                # --- FILTROS COMPLETOS ---
                 with st.expander("🔍 Filtros Avançados", expanded=True):
                     if ROLE in ['master', 'admin']:
                         col_d1, col_d2, col_grp, col_ctx = st.columns([1, 1, 1.2, 1.8])
+                        
+                        # Carrega grupos únicos
                         grupos_disp = ["Todos"] + sorted(list(df['grupo_vinculo'].unique()))
                         sel_grupo = col_grp.selectbox("Grupo de Contas", grupos_disp)
                     else:
@@ -252,7 +256,7 @@ if check_password():
                 if df_filtered.empty:
                     st.warning("⚠️ Nenhum trade encontrado com os filtros selecionados.")
                 else:
-                    # --- CÁLCULO DE KPIs ---
+                    # --- CÁLCULO DE KPIs (COMPLETO) ---
                     total_trades = len(df_filtered)
                     net_profit = df_filtered['resultado'].sum()
                     
@@ -282,13 +286,13 @@ if check_password():
                     df_filtered['drawdown'] = df_filtered['equity'] - df_filtered['peak']
                     max_dd = df_filtered['drawdown'].min()
 
-                    # --- EXIBIÇÃO KPIs ---
+                    # --- EXIBIÇÃO KPIs (12 CARDS) ---
                     st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "Resultado financeiro total.")
                     with c2: card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000", "Relação Lucro Bruto / Prejuízo Bruto.")
                     with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white", "Taxa de acerto das operações.")
-                    with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B", "Valor esperado por operação a longo prazo.")
+                    with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B", "Valor esperado por operação.")
                     
                     st.markdown("##### 💲 Médias Financeiras & Risco")
                     c5, c6, c7, c8 = st.columns(4)
@@ -306,7 +310,7 @@ if check_password():
 
                     st.markdown("---")
 
-                    # --- GRÁFICOS ---
+                    # --- GRÁFICOS (3 GRAFICOS) ---
                     g1, g2 = st.columns([2, 1])
                     with g1:
                         view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
@@ -343,7 +347,7 @@ if check_password():
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. REGISTRAR TRADE ---
+    # --- 8. REGISTRAR TRADE (LAYOUT OTIMIZADO) ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_db = load_atms_db()
@@ -660,23 +664,25 @@ if check_password():
         df = load_trades_db()
         if not df.empty:
             df_h = df[df['usuario'] == USER]
+            
             with st.expander("🔍 Filtros", expanded=True):
                 c1, c2, c3, c4 = st.columns(4)
-                fa = c1.multiselect("Ativo", ["NQ", "MNQ"])
-                fr = c2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
-                fc = c3.multiselect("Contexto", sorted(list(df_h['contexto'].unique())))
+                filtro_ativo = c1.multiselect("Filtrar Ativo", ["NQ", "MNQ"])
+                filtro_res = c2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
+                filtro_ctx = c3.multiselect("Filtrar Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
                 
                 # Filtro de Grupo (Master/Admin)
                 if ROLE in ['master', 'admin']:
-                    opcoes = sorted(list(df_h['grupo_vinculo'].unique()))
-                    fg = c4.multiselect("Grupo", opcoes)
-                else: fg = []
-            
-            if fa: df_h = df_h[df_h['ativo'].isin(fa)]
-            if fc: df_h = df_h[df_h['contexto'].isin(fc)]
-            if fg: df_h = df_h[df_h['grupo_vinculo'].isin(fg)]
-            if fr == "Wins": df_h = df_h[df_h['resultado'] > 0]
-            if fr == "Losses": df_h = df_h[df_h['resultado'] < 0]
+                    opcoes_grupo = sorted(list(df_h['grupo_vinculo'].unique()))
+                    filtro_grp = c4.multiselect("Filtrar Grupo", opcoes_grupo)
+                else:
+                    filtro_grp = []
+
+            if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
+            if filtro_ctx: df_h = df_h[df_h['contexto'].isin(filtro_ctx)]
+            if filtro_grp: df_h = df_h[df_h['grupo_vinculo'].isin(filtro_grp)]
+            if filtro_res == "Wins": df_h = df_h[df_h['resultado'] > 0]
+            if filtro_res == "Losses": df_h = df_h[df_h['resultado'] < 0]
             
             df_h = df_h.sort_values('created_at', ascending=False)
             
