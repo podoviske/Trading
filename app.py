@@ -9,18 +9,22 @@ import uuid
 import time
 from supabase import create_client, Client
 
-# --- 1. CONEXÃO SUPABASE ---
+# ==============================================================================
+# 1. CONFIGURAÇÃO INICIAL E CONEXÃO
+# ==============================================================================
 try:
     url: str = st.secrets["SUPABASE_URL"]
     key: str = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
+    st.stop()
 
-# --- 2. CONFIGURAÇÃO DE PÁGINA ---
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
-# --- CSS CUSTOMIZADO ---
+# ==============================================================================
+# 2. ESTILOS CSS (DARK MODE & UI)
+# ==============================================================================
 st.markdown("""
     <style>
     /* Cards do Histórico */
@@ -101,7 +105,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. SISTEMA DE LOGIN ---
+# ==============================================================================
+# 3. SISTEMA DE LOGIN E AUTENTICAÇÃO
+# ==============================================================================
 def check_password():
     def password_entered():
         u = st.session_state.get("username_input")
@@ -149,7 +155,9 @@ if check_password():
     USER = st.session_state["logged_user"]
     ROLE = st.session_state.get("user_role", "user")
 
-    # --- 5. FUNÇÕES DE DADOS ---
+    # ==============================================================================
+    # 5. FUNÇÕES DE DADOS (CRUD)
+    # ==============================================================================
     def load_trades_db():
         try:
             res = supabase.table("trades").select("*").execute()
@@ -198,7 +206,9 @@ if check_password():
             </div>
         """, unsafe_allow_html=True)
 
-    # --- 6. SIDEBAR ---
+    # ==============================================================================
+    # 6. MENU LATERAL (SIDEBAR)
+    # ==============================================================================
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         
@@ -219,7 +229,9 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD ---
+    # ==============================================================================
+    # 7. ABA: DASHBOARD GERAL
+    # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
@@ -281,7 +293,7 @@ if check_password():
                     df_filtered['drawdown'] = df_filtered['equity'] - df_filtered['peak']
                     max_dd = df_filtered['drawdown'].min()
 
-                    # --- EXIBIÇÃO KPIs (12 CARDS) ---
+                    # --- EXIBIÇÃO KPIs ---
                     st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "Resultado financeiro total.")
@@ -342,7 +354,9 @@ if check_password():
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. REGISTRAR TRADE ---
+    # ==============================================================================
+    # 8. REGISTRAR TRADE (COM SUAS OPÇÕES DE CONTEXTO E PSICOLOGIA)
+    # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_db = load_atms_db()
@@ -373,7 +387,9 @@ if check_password():
             dt = st.date_input("Data", datetime.now().date())
             atv = st.selectbox("Ativo", ["MNQ", "NQ"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-            ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
+            # --- LISTA CORRIGIDA DE CONTEXTO ---
+            ctx = st.selectbox("Contexto", ["Tendência", "Lateralidade", "Rompimento", "Contra-Tendência", "Outro"])
+            # --- ESTADO MENTAL ---
             psi = st.selectbox("Estado Mental", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Fomo", "Neutro"])
         with f2:
             lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
@@ -434,7 +450,9 @@ if check_password():
                     st.balloons(); st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}"); time.sleep(2); st.rerun()
                 except Exception as e: st.error(f"Erro: {e}")
 
-    # --- 9. ABA CONTAS (CORRIGIDO: GRÁFICO COMEÇA NO SALDO INICIAL) ---
+    # ==============================================================================
+    # 9. ABA CONTAS (COM MONITOR CORRIGIDO)
+    # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
         
@@ -512,7 +530,7 @@ if check_password():
                             else: st.progress(0.0)
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- MONITOR DE PERFORMANCE (GRÁFICO CORRIGIDO: ESCALA E PONTO ZERO) ---
+            # --- MONITOR DE PERFORMANCE CORRIGIDO (ESCALA DO GRÁFICO OK) ---
             with tab_monitor:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config(); df_t = load_trades_db()
@@ -537,9 +555,11 @@ if check_password():
                     if not contas_g.empty:
                         ref_conta = contas_g.iloc[0]
                         fase = ref_conta['fase']
-                        saldo_base = float(ref_conta['saldo_inicial']) 
-                        # CORREÇÃO: Se saldo vier 0 do banco (erro), assume 150k
-                        if saldo_base < 100: saldo_base = 150000.0 
+                        
+                        # --- CORREÇÃO DO SALDO BASE DO GRÁFICO ---
+                        # Se o usuário cadastrou "0" por engano, assumimos 150k para o gráfico não quebrar
+                        saldo_base_db = float(ref_conta['saldo_inicial'])
+                        saldo_base = 150000.0 if saldo_base_db < 1000 else saldo_base_db 
                         
                         lucro_filtrado = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_unitario = saldo_base + lucro_filtrado
@@ -574,26 +594,25 @@ if check_password():
                             st.markdown("##### 🌊 Curva de Evolução")
                             if not trades_g.empty:
                                 df_evo = trades_g.sort_values('created_at').copy()
+                                # SOMA O LUCRO AO SALDO BASE (150K) PARA PLOTAR NA ESCALA CERTA
                                 df_evo['saldo_acc'] = df_evo['resultado'].cumsum() + saldo_base
                                 
-                                # --- PONTO INICIAL ARTIFICIAL ---
+                                # Ponto Inicial
                                 start_date = df_evo['created_at'].min() - timedelta(minutes=30)
                                 start_row = pd.DataFrame([{'created_at': start_date, 'saldo_acc': saldo_base}])
                                 df_plot = pd.concat([start_row, df_evo[['created_at', 'saldo_acc']]], ignore_index=True)
-                                # --------------------------------
 
                                 fig = px.line(df_plot, x='created_at', y='saldo_acc', template="plotly_dark")
-                                # Preenchimento para baixo (simulando área, mas com linha limpa)
                                 fig.update_traces(fill='tozeroy', line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.1)')
                                 
                                 if meta_alvo > 0: fig.add_hline(y=meta_alvo, line_dash="dot", line_color="green", annotation_text="Meta")
                                 fig.add_hline(y=stop_real, line_dash="dash", line_color="red", annotation_text="Stop")
                                 
-                                # --- ZOOM AUTOMÁTICO NO EIXO Y ---
-                                min_y = min(stop_real, df_plot['saldo_acc'].min()) - 1000
-                                max_y = max(meta_alvo if meta_alvo > 0 else saldo_atual_unitario, df_plot['saldo_acc'].max()) + 1000
+                                # --- CORREÇÃO DE ZOOM: FOCA NA FAIXA DE PREÇO (IGNORA O ZERO) ---
+                                min_y = min(stop_real, df_plot['saldo_acc'].min()) - 500
+                                max_y = max(meta_alvo if meta_alvo > 0 else saldo_atual_unitario, df_plot['saldo_acc'].max()) + 500
                                 fig.update_layout(yaxis_range=[min_y, max_y])
-                                # ---------------------------------
+                                # -------------------------------------------------------------
                                 
                                 st.plotly_chart(fig, use_container_width=True)
                             else: st.info("Sem trades no período selecionado.")
@@ -675,7 +694,6 @@ if check_password():
             fr = c2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
             fc = c3.multiselect("Contexto", list(dfh['contexto'].unique()))
             fg = c4.multiselect("Grupo", list(dfh['grupo_vinculo'].unique())) if ROLE in ["master", "admin"] else []
-            
             if fa: dfh = dfh[dfh['ativo'].isin(fa)]
             if fc: dfh = dfh[dfh['contexto'].isin(fc)]
             if fg: dfh = dfh[dfh['grupo_vinculo'].isin(fg)]
