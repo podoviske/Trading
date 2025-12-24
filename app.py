@@ -219,7 +219,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # --- 7. ABA: DASHBOARD (LÓGICA APEX 150K ADICIONADA) ---
+    # --- 7. ABA: DASHBOARD ---
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
@@ -259,7 +259,7 @@ if check_password():
                     st.warning("⚠️ Nenhum trade encontrado com os filtros selecionados.")
                 else:
                     # ==============================================================================
-                    # 🛡️ PAINEL DE GESTÃO DE RISCO APEX 150K (NOVO)
+                    # 🛡️ PAINEL DE GESTÃO DE RISCO APEX 150K
                     # ==============================================================================
                     if sel_grupo != "Todos" and ROLE in ['master', 'admin']:
                         st.markdown(f"### 🛡️ Visão do Grupo: {sel_grupo} (Lógica Apex 150k)")
@@ -277,19 +277,12 @@ if check_password():
                             saldo_estimado = saldo_cadastrado + lucro_app
                             
                             # 2. Cálculo do Trailing Drawdown (Regra 150k + $5k Drawdown)
-                            # O Trailing sobe com o High Water Mark (HWM)
-                            # Simulação HWM: Equity curve do período somada ao saldo inicial
                             equity_curve = df_filtered.sort_values('created_at')['resultado'].cumsum() + saldo_cadastrado
-                            
-                            # Se não operou, HWM é o saldo cadastrado. Se operou, é o pico da curva.
                             hwm = max(saldo_cadastrado, equity_curve.max()) if not equity_curve.empty else saldo_cadastrado
                             
-                            # Stop Teórico = HWM - 5000
                             trailing_stop = hwm - 5000.0
                             
                             # TRAVA DO STOP: Para em 150.100
-                            # Se o saldo inicial já era > 155.100, o stop já estava travado em 150.100
-                            # Se o Trailing Teórico subiu acima de 150.100, ele trava lá.
                             stop_real = min(trailing_stop, 150100.0)
                             if saldo_cadastrado > 155100: stop_real = 150100.0
                             elif trailing_stop > 150100: stop_real = 150100.0
@@ -331,7 +324,7 @@ if check_password():
                                 saque_disp = max(0, saldo_estimado - 152600) * len(contas_g)
                                 k4.metric("💰 Saque Disp.", f"${saque_disp:,.2f}", "Total do Grupo")
                                 
-                            # Barra de Progresso
+                            # Barra de Progresso Mental
                             media_trade = df_filtered['resultado'].mean()
                             if meta_alvo > 0 and falta_meta > 0 and media_trade > 0:
                                 trades_restantes = int(falta_meta / media_trade) + 1
@@ -341,26 +334,21 @@ if check_password():
                     
                     # ==============================================================================
 
-                    # --- CÁLCULO DE KPIs (COMPLETO) ---
+                    # --- CÁLCULO DE KPIs GERAIS ---
                     total_trades = len(df_filtered)
                     net_profit = df_filtered['resultado'].sum()
-                    
                     wins = df_filtered[df_filtered['resultado'] > 0]
                     losses = df_filtered[df_filtered['resultado'] < 0]
-                    
                     gross_profit = wins['resultado'].sum()
                     gross_loss = abs(losses['resultado'].sum())
-                    
                     pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
                     pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
                     win_rate = (len(wins) / total_trades) * 100
-                    
                     avg_win = wins['resultado'].mean() if not wins.empty else 0
                     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
                     payoff = avg_win / avg_loss if avg_loss > 0 else 0
                     loss_rate = (len(losses) / total_trades)
                     expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
-                    
                     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
                     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
                     avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
@@ -410,7 +398,6 @@ if check_password():
                         fig_eq = px.area(df_filtered, x=x_axis, y='equity', title="📈 Curva de Patrimônio", template="plotly_dark")
                         fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
                         fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
-                        fig_eq.update_layout(xaxis_title=x_title, yaxis_title="Patrimônio ($)")
                         st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
                         
                     with g2:
@@ -426,13 +413,12 @@ if check_password():
                     
                     day_perf = df_filtered.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
                     fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-                    fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
                     st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
 
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
-    # --- 8. REGISTRAR TRADE (COM PSICOLOGIA) ---
+    # --- 8. REGISTRAR TRADE (COM CONTEXTO A, B, C) ---
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_db = load_atms_db()
@@ -448,7 +434,6 @@ if check_password():
             grupo_sel_trade = "Geral"
             if ROLE in ["master", "admin"]:
                 if not df_grupos.empty:
-                    # Lista de grupos cadastrados na nova tabela
                     lista_grupos = sorted(list(df_grupos['nome'].unique()))
                     grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
                 else:
@@ -472,10 +457,10 @@ if check_password():
             dt = st.date_input("Data", datetime.now().date())
             atv = st.selectbox("Ativo", ["MNQ", "NQ"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-            ctx = st.selectbox("Contexto", ["Tendência", "Lateralidade", "Rompimento", "Contra-Tendência", "Outro"])
-            # --- MODIFICAÇÃO: CAMPO ESTADO MENTAL ---
+            # --- CONTEXTO (CORRIGIDO PARA O SEU PLANO A, B, C) ---
+            ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
+            # --- ESTADO MENTAL ---
             psi = st.selectbox("Estado Mental", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Fomo", "Neutro"])
-            # ----------------------------------------
         with f2:
             lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
             stp = st.number_input("Stop (Pts)", min_value=0.0, value=stp_default, step=0.25)
@@ -534,7 +519,7 @@ if check_password():
                         "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
                         "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
                         "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
-                        "comportamento": psi, # --- SALVA O ESTADO MENTAL ---
+                        "comportamento": psi,
                         "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                     }).execute()
                     st.balloons() 
@@ -550,7 +535,6 @@ if check_password():
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
         else:
-            # Abas internas para organizar
             tab_grupo, tab_conta, tab_visao = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📊 Visão Geral"])
             
             # --- ABA 1: CRIAR GRUPO ---
@@ -586,9 +570,7 @@ if check_password():
                     st.warning("⚠️ Crie um Grupo primeiro na aba anterior.")
                 else:
                     with st.form("form_conta"):
-                        # Selectbox puxando da tabela de grupos
                         grupo_selecionado = st.selectbox("Selecione o Grupo", sorted(df_g['nome'].unique()))
-                        
                         conta_id = st.text_input("Identificador da Conta (Ex: PA-001, 50k-01)")
                         # MUDANÇA APEX: SALDO ATUAL
                         saldo_ini = st.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
@@ -597,11 +579,8 @@ if check_password():
                         if st.form_submit_button("Salvar Conta"):
                             if conta_id:
                                 supabase.table("contas_config").insert({
-                                    "usuario": USER,
-                                    "grupo_nome": grupo_selecionado,
-                                    "conta_identificador": conta_id,
-                                    "saldo_inicial": saldo_ini,
-                                    "fase": fase_atual
+                                    "usuario": USER, "grupo_nome": grupo_selecionado, "conta_identificador": conta_id,
+                                    "saldo_inicial": saldo_ini, "fase": fase_atual
                                 }).execute()
                                 st.success("Conta vinculada com sucesso!")
                                 time.sleep(1); st.rerun()
@@ -613,7 +592,6 @@ if check_password():
                 st.subheader("📋 Acompanhamento de Saldo Individual")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
-                
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
                 
                 if not df_c.empty:
@@ -621,15 +599,12 @@ if check_password():
                     
                     for grp in grupos_unicos:
                         with st.expander(f"📂 {grp}", expanded=True):
-                            # Calcula lucro total do grupo
                             trades_grp = df_t[df_t['grupo_vinculo'] == grp] if not df_t.empty else pd.DataFrame()
                             lucro_grupo = trades_grp['resultado'].sum() if not trades_grp.empty else 0.0
                             
-                            # Filtra contas deste grupo
                             contas_g = df_c[df_c['grupo_nome'] == grp]
                             
                             for _, row in contas_g.iterrows():
-                                # Lógica: Saldo = Inicial + Lucro do Grupo
                                 saldo_atual = float(row['saldo_inicial']) + lucro_grupo
                                 delta = saldo_atual - float(row['saldo_inicial'])
                                 cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
@@ -666,26 +641,13 @@ if check_password():
     # --- 10. CONFIGURAR ATM ---
     elif selected == "Configurar ATM":
         st.title("⚙️ Gerenciar ATMs")
-
-        if "atm_form_data" not in st.session_state:
-            st.session_state.atm_form_data = {
-                "id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]
-            }
-
-        def reset_atm_form():
-            st.session_state.atm_form_data = {
-                "id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]
-            }
-
-        res = supabase.table("atm_configs").select("*").order("nome").execute()
-        existing_atms = res.data
-
+        if "atm_form_data" not in st.session_state: st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
+        def reset_atm_form(): st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
+        res = supabase.table("atm_configs").select("*").order("nome").execute(); existing_atms = res.data
         c_form, c_list = st.columns([1.5, 1])
-
         with c_list:
             st.subheader("📋 Estratégias Salvas")
-            if st.button("✨ Criar Nova (Limpar)", use_container_width=True):
-                reset_atm_form(); st.rerun()
+            if st.button("✨ Criar Nova (Limpar)", use_container_width=True): reset_atm_form(); st.rerun()
             if existing_atms:
                 for item in existing_atms:
                     with st.expander(f"📍 {item['nome']}", expanded=False):
@@ -693,58 +655,35 @@ if check_password():
                         c_edit, c_del = st.columns(2)
                         if c_edit.button("✏️ Editar", key=f"edit_{item['id']}"):
                             p_data = item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])
-                            st.session_state.atm_form_data = {
-                                "id": item['id'], "nome": item['nome'], "lote": item['lote'],
-                                "stop": item['stop'], "parciais": p_data
-                            }
-                            st.rerun()
+                            st.session_state.atm_form_data = {"id": item['id'], "nome": item['nome'], "lote": item['lote'], "stop": item['stop'], "parciais": p_data}; st.rerun()
                         if c_del.button("🗑️ Excluir", key=f"del_{item['id']}"):
                             supabase.table("atm_configs").delete().eq("id", item['id']).execute()
                             if st.session_state.atm_form_data["id"] == item['id']: reset_atm_form()
                             st.rerun()
             else: st.info("Nenhuma estratégia salva.")
-
         with c_form:
             form_data = st.session_state.atm_form_data
             titulo = f"✏️ Editando: {form_data['nome']}" if form_data["id"] else "✨ Nova Estratégia"
             st.subheader(titulo)
-            
             new_nome = st.text_input("Nome da Estratégia", value=form_data["nome"])
             c_l, c_s = st.columns(2)
             new_lote = c_l.number_input("Lote Total", min_value=1, value=int(form_data["lote"]))
             new_stop = c_s.number_input("Stop Padrão (Pts)", min_value=0.0, value=float(form_data["stop"]), step=0.25)
-            
-            st.markdown("---")
-            st.write("🎯 Configuração de Alvos")
-            c_add, c_rem = st.columns([1, 4])
-            
-            if c_add.button("➕ Adicionar Alvo"): 
-                st.session_state.atm_form_data["parciais"].append({"pts": 0.0, "qtd": 1})
-                st.rerun()
-            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1: 
-                st.session_state.atm_form_data["parciais"].pop()
-                st.rerun()
-            
-            updated_partials = []
-            total_aloc = 0
+            st.markdown("---"); st.write("🎯 Configuração de Alvos"); c_add, c_rem = st.columns([1, 4])
+            if c_add.button("➕ Adicionar Alvo"): st.session_state.atm_form_data["parciais"].append({"pts": 0.0, "qtd": 1}); st.rerun()
+            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1: st.session_state.atm_form_data["parciais"].pop(); st.rerun()
+            updated_partials = []; total_aloc = 0
             for i, p in enumerate(form_data["parciais"]):
                 c1, c2 = st.columns(2)
                 p_pts = c1.number_input(f"Alvo {i+1} (Pts)", value=float(p["pts"]), key=f"edm_pts_{i}", step=0.25)
                 p_qtd = c2.number_input(f"Qtd {i+1}", value=int(p["qtd"]), min_value=1, key=f"edm_qtd_{i}")
-                updated_partials.append({"pts": p_pts, "qtd": p_qtd})
-                total_aloc += p_qtd
-            
+                updated_partials.append({"pts": p_pts, "qtd": p_qtd}); total_aloc += p_qtd
             if total_aloc != new_lote: st.warning(f"⚠️ Atenção: Soma das parciais ({total_aloc}) difere do Lote Total ({new_lote}).")
             st.markdown("<br>", unsafe_allow_html=True)
-            
             if st.button("💾 SALVAR ESTRATÉGIA", use_container_width=True):
                 payload = {"nome": new_nome, "lote": new_lote, "stop": new_stop, "parciais": updated_partials}
-                if form_data["id"]:
-                    supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute()
-                    st.toast("Atualizado!", icon="✅")
-                else:
-                    supabase.table("atm_configs").insert(payload).execute()
-                    st.toast("Criado!", icon="✨")
+                if form_data["id"]: supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute(); st.toast("Atualizado!", icon="✅")
+                else: supabase.table("atm_configs").insert(payload).execute(); st.toast("Criado!", icon="✨")
                 time.sleep(1); reset_atm_form(); st.rerun()
 
     # --- 11. HISTÓRICO ---
@@ -758,20 +697,15 @@ if check_password():
                 filtro_ativo = c1.multiselect("Filtrar Ativo", ["NQ", "MNQ"])
                 filtro_res = c2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
                 filtro_ctx = c3.multiselect("Filtrar Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
-                
-                # Filtro de Grupo (Master/Admin)
                 if ROLE in ['master', 'admin']:
                     opcoes_grupo = sorted(list(df_h['grupo_vinculo'].unique()))
                     filtro_grp = c4.multiselect("Filtrar Grupo", opcoes_grupo)
-                else:
-                    filtro_grp = []
-
+                else: filtro_grp = []
             if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
             if filtro_ctx: df_h = df_h[df_h['contexto'].isin(filtro_ctx)]
             if filtro_grp: df_h = df_h[df_h['grupo_vinculo'].isin(filtro_grp)]
             if filtro_res == "Wins": df_h = df_h[df_h['resultado'] > 0]
             if filtro_res == "Losses": df_h = df_h[df_h['resultado'] < 0]
-            
             df_h = df_h.sort_values('created_at', ascending=False)
             
             @st.dialog("Detalhes da Operação", width="large")
@@ -786,17 +720,12 @@ if check_password():
                 c2.write(f"🎯 **Médio:** {row['pts_medio']:.2f} pts")
                 c3.write(f"🔄 **Direção:** {row['direcao']}")
                 c3.write(f"🧠 **Contexto:** {row['contexto']}")
-                c3.write(f"🧠 **Estado Mental:** {row.get('comportamento', '-')}")
-                
-                if ROLE in ['master', 'admin']:
-                    st.write(f"📂 **Grupo:** {row['grupo_vinculo']}")
-                
+                c3.write(f"🧠 **Estado:** {row.get('comportamento', '-')}")
+                if ROLE in ['master', 'admin']: st.write(f"📂 **Grupo:** {row['grupo_vinculo']}")
                 res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
                 st.markdown(f"<h1 style='color:{res_c}; text-align:center; font-size:40px;'>${row['resultado']:,.2f}</h1>", unsafe_allow_html=True)
-                
                 if st.button("🗑️ DELETAR REGISTRO", type="primary", use_container_width=True):
-                    supabase.table("trades").delete().eq("id", row['id']).execute()
-                    st.rerun()
+                    supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
 
             cols = st.columns(4)
             for i, (index, row) in enumerate(df_h.iterrows()):
@@ -804,74 +733,45 @@ if check_password():
                     res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
                     res_fmt = f"${row['resultado']:,.2f}"
                     img_html = f'<img src="{row["prints"]}" class="card-img">' if row.get('prints') else '<div style="width:100%; height:100%; background:#333; display:flex; align-items:center; justify-content:center; color:#555;">Sem Foto</div>'
-                    
-                    st.markdown(f"""
-                        <div class="trade-card">
-                            <div class="card-img-container">{img_html}</div>
-                            <div class="card-title">{row['ativo']} - {row['direcao']}</div>
-                            <div class="card-sub">{row['data']} • {row['grupo_vinculo']}</div>
-                            <div class="{res_class}">{res_fmt}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    if st.button("👁️ Ver", key=f"btn_{row['id']}", use_container_width=True):
-                        show_trade_details(row)
+                    st.markdown(f"""<div class="trade-card"><div class="card-img-container">{img_html}</div><div class="card-title">{row['ativo']} - {row['direcao']}</div><div class="card-sub">{row['data']} • {row['grupo_vinculo']}</div><div class="{res_class}">{res_fmt}</div></div>""", unsafe_allow_html=True)
+                    if st.button("👁️ Ver", key=f"btn_{row['id']}", use_container_width=True): show_trade_details(row)
 
-    # --- 12. GERENCIAR USUÁRIOS (SÓ ADMIN) ---
+    # --- 12. GERENCIAR USUÁRIOS ---
     elif selected == "Gerenciar Usuários":
-        if ROLE != "admin":
-            st.error("Acesso Negado.")
+        if ROLE != "admin": st.error("Acesso Negado.")
         else:
             st.title("👥 Gestão de Usuários")
-
-            if "user_form_data" not in st.session_state:
-                st.session_state.user_form_data = {"id": None, "username": "", "password": "", "role": "user"}
-
-            def reset_user_form():
-                st.session_state.user_form_data = {"id": None, "username": "", "password": "", "role": "user"}
-
-            res = supabase.table("users").select("*").execute()
-            users_list = res.data
-
+            if "user_form_data" not in st.session_state: st.session_state.user_form_data = {"id": None, "username": "", "password": "", "role": "user"}
+            def reset_user_form(): st.session_state.user_form_data = {"id": None, "username": "", "password": "", "role": "user"}
+            res = supabase.table("users").select("*").execute(); users_list = res.data
             c_form, c_list = st.columns([1, 1.5])
-
             with c_list:
                 st.subheader("📋 Usuários Ativos")
-                if st.button("✨ Criar Novo Usuário", use_container_width=True):
-                    reset_user_form(); st.rerun()
-                
+                if st.button("✨ Criar Novo Usuário", use_container_width=True): reset_user_form(); st.rerun()
                 if users_list:
                     for u in users_list:
                         with st.container():
                             c1, c2, c3 = st.columns([2, 2, 1])
                             c1.write(f"👤 **{u['username']}**")
-                            
-                            # Ícone do Cargo
                             badge = "👑 Admin" if u.get('role') == 'admin' else ("🛡️ Master" if u.get('role') == 'master' else "👤 User")
                             c2.write(badge)
-                            
                             col_edit, col_del = st.columns(2)
-                            if col_edit.button("✏️", key=f"u_edit_{u['id']}"):
-                                st.session_state.user_form_data = {"id": u['id'], "username": u['username'], "password": u['password'], "role": u.get('role', 'user')}
-                                st.rerun()
+                            if col_edit.button("✏️", key=f"u_edit_{u['id']}"): st.session_state.user_form_data = {"id": u['id'], "username": u['username'], "password": u['password'], "role": u.get('role', 'user')}; st.rerun()
                             if col_del.button("🗑️", key=f"u_del_{u['id']}"):
                                 supabase.table("users").delete().eq("id", u['id']).execute()
                                 if st.session_state.user_form_data["id"] == u['id']: reset_user_form()
                                 st.rerun()
                             st.divider()
                 else: st.info("Nenhum usuário encontrado.")
-
             with c_form:
                 u_data = st.session_state.user_form_data
                 titulo = f"✏️ Editando: {u_data['username']}" if u_data["id"] else "✨ Novo Usuário"
                 st.subheader(titulo)
-                
                 form_user = st.text_input("Login (Username)", value=u_data["username"])
                 form_pass = st.text_input("Senha (Password)", value=u_data["password"], type="default")
-                
                 role_opts = ["user", "master", "admin"]
                 curr_role = u_data["role"] if u_data["role"] in role_opts else "user"
                 form_role = st.selectbox("Nível de Acesso", role_opts, index=role_opts.index(curr_role))
-                
                 if st.button("💾 SALVAR USUÁRIO", use_container_width=True):
                     if u_data["id"]:
                         supabase.table("users").update({"username": form_user, "password": form_pass, "role": form_role}).eq("id", u_data["id"]).execute()
@@ -879,5 +779,4 @@ if check_password():
                     else:
                         supabase.table("users").insert({"username": form_user, "password": form_pass, "role": form_role}).execute()
                         st.toast("Usuário criado!", icon="✨")
-                    
                     time.sleep(1); reset_user_form(); st.rerun()
