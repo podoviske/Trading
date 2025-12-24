@@ -244,6 +244,8 @@ if check_password():
                 with st.expander("🔍 Filtros Avançados", expanded=True):
                     if ROLE in ['master', 'admin']:
                         col_d1, col_d2, col_grp, col_ctx = st.columns([1, 1, 1.2, 1.8])
+                        
+                        # Carrega grupos únicos
                         grupos_disp = ["Todos"] + sorted(list(df['grupo_vinculo'].unique()))
                         sel_grupo = col_grp.selectbox("Grupo de Contas", grupos_disp)
                     else:
@@ -370,8 +372,7 @@ if check_password():
                 if not df_grupos.empty:
                     lista_grupos = sorted(list(df_grupos['nome'].unique()))
                     grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
-                else:
-                    st.caption("⚠️ Crie grupos na aba Contas.")
+                else: st.caption("⚠️ Crie grupos na aba Contas.")
         
         if atm_sel != "Manual":
             config = atm_db[atm_sel]
@@ -379,19 +380,15 @@ if check_password():
             stp_default = float(config["stop"])
             try:
                 parciais_pre = json.loads(config["parciais"]) if isinstance(config["parciais"], str) else config["parciais"]
-            except:
-                parciais_pre = []
+            except: parciais_pre = []
         else:
-            lt_default = 1
-            stp_default = 0.0
-            parciais_pre = []
+            lt_default = 1; stp_default = 0.0; parciais_pre = []
 
         f1, f2, f3 = st.columns([1, 1, 2.5])
         with f1:
             dt = st.date_input("Data", datetime.now().date())
             atv = st.selectbox("Ativo", ["MNQ", "NQ"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-            # --- CONTEXTO E ESTADO MENTAL MANTIDOS ---
             ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
             psi = st.selectbox("Estado Mental", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Fomo", "Neutro"])
         with f2:
@@ -420,14 +417,12 @@ if check_password():
                 val_qtd = int(parciais_pre[i]["qtd"]) if i < len(parciais_pre) else (lt if i == 0 else 0)
                 pts = c_pts.number_input(f"Pts Alvo {i+1}", value=val_pts, key=f"p_pts_{i}_{atm_sel}", step=0.25)
                 qtd = c_qtd.number_input(f"Contratos {i+1}", value=val_qtd, key=f"p_qtd_{i}_{atm_sel}", min_value=0)
-                saidas.append({"pts": pts, "qtd": qtd})
-                aloc += qtd
+                saidas.append({"pts": pts, "qtd": qtd}); aloc += qtd
             
             if lt != aloc:
                 diff = lt - aloc
                 st.markdown(f'<div class="piscante-erro">{"FALTAM" if diff > 0 else "SOBRAM"} {abs(diff)} CONTRATOS</div>', unsafe_allow_html=True)
-            else:
-                st.success("✅ Posição Sincronizada")
+            else: st.success("✅ Posição Sincronizada")
 
         st.divider()
         col_gain, col_loss = st.columns(2)
@@ -440,8 +435,7 @@ if check_password():
                 try:
                     res_fin = sum([s["pts"] * MULTIPLIERS[atv] * s["qtd"] for s in saidas])
                     pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
-                    trade_id = str(uuid.uuid4())
-                    img_url = ""
+                    trade_id = str(uuid.uuid4()); img_url = None
                     if up:
                         file_path = f"{trade_id}.png"
                         supabase.storage.from_("prints").upload(file_path, up.getvalue())
@@ -451,7 +445,7 @@ if check_password():
                         "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
                         "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
                         "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
-                        "comportamento": psi,
+                        "comportamento": psi, # --- GRAVA O ESTADO MENTAL ---
                         "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                     }).execute()
                     st.balloons() 
@@ -461,7 +455,7 @@ if check_password():
                     st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (COM MONITOR CORRIGIDO - GRÁFICO OK)
+    # 9. ABA CONTAS (MONITOR DE PERFORMANCE APEX - ATUALIZADO)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
@@ -471,7 +465,6 @@ if check_password():
         else:
             tab_grupo, tab_conta, tab_visao, tab_monitor = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📊 Visão Geral", "🚀 Monitor de Performance"])
             
-            # --- ABA 1: CRIAR GRUPO ---
             with tab_grupo:
                 st.subheader("Nova Estrutura de Contas")
                 with st.form("form_grupo"):
@@ -479,57 +472,40 @@ if check_password():
                     if st.form_submit_button("Criar Grupo"):
                         if novo_grupo:
                             supabase.table("grupos_config").insert({"usuario": USER, "nome": novo_grupo}).execute()
-                            st.success(f"Grupo '{novo_grupo}' criado!")
-                            time.sleep(1); st.rerun()
-                        else:
-                            st.warning("Digite um nome.")
-                            
-                st.divider()
-                st.write("Grupos Existentes:")
+                            st.success(f"Grupo '{novo_grupo}' criado!"); time.sleep(1); st.rerun()
+                        else: st.warning("Digite um nome.")
+                st.divider(); st.write("Grupos Existentes:")
                 df_g = load_grupos_config()
                 if not df_g.empty:
                     for idx, row in df_g.iterrows():
                         c1, c2 = st.columns([4, 1])
                         c1.info(f"📂 {row['nome']}")
                         if c2.button("Excluir", key=f"del_g_{row['id']}"):
-                            supabase.table("grupos_config").delete().eq("id", row['id']).execute()
-                            st.rerun()
+                            supabase.table("grupos_config").delete().eq("id", row['id']).execute(); st.rerun()
 
-            # --- ABA 2: CADASTRAR CONTA ---
             with tab_conta:
                 st.subheader("Vincular Conta a um Grupo")
                 df_g = load_grupos_config()
-                
-                if df_g.empty:
-                    st.warning("⚠️ Crie um Grupo primeiro na aba anterior.")
+                if df_g.empty: st.warning("⚠️ Crie um Grupo primeiro na aba anterior.")
                 else:
                     with st.form("form_conta"):
                         grupo_selecionado = st.selectbox("Selecione o Grupo", sorted(df_g['nome'].unique()))
                         conta_id = st.text_input("Identificador da Conta (Ex: PA-001, 50k-01)")
                         saldo_ini = st.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
                         fase_atual = st.selectbox("Fase Atual", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"])
-                        
                         if st.form_submit_button("Salvar Conta"):
                             if conta_id:
                                 supabase.table("contas_config").insert({
-                                    "usuario": USER,
-                                    "grupo_nome": grupo_selecionado,
-                                    "conta_identificador": conta_id,
-                                    "saldo_inicial": saldo_ini,
-                                    "fase": fase_atual
+                                    "usuario": USER, "grupo_nome": grupo_selecionado, "conta_identificador": conta_id,
+                                    "saldo_inicial": saldo_ini, "fase": fase_atual
                                 }).execute()
-                                st.success("Conta vinculada com sucesso!")
-                                time.sleep(1); st.rerun()
-                            else:
-                                st.warning("Preencha o ID da conta.")
+                                st.success("Conta vinculada com sucesso!"); time.sleep(1); st.rerun()
+                            else: st.warning("Preencha o ID da conta.")
 
-            # --- ABA 3: VISÃO GERAL (SALDO INTELIGENTE) ---
             with tab_visao:
                 st.subheader("📋 Acompanhamento de Saldo Individual")
-                df_c = load_contas_config()
-                df_t = load_trades_db()
+                df_c = load_contas_config(); df_t = load_trades_db()
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
-                
                 if not df_c.empty:
                     grupos_unicos = sorted(df_c['grupo_nome'].unique())
                     for grp in grupos_unicos:
@@ -557,17 +533,18 @@ if check_password():
                             else: st.progress(0.0)
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (GRÁFICO COM START POINT E ZOOM) ---
+            # --- MONITOR DE PERFORMANCE (AQUI A MÁGICA ACONTECE) ---
             with tab_monitor:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
-                df_c = load_contas_config()
-                df_t = load_trades_db() # CORRIGIDO PARA load_trades_db()
+                df_c = load_contas_config(); df_t = load_trades_db()
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
 
                 if not df_c.empty:
                     grps = sorted(df_c['grupo_nome'].unique())
-                    sel_g = st.selectbox("Selecione o Grupo para Analisar", grps)
-                    
+                    col_sel, col_vis = st.columns([2, 1])
+                    sel_g = col_sel.selectbox("Selecione o Grupo", grps)
+                    vis_mode = col_vis.radio("Visualização", ["Trade a Trade", "Diário"], horizontal=True)
+
                     c_d1, c_d2 = st.columns(2)
                     min_d = df_t['data'].min() if not df_t.empty else datetime.now().date()
                     max_d = df_t['data'].max() if not df_t.empty else datetime.now().date()
@@ -580,88 +557,103 @@ if check_password():
 
                     if not contas_g.empty:
                         ref = contas_g.iloc[0]; fase = ref['fase']
-                        saldo_base = float(ref['saldo_inicial'])
-                        if saldo_base < 1000: saldo_base = 150000.0 
+                        saldo_base_db = float(ref['saldo_inicial'])
+                        # Proteção: Se vier 0, assume 150k para não quebrar o gráfico
+                        saldo_base = 150000.0 if saldo_base_db < 1000 else saldo_base_db 
                         
                         lucro_filt = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual = saldo_base + lucro_filt
 
                         meta = 0.0; base_prog = 150000.0
-                        if "Fase 1" in fase: meta = 159000.0; base_prog = 150000.0
-                        elif "Fase 2" in fase: meta = 155100.0; base_prog = 150000.0
+                        if "Fase 1" in fase: meta = 159000.0
+                        elif "Fase 2" in fase: meta = 155100.0
                         elif "Fase 3" in fase: meta = 160000.0; base_prog = 155100.0
                         elif "Fase 4" in fase: meta = 0.0; base_prog = 150100.0
 
+                        # Cálculo de Métricas (Instantâneo)
                         if not trades_g.empty:
-                            eq = trades_g.sort_values('created_at')['resultado'].cumsum() + saldo_base
-                            hwm = max(saldo_base, eq.max())
-                        else: hwm = saldo_base
+                            eq_raw = trades_g.sort_values('created_at')['resultado'].cumsum() + saldo_base
+                            hwm_inst = max(saldo_base, eq_raw.max())
+                        else: hwm_inst = saldo_base
                         
-                        ts = hwm - 5000.0
-                        stop_real = 150100.0 if (saldo_base > 155100 or ts > 150100) else min(ts, 150100.0)
-                        buff = saldo_atual - stop_real
+                        ts_inst = hwm_inst - 5000.0
+                        stop_inst = 150100.0 if (saldo_base > 155100 or ts_inst > 150100) else min(ts_inst, 150100.0)
+                        buff = saldo_atual - stop_inst
 
                         k1, k2, k3, k4 = st.columns(4)
-                        k1.metric("Saldo Unitário", f"${saldo_atual:,.2f}")
-                        k2.metric("Lucro Período", f"${lucro_filt:+,.2f}", f"{len(contas_g)} contas")
-                        k3.metric("Buffer", f"${buff:,.2f}", "Até quebrar")
-                        if meta > 0: k4.metric("Falta", f"${meta-saldo_atual:,.2f}", f"Alvo: ${meta:,.0f}")
-                        else: k4.metric("Modo Saque", "Sem Teto")
+                        k1.metric("Saldo", f"${saldo_atual:,.2f}")
+                        k2.metric("Lucro Período", f"${lucro_filt:+,.2f}")
+                        k3.metric("Buffer", f"${buff:,.2f}")
+                        k4.metric("Falta", f"${meta-saldo_atual:,.2f}" if meta>0 else "Livre")
 
                         st.divider()
                         cg, cp = st.columns([2, 1])
                         
                         with cg:
-                            st.markdown("##### 🌊 Curva de Evolução")
-                            # CORREÇÃO PARA GRÁFICO COMEÇAR EM 150K
-                            # 1. Cria o DataFrame base com ponto zero
-                            start_date = d_ini if not trades_g.empty else datetime.now().date()
-                            # Converte para datetime para o Plotly não reclamar
-                            start_dt = pd.to_datetime(start_date)
+                            st.markdown("##### 🌊 Evolução & Trailing Stop")
                             
+                            # --- DADOS DO GRÁFICO ---
                             if not trades_g.empty:
-                                df_e = trades_g.sort_values('created_at').copy()
-                                df_e['saldo_acc'] = df_e['resultado'].cumsum() + saldo_base
-                                # Adiciona o ponto inicial ANTES do primeiro trade
-                                first_trade_time = df_e['created_at'].min() - timedelta(minutes=30)
-                                start_row = pd.DataFrame([{'created_at': first_trade_time, 'saldo_acc': saldo_base}])
-                                df_p = pd.concat([start_row, df_e[['created_at', 'saldo_acc']]], ignore_index=True)
+                                if vis_mode == "Diário":
+                                    trades_g['data'] = pd.to_datetime(trades_g['data'])
+                                    df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_base
+                                    df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
+                                else:
+                                    df_plot = trades_g.sort_values('created_at').copy()
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_base
+                                    df_plot.rename(columns={'created_at': 'eixo_x'}, inplace=True)
+                                
+                                # Adiciona Ponto Inicial (Antes do primeiro trade, vale o Saldo Base)
+                                start_x = df_plot['eixo_x'].min() - (timedelta(days=1) if vis_mode == "Diário" else timedelta(minutes=30))
+                                start_row = pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_base}])
+                                df_plot = pd.concat([start_row, df_plot], ignore_index=True)
                             else:
-                                # Se não tem trade, cria uma linha reta no saldo base
-                                now = datetime.now()
-                                df_p = pd.DataFrame([
-                                    {'created_at': now - timedelta(hours=1), 'saldo_acc': saldo_base},
-                                    {'created_at': now, 'saldo_acc': saldo_base}
-                                ])
+                                df_plot = pd.DataFrame([{'eixo_x': datetime.now(), 'saldo_acc': saldo_base}])
 
-                            fig = px.line(df_p, x='created_at', y='saldo_acc', template="plotly_dark")
-                            fig.update_traces(fill='tozeroy', line_color='#B20000', fillcolor='rgba(178,0,0,0.1)')
+                            # --- TRAILING STOP LINHA A LINHA ---
+                            # Calcula o HWM para cada ponto do gráfico
+                            df_plot['hwm'] = df_plot['saldo_acc'].cummax()
                             
-                            if meta > 0: fig.add_hline(y=meta, line_dash="dot", line_color="green", annotation_text="Meta")
-                            fig.add_hline(y=stop_real, line_dash="dash", line_color="red", annotation_text="Stop")
+                            # Regra: Stop = HWM - 5000, limitado a 150.100
+                            # Se a conta já começa > 155.100, o stop é fixo em 150.100
+                            if saldo_base > 155100: 
+                                df_plot['stop_line'] = 150100.0
+                            else:
+                                df_plot['stop_raw'] = df_plot['hwm'] - 5000.0
+                                df_plot['stop_line'] = df_plot['stop_raw'].clip(upper=150100.0)
+
+                            # PLOTAGEM
+                            fig = px.line(df_plot, x='eixo_x', y='saldo_acc', template="plotly_dark")
+                            fig.update_traces(name='Saldo', line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)')
                             
-                            # ZOOM AUTOMÁTICO
-                            min_y = min(stop_real, df_p['saldo_acc'].min()) - 500
-                            max_y = max(meta if meta > 0 else saldo_atual, df_p['saldo_acc'].max()) + 500
-                            fig.update_layout(yaxis_range=[min_y, max_y])
+                            # Linha de Stop (Vermelha)
+                            fig.add_scatter(x=df_plot['eixo_x'], y=df_plot['stop_line'], mode='lines', 
+                                          line=dict(color='#FF4B4B', dash='dash', shape='hv'), name='Trailing Stop')
+                            
+                            if meta > 0: 
+                                fig.add_hline(y=meta, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
+                            
+                            # ZOOM AUTOMÁTICO (IGNORA O ZERO)
+                            min_y = min(df_plot['stop_line'].min(), df_plot['saldo_acc'].min()) - 1000
+                            max_y = max(meta if meta > 0 else saldo_atual, df_plot['saldo_acc'].max()) + 1000
+                            fig.update_layout(yaxis_range=[min_y, max_y], showlegend=True, legend=dict(orientation="h", y=1.02))
                             
                             st.plotly_chart(fig, use_container_width=True)
 
                         with cp:
                             st.markdown("##### 🎯 Projeção")
                             if meta > 0:
-                                total_p = meta - base_prog
-                                done_p = saldo_atual - base_prog
-                                pct = min(1.0, max(0.0, done_p / total_p if total_p > 0 else 0))
-                                st.write(f"Progresso: {pct*100:.1f}%")
-                                st.progress(pct)
+                                total = meta - base_prog
+                                feito = saldo_atual - base_prog
+                                pct = min(1.0, max(0.0, feito / total if total > 0 else 0))
+                                st.write(f"Progresso: {pct*100:.1f}%"); st.progress(pct)
                             
                             mg = trades_g['resultado'].mean() if not trades_g.empty else 0
                             if meta > 0 and (meta-saldo_atual) > 0 and mg > 0:
                                 tn = int((meta-saldo_atual) / mg) + 1
                                 st.info(f"Faltam **{tn} trades** na média (${mg:.0f})")
                             elif meta > 0 and (meta-saldo_atual) <= 0: st.success("Meta Atingida!")
-                            
                     else: st.info("Grupo sem contas.")
                 else: st.info("Cadastre contas.")
 
@@ -716,24 +708,31 @@ if check_password():
                 time.sleep(1); reset_atm_form(); st.rerun()
 
     # ==============================================================================
-    # 11. HISTÓRICO (AGORA CORRIGIDO - FUNÇÃO load_trades_db)
+    # 11. HISTÓRICO
     # ==============================================================================
     elif selected == "Histórico":
         st.title("📜 Galeria de Trades")
-        dfh = load_trades_db() # NOME CORRIGIDO AQUI
+        dfh = load_trades_db()
         if not dfh.empty:
-            c1, c2, c3, c4 = st.columns(4)
-            fa = c1.multiselect("Ativo", ["NQ", "MNQ"])
-            fr = c2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
-            fc = c3.multiselect("Contexto", list(dfh['contexto'].unique()))
-            fg = c4.multiselect("Grupo", list(dfh['grupo_vinculo'].unique())) if ROLE in ["master", "admin"] else []
-            
-            if fa: dfh = dfh[dfh['ativo'].isin(fa)]
-            if fc: dfh = dfh[dfh['contexto'].isin(fc)]
-            if fg: dfh = dfh[dfh['grupo_vinculo'].isin(fg)]
-            if fr == "Wins": dfh = dfh[dfh['resultado'] > 0]
-            if fr == "Losses": dfh = dfh[dfh['resultado'] < 0]
-            df_h = dfh.sort_values('created_at', ascending=False)
+            df_h = dfh[dfh['usuario'] == USER]
+            with st.expander("🔍 Filtros", expanded=True):
+                c1, c2, c3, c4 = st.columns(4)
+                filtro_ativo = c1.multiselect("Filtrar Ativo", ["NQ", "MNQ"])
+                filtro_res = c2.selectbox("Filtrar Resultado", ["Todos", "Wins", "Losses"])
+                filtro_ctx = c3.multiselect("Filtrar Contexto", list(dfh['contexto'].unique()))
+                
+                if ROLE in ['master', 'admin']:
+                    opcoes_grupo = sorted(list(dfh['grupo_vinculo'].unique()))
+                    filtro_grp = c4.multiselect("Filtrar Grupo", opcoes_grupo)
+                else:
+                    filtro_grp = []
+
+            if filtro_ativo: df_h = df_h[df_h['ativo'].isin(filtro_ativo)]
+            if filtro_ctx: df_h = df_h[df_h['contexto'].isin(filtro_ctx)]
+            if filtro_grp: df_h = df_h[df_h['grupo_vinculo'].isin(filtro_grp)]
+            if filtro_res == "Wins": df_h = df_h[df_h['resultado'] > 0]
+            if filtro_res == "Losses": df_h = df_h[df_h['resultado'] < 0]
+            df_h = df_h.sort_values('created_at', ascending=False)
             
             @st.dialog("Detalhes da Operação", width="large")
             def show_trade_details(row):
