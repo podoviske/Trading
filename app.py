@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v132", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v133", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -481,10 +481,10 @@ if check_password():
                     st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v132)
+    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v133 - CORRIGIDO)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v132)")
+        st.title("💼 Gestão de Portfólio (v133)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -715,7 +715,7 @@ if check_password():
                         # --- CORREÇÃO DO LAYOUT (Criação das colunas ANTES de usar) ---
                         cg, cp = st.columns([2, 1])
 
-                        # --- GRÁFICO DE EVOLUÇÃO (EXISTENTE) ---
+                        # --- GRÁFICO DE EVOLUÇÃO (CORRIGIDO PARA TER PONTO ZERO) ---
                         with cg:
                             st.markdown("##### 🌊 Curva do Grupo")
                             if not trades_g.empty:
@@ -723,13 +723,25 @@ if check_password():
                                     trades_g['data'] = pd.to_datetime(trades_g['data'])
                                     df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + menor_saldo_inicial
-                                    x_col = 'data'
+                                    df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
+                                    
+                                    # Adicionando ponto inicial (Dia anterior ao primeiro trade)
+                                    start_x = df_plot['eixo_x'].min() - timedelta(days=1)
+                                    start_row = pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': menor_saldo_inicial}])
+                                    df_plot = pd.concat([start_row, df_plot], ignore_index=True)
+                                    x_col = 'eixo_x'
                                 else:
+                                    # Trade a Trade
                                     df_sorted = trades_g.sort_values(by=['data', 'created_at'])
                                     df_sorted['seq'] = range(1, len(df_sorted) + 1)
                                     df_plot = df_sorted.copy()
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + menor_saldo_inicial
-                                    x_col = 'seq'
+                                    df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
+                                    
+                                    # Adicionando ponto zero
+                                    start_row = pd.DataFrame([{'eixo_x': 0, 'saldo_acc': menor_saldo_inicial}])
+                                    df_plot = pd.concat([start_row, df_plot], ignore_index=True)
+                                    x_col = 'eixo_x'
 
                                 # Plot
                                 fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
@@ -744,6 +756,10 @@ if check_password():
                                 min_y = min(stop_loss_atual, df_plot['saldo_acc'].min()) - 500
                                 max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + 500
                                 fig.update_layout(yaxis_range=[min_y, max_y], showlegend=False)
+                                
+                                if vis_mode == "Trade a Trade":
+                                    fig.update_xaxes(dtick=1) # Inteiros no eixo X
+                                    
                                 st.plotly_chart(fig, use_container_width=True)
                             else:
                                 st.info("Sem trades neste grupo.")
