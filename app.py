@@ -583,7 +583,7 @@ if check_password():
 
             # --- ABA 4: MONITOR DE PERFORMANCE (COM CONTAGEM DE CONTAS) ---
             with t4:
-                st.subheader("🚀 Monitor de Performance (Apex 150k)")
+                st.subheader("🚀 Monitor de Performance")
                 df_c = load_contas_config(); df_t = load_trades_db()
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
 
