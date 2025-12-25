@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v133", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v134", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -481,10 +481,10 @@ if check_password():
                     st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v133 - CORRIGIDO)
+    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v134 - CORREÇÃO DE RISCO)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v133)")
+        st.title("💼 Gestão de Portfólio (v134)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -599,10 +599,11 @@ if check_password():
                     sel_g = col_sel.selectbox("Grupo", grps)
                     vis_mode = col_vis.radio("Visualização", ["Trade a Trade", "Diário"], horizontal=True)
 
-                    # --- SIMULAÇÃO DE RISCO PELA ATM (NOVO NO v131) ---
+                    # --- SIMULAÇÃO DE RISCO PELA ATM (CORRIGIDO v134) ---
                     st.markdown("---")
-                    col_atm_sel, _ = st.columns([2, 2])
+                    col_atm_sel, col_atv_sel = st.columns([2, 1])
                     atm_selecionada = col_atm_sel.selectbox("🔧 Simular Risco com ATM (Define as Vidas)", ["Padrão ($300)"] + list(atm_db.keys()))
+                    ativo_simulacao = col_atv_sel.radio("Ativo Base", ["NQ", "MNQ"], horizontal=True, index=0)
 
                     contas_g = df_c[df_c['grupo_nome'] == sel_g]
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
@@ -663,12 +664,12 @@ if check_password():
 
                         buffer_vida = saldo_atual_real - stop_loss_atual
 
-                        # --- 4. CÁLCULO DE RISCO DE RUÍNA (VIDAS - NOVO NO v131) ---
-                        risco_r = 300.0 # Padrão
+                        # --- 4. CÁLCULO DE RISCO DE RUÍNA (VIDAS - CORRIGIDO v134) ---
+                        risco_r = 300.0 # Padrão fallback
                         if atm_selecionada != "Padrão ($300)" and atm_selecionada in atm_db:
                             atm_data = atm_db[atm_selecionada]
-                            # Assumindo NQ como base para cálculo de risco
-                            risco_r = float(atm_data['lote']) * float(atm_data['stop']) * 20 
+                            # Agora usa o multiplicador do ativo selecionado (NQ=20, MNQ=2)
+                            risco_r = float(atm_data['lote']) * float(atm_data['stop']) * MULTIPLIERS[ativo_simulacao] 
                         
                         vidas_restantes = buffer_vida / risco_r if risco_r > 0 else 0
 
