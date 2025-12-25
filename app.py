@@ -160,7 +160,48 @@ if check_password():
             df_f = df[mask].copy()
 
             if not df_f.empty:
-                # --- KPI CARDS ---
+                # --- APEX INFO ---
+                if sel_grp != "Todos" and ROLE in ['master', 'admin']:
+                    st.markdown(f"### 🛡️ Monitor Apex: {sel_grp}")
+                    df_c = load_contas_config()
+                    contas_g = df_c[df_c['grupo_nome'] == sel_grp]
+                    
+                    if not contas_g.empty:
+                        ref = contas_g.iloc[0]; fase = ref['fase']; saldo_cadastrado = float(ref['saldo_inicial'])
+                        saldo_cadastrado = 150000.0 if saldo_cadastrado < 1000 else saldo_cadastrado
+                        
+                        lucro_periodo = df_f['resultado'].sum()
+                        saldo_atual_est = saldo_cadastrado + lucro_periodo
+                        
+                        equity_curve = df_f.sort_values('created_at')['resultado'].cumsum() + saldo_cadastrado
+                        hwm = max(saldo_cadastrado, equity_curve.max()) if not equity_curve.empty else saldo_cadastrado
+                        
+                        trailing_stop_teorico = hwm - 5000.0
+                        stop_real = 150100.0 if (saldo_cadastrado > 155100 or trailing_stop_teorico > 150100) else min(trailing_stop_teorico, 150100.0)
+                        buffer_vida = saldo_atual_est - stop_real
+                        
+                        meta_alvo = 0.0; base_prog = 150000.0
+                        if "Fase 1" in fase: meta_alvo = 159000.0
+                        elif "Fase 2" in fase: meta_alvo = 155100.0
+                        elif "Fase 3" in fase: meta_alvo = 160000.0; base_prog = 155100.0
+                        
+                        k1, k2, k3, k4 = st.columns(4)
+                        k1.metric("Contas", f"{len(contas_g)}", fase)
+                        k2.metric("Saldo Unitário", f"${saldo_atual_est:,.2f}", f"Stop: ${stop_real:,.0f}")
+                        cor_b = "inverse" if buffer_vida < 2500 else "normal"
+                        k3.metric("🔥 Buffer", f"${buffer_vida:,.2f}", "Até quebrar", delta_color=cor_b)
+                        
+                        if meta_alvo > 0:
+                            falta = meta_alvo - saldo_atual_est
+                            k4.metric("Falta Meta", f"${falta:,.2f}", f"Alvo: ${meta_alvo:,.0f}")
+                            pct = min(1.0, max(0.0, (saldo_atual_est - base_prog) / (meta_alvo - base_prog)))
+                            st.progress(pct)
+                        else:
+                            saque = max(0, saldo_atual_est - 152600) * len(contas_g)
+                            k4.metric("💰 Saque Disp.", f"${saque:,.2f}")
+                    st.markdown("---")
+
+                # --- KPIs GERAIS ---
                 t_tr = len(df_f); net = df_f['resultado'].sum()
                 wins = df_f[df_f['resultado'] > 0]; losses = df_f[df_f['resultado'] < 0]
                 pf = (wins['resultado'].sum() / abs(losses['resultado'].sum())) if not losses.empty else float('inf')
@@ -169,64 +210,34 @@ if check_password():
                 avg_l = abs(losses['resultado'].mean()) if not losses.empty else 0
                 payoff = avg_w/avg_l if avg_l > 0 else 0
                 exp = ((wr/100)*avg_w) - ((len(losses)/t_tr)*avg_l)
-                avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
-                avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
-                avg_lot = df_f['lote'].mean() if not df_f.empty else 0
-
+                
                 df_f = df_f.sort_values('created_at')
                 df_f['equity'] = df_f['resultado'].cumsum()
                 max_dd = (df_f['equity'] - df_f['equity'].cummax()).min()
 
-                st.markdown("##### 🏁 Desempenho Geral")
                 r1 = st.columns(4)
-                with r1[0]: card_metric("RESULTADO LÍQUIDO", f"${net:,.2f}", f"Bruto: ${wins['resultado'].sum():,.0f}", "#00FF88" if net>=0 else "#FF4B4B")
-                with r1[1]: card_metric("FATOR DE LUCRO (PF)", f"{pf:.2f}", "Ideal > 1.5", "#B20000")
+                with r1[0]: card_metric("RESULTADO", f"${net:,.2f}", f"Bruto: ${wins['resultado'].sum():,.0f}", "#00FF88" if net>=0 else "#FF4B4B")
+                with r1[1]: card_metric("FATOR DE LUCRO", f"{pf:.2f}", "Ideal > 1.5", "#B20000")
                 with r1[2]: card_metric("WIN RATE", f"{wr:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
-                with r1[3]: card_metric("EXPECTATIVA MAT.", f"${exp:.2f}", "Por Trade", "#00FF88" if exp>0 else "#FF4B4B")
+                with r1[3]: card_metric("EXPECTATIVA", f"${exp:.2f}", "Por Trade", "#00FF88" if exp>0 else "#FF4B4B")
 
-                st.markdown("##### 💲 Médias Financeiras & Risco")
                 r2 = st.columns(4)
-                with r2[0]: card_metric("MÉDIA GAIN ($)", f"${avg_w:,.2f}", "", "#00FF88")
-                with r2[1]: card_metric("MÉDIA LOSS ($)", f"-${avg_l:,.2f}", "", "#FF4B4B")
-                with r2[2]: card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real")
-                with r2[3]: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "No Período", "#FF4B4B")
-
-                st.markdown("##### 🎯 Performance Técnica")
-                r3 = st.columns(4)
-                with r3[0]: card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
-                with r3[1]: card_metric("PTS MÉDIOS (LOSS)", f"{avg_pts_loss:.2f} pts", "", "#FF4B4B")
-                with r3[2]: card_metric("LOTE MÉDIO", f"{avg_lot:.1f}", "Contratos", "white")
-                with r3[3]: card_metric("TOTAL TRADES", str(t_tr), "Executados", "white")
-
-                st.markdown("---")
+                with r2[0]: card_metric("MÉDIA GAIN", f"${avg_w:,.2f}", "", "#00FF88")
+                with r2[1]: card_metric("MÉDIA LOSS", f"-${avg_l:,.2f}", "", "#FF4B4B")
+                with r2[2]: card_metric("PAYOFF", f"1 : {payoff:.2f}", "Risco:Retorno")
+                with r2[3]: card_metric("DRAWDOWN MÁX", f"${max_dd:,.2f}", "No Período", "#FF4B4B")
 
                 g1, g2 = st.columns([2, 1])
-                with g1:
-                    view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
-                    if view_mode == "Sequência de Trades":
-                        df_f['trade_seq'] = range(1, len(df_f) + 1)
-                        x_ax = 'trade_seq'; x_tit = "Trades"
-                    else:
-                        x_ax = 'created_at'; x_tit = "Data"
-                    
-                    fig_eq = px.area(df_f, x=x_ax, y='equity', title="📈 Curva de Patrimônio", template="plotly_dark")
-                    fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178,0,0,0.2)')
-                    fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
-                    st.plotly_chart(fig_eq, use_container_width=True)
+                with g1: st.plotly_chart(px.area(df_f, x='created_at', y='equity', title="Curva de Lucro", template="plotly_dark").update_traces(line_color='#B20000', fillcolor='rgba(178,0,0,0.2)'), use_container_width=True)
                 with g2: 
                     st.markdown("<br>", unsafe_allow_html=True)
-                    st.plotly_chart(px.bar(df_f.groupby('contexto')['resultado'].sum().reset_index(), x='contexto', y='resultado', title="Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"]), use_container_width=True)
+                    st.plotly_chart(px.pie(df_f, names='contexto', values='lote', title="Contexto", template="plotly_dark", hole=0.4), use_container_width=True)
 
-                st.markdown("### 📅 Performance por Dia da Semana")
-                df_f['dia_pt'] = pd.to_datetime(df_f['data']).dt.day_name().map({'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'})
-                dp = df_f.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
-                st.plotly_chart(px.bar(dp, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"]), use_container_width=True)
-
-            else: st.info("Sem dados.")
+            else: st.info("Sem dados. Registre operações.")
         else: st.warning("Vazio.")
 
     # ==============================================================================
-    # 8. REGISTRAR TRADE (VERSÃO CLÁSSICA - RESTAURADA)
+    # 8. REGISTRAR TRADE
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
@@ -234,13 +245,13 @@ if check_password():
         df_grupos = load_grupos_config()
         
         col_atm, col_grp = st.columns([3, 1.5])
-        with col_atm: atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
+        with col_atm: atm_sel = st.selectbox("🎯 ATM", ["Manual"] + list(atm_db.keys()))
         with col_grp:
-            grupo_sel_trade = "Geral"
+            g_sel = "Geral"
             if ROLE in ["master", "admin"]:
                 if not df_grupos.empty:
                     lista_grupos = sorted(list(df_grupos['nome'].unique()))
-                    grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
+                    g_sel = st.selectbox("📂 Grupo", lista_grupos)
                 else: st.caption("⚠️ Crie grupos na aba Contas.")
         
         if atm_sel != "Manual":
@@ -266,7 +277,7 @@ if check_password():
             if stp > 0:
                 risco_calc = stp * MULTIPLIERS[atv] * lt
                 st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
-            up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
+            up = st.file_uploader("📸 Print", type=['png', 'jpg', 'jpeg'])
 
         with f3:
             st.write("**Saídas (Alocação)**")
@@ -290,14 +301,16 @@ if check_password():
             
             if lt != aloc:
                 diff = lt - aloc
-                st.markdown(f'<div class="piscante-erro">{"FALTAM" if diff > 0 else "SOBRAM"} {abs(diff)} CONTRATOS</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="piscante-erro">SALDO: {lt - aloc} CTTS</div>', unsafe_allow_html=True)
             else: st.success("✅ Posição Sincronizada")
 
-        st.divider(); cg, cl = st.columns(2); br = False
-        if cg.button("🟢 REGISTRAR GAIN", use_container_width=True, disabled=(lt!=aloc)): br = True
-        if cl.button("🔴 REGISTRAR STOP FULL", use_container_width=True): saidas = [{"pts": -stp, "qtd": lt}]; br = True
-        
-        if br:
+        st.divider()
+        col_gain, col_loss = st.columns(2)
+        btn_registrar = False
+        if col_gain.button("🟢 REGISTRAR GAIN", use_container_width=True, disabled=(lt != aloc)): btn_registrar = True
+        if col_loss.button("🔴 REGISTRAR STOP FULL", use_container_width=True): saidas = [{"pts": -stp, "qtd": lt}]; btn_registrar = True
+
+        if btn_registrar:
             with st.spinner("Salvando..."):
                 try:
                     res_fin = sum([s["pts"] * MULTIPLIERS[atv] * s["qtd"] for s in saidas])
@@ -307,17 +320,19 @@ if check_password():
                         file_path = f"{trade_id}.png"
                         supabase.storage.from_("prints").upload(file_path, up.getvalue())
                         img_url = supabase.storage.from_("prints").get_public_url(file_path)
-                    
+
                     supabase.table("trades").insert({
-                        "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx, "direcao": dr, "lote": lt, 
-                        "resultado": res_fin, "pts_medio": pt_med, "prints": img_url, "usuario": USER, 
-                        "grupo_vinculo": grupo_sel_trade, "comportamento": psi, "risco_fin": (stp * MULTIPLIERS[atv] * lt)
+                        "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
+                        "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
+                        "prints": img_url, "usuario": USER, "grupo_vinculo": g_sel, "comportamento": psi,
+                        "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                     }).execute()
                     st.balloons(); st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}"); time.sleep(2); st.rerun()
-                except Exception as e: st.error(f"Erro: {e}")
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR APEX - GRÁFICO CLEAN, EIXO 0=150K, STEP=1)
+    # 9. ABA CONTAS (MONITOR APEX - GRÁFICO POLIDO E LIMPO)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
@@ -377,7 +392,7 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", r['id']).execute(); st.rerun()
                 else: st.info("Vazio.")
 
-            # --- MONITOR DE PERFORMANCE (POLIDO E LIMPO) ---
+            # --- MONITOR DE PERFORMANCE (POLIMENTO FINAL) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config(); df_t = load_trades_db()
@@ -471,9 +486,8 @@ if check_password():
                             fig.add_hline(y=saldo_base, line_width=1, line_color="white", opacity=0.3, annotation_text="Início")
                             fig.update_layout(yaxis_showgrid=False, xaxis_showgrid=False) # SEM GRADES
                             
-                            # EIXO X DE 1 EM 1
                             if vis_mode == "Trade a Trade":
-                                fig.update_xaxes(dtick=1)
+                                fig.update_xaxes(dtick=1) # PASSO 1 EM 1
 
                             min_y = min(df_plot['stop_line'].min(), df_plot['saldo_acc'].min()) - 1000
                             max_y = max(meta if meta > 0 else saldo_atual, df_plot['saldo_acc'].max()) + 1000
@@ -502,8 +516,8 @@ if check_password():
     # ==============================================================================
     elif selected == "Configurar ATM":
         st.title("⚙️ Gerenciar ATMs")
-        if "atm_form_data" not in st.session_state: st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
-        def reset_atm_form(): st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
+        if "ae" not in st.session_state: st.session_state.ae = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
+        def reset_atm_form(): st.session_state.ae = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
         res = supabase.table("atm_configs").select("*").order("nome").execute(); existing_atms = res.data
         c_form, c_list = st.columns([1.5, 1])
         with c_list:
@@ -514,37 +528,29 @@ if check_password():
                     with st.expander(f"📍 {item['nome']}", expanded=False):
                         st.write(f"**Lote:** {item['lote']} | **Stop:** {item['stop']}")
                         c_edit, c_del = st.columns(2)
-                        if c_edit.button("✏️ Editar", key=f"edit_{item['id']}"):
-                            p_data = item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])
-                            st.session_state.atm_form_data = {"id": item['id'], "nome": item['nome'], "lote": item['lote'], "stop": item['stop'], "parciais": p_data}; st.rerun()
-                        if c_del.button("🗑️ Excluir", key=f"del_{item['id']}"):
+                        if c_edit.button("✏️ Editar", key=f"e_{item['id']}"): st.session_state.ae = {"id": item['id'], "nome": item['nome'], "lote": item['lote'], "stop": item['stop'], "parciais": item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])}; st.rerun()
+                        if c_del.button("🗑️ Excluir", key=f"d_{item['id']}"):
                             supabase.table("atm_configs").delete().eq("id", item['id']).execute()
-                            if st.session_state.atm_form_data["id"] == item['id']: reset_atm_form()
+                            if st.session_state.ae["id"] == item['id']: reset_atm_form()
                             st.rerun()
             else: st.info("Nenhuma estratégia salva.")
         with c_form:
-            form_data = st.session_state.atm_form_data
-            titulo = f"✏️ Editando: {form_data['nome']}" if form_data["id"] else "✨ Nova Estratégia"
-            st.subheader(titulo)
-            new_nome = st.text_input("Nome da Estratégia", value=form_data["nome"])
-            c_l, c_s = st.columns(2)
-            new_lote = c_l.number_input("Lote Total", min_value=1, value=int(form_data["lote"]))
-            new_stop = c_s.number_input("Stop Padrão (Pts)", min_value=0.0, value=float(form_data["stop"]), step=0.25)
-            st.markdown("---"); st.write("🎯 Configuração de Alvos"); c_add, c_rem = st.columns([1, 4])
-            if c_add.button("➕ Adicionar Alvo"): st.session_state.atm_form_data["parciais"].append({"pts": 0.0, "qtd": 1}); st.rerun()
-            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1: st.session_state.atm_form_data["parciais"].pop(); st.rerun()
-            updated_partials = []; total_aloc = 0
-            for i, p in enumerate(form_data["parciais"]):
+            fd = st.session_state.ae; nn = st.text_input("Nome", value=fd["nome"]); nl = st.number_input("Lote", value=int(fd["lote"])); ns = st.number_input("Stop", value=float(fd["stop"]))
+            ca, cr = st.columns(2)
+            if ca.button("➕ Alvo"): fd["parciais"].append({"pts": 0.0, "qtd": 1}); st.rerun()
+            if cr.button("➖ Alvo"): fd["parciais"].pop(); st.rerun()
+            upp = []
+            for i, p in enumerate(fd["parciais"]):
                 c1, c2 = st.columns(2); pp = c1.number_input(f"Pts {i+1}", value=float(p["pts"]), key=f"ap_{i}"); pq = c2.number_input(f"Qtd {i+1}", value=int(p["qtd"]), key=f"aq_{i}")
                 upp.append({"pts": pp, "qtd": pq})
-            if st.button("💾 SALVAR ESTRATÉGIA", use_container_width=True):
-                payload = {"nome": new_nome, "lote": new_lote, "stop": new_stop, "parciais": updated_partials}
-                if form_data["id"]: supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute(); st.toast("Atualizado!", icon="✅")
-                else: supabase.table("atm_configs").insert(payload).execute(); st.toast("Criado!", icon="✨")
-                time.sleep(1); reset_atm_form(); st.rerun()
+            if st.button("💾 SALVAR"):
+                pay = {"nome": nn, "lote": nl, "stop": ns, "parciais": upp}
+                if fd["id"]: supabase.table("atm_configs").update(pay).eq("id", fd["id"]).execute()
+                else: supabase.table("atm_configs").insert(pay).execute()
+                st.rerun()
 
     # ==============================================================================
-    # 11. HISTÓRICO
+    # 11. HISTÓRICO (RESTAURADO)
     # ==============================================================================
     elif selected == "Histórico":
         st.title("📜 Galeria de Trades")
@@ -555,6 +561,7 @@ if check_password():
             fr = c2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
             fc = c3.multiselect("Contexto", list(dfh['contexto'].unique()))
             fg = c4.multiselect("Grupo", list(dfh['grupo_vinculo'].unique())) if ROLE in ["master", "admin"] else []
+            
             if fa: dfh = dfh[dfh['ativo'].isin(fa)]
             if fc: dfh = dfh[dfh['contexto'].isin(fc)]
             if fg: dfh = dfh[dfh['grupo_vinculo'].isin(fg)]
