@@ -7,6 +7,7 @@ from streamlit_option_menu import option_menu
 import json
 import uuid
 import time
+import math  # Adicionado para cálculos de arredondamento
 from supabase import create_client, Client
 
 # ==============================================================================
@@ -727,36 +728,52 @@ if check_password():
                             
                             st.plotly_chart(fig, use_container_width=True)
 
+                        # >>> MODIFICAÇÃO REALIZADA AQUI: COMPONENTE DE PROGRESSO COM EV <<<
                         with cp:
                             st.markdown("##### 🎯 Progresso da Fase")
-                            # Define a base da barra de progresso dependendo da fase
+
+                            # --- 1. DEFINE A BASE E A META ---
                             base_progresso = 150000.0
                             if fase_index == 3: base_progresso = 155100.0
                             elif fase_index == 4: base_progresso = 160000.0
                             
                             total_meta = meta_dinamica - base_progresso
                             ja_feito = saldo_atual - base_progresso
+                            falta_dinheiro = meta_dinamica - saldo_atual
+
+                            # --- 2. CÁLCULO DA EXPECTATIVA MATEMÁTICA (EV) ---
+                            # Média de resultado por trade (considerando wins e loss)
+                            ev_por_trade = trades_g['resultado'].mean() if not trades_g.empty else 0.0
                             
+                            trades_restantes = 0
+                            if falta_dinheiro > 0 and ev_por_trade > 0:
+                                trades_restantes = math.ceil(falta_dinheiro / ev_por_trade)
+
+                            # --- 3. BARRA DE PROGRESSO ---
                             if total_meta > 0:
                                 porcentagem = min(1.0, max(0.0, ja_feito / total_meta))
                             else:
                                 porcentagem = 1.0 # Meta atingida
-                                
+                            
+                            # >>> INSERÇÃO DO TEXTO "FALTAM X OPERAÇÕES" <<<
+                            if trades_restantes > 0:
+                                st.markdown(f"""
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px;">
+                                    <span style="color: #bbb; font-size: 13px; font-weight: 500;">(faltam ~{trades_restantes} operações bem feitas)</span>
+                                    <span style="color: #444; font-size: 9px; border: 1px solid #333; padding: 2px 4px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px;" title="Cálculo baseado na sua Expectativa Matemática atual: ${ev_por_trade:.2f} por trade">
+                                        Baseado na E.M.
+                                    </span>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            # >>> FIM DA INSERÇÃO <<<
+
                             st.write(f"Conclusão: {porcentagem*100:.1f}%")
                             st.progress(porcentagem)
                             
                             st.info(f"Meta atual: ${meta_dinamica:,.0f}")
                             
-                            # --- AQUI ESTÁ O CÁLCULO DE TRADES RESTANTES (O GPS) ---
-                            media_trades = trades_g['resultado'].mean() if not trades_g.empty else 0
-                            
                             if saldo_atual < meta_dinamica:
-                                falta = meta_dinamica - saldo_atual
-                                st.caption(f"Faltam ${falta:,.2f} para o próximo nível.")
-                                
-                                if media_trades > 0:
-                                    trades_necessarios = int(falta / media_trades) + 1
-                                    st.info(f"📍 Estimativa: **{trades_necessarios} trades** (média ${media_trades:.0f})")
+                                st.caption(f"Financeiro restante: ${falta_dinheiro:,.2f}")
                             else:
                                 st.success("Nível Concluído! 🚀")
 
