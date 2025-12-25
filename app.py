@@ -231,7 +231,7 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (Geral)
+    # 7. ABA: DASHBOARD
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
