@@ -23,7 +23,7 @@ except Exception as e:
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
 # ==============================================================================
-# 2. ESTILOS CSS (MANTIDO O SEU)
+# 2. ESTILOS CSS
 # ==============================================================================
 st.markdown("""
     <style>
@@ -156,7 +156,7 @@ if check_password():
     ROLE = st.session_state.get("user_role", "user")
 
     # ==============================================================================
-    # 5. FUNÇÕES DE DADOS
+    # 5. FUNÇÕES DE DADOS (ROBUSTAS)
     # ==============================================================================
     def load_trades_db():
         try:
@@ -207,7 +207,7 @@ if check_password():
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 6. MENU LATERAL
+    # 6. SIDEBAR
     # ==============================================================================
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
@@ -362,12 +362,17 @@ if check_password():
         atm_db = load_atms_db()
         df_grupos = load_grupos_config()
         
+        # Topo Otimizado: ATM e Grupo
         col_atm, col_grp = st.columns([3, 1.5])
-        with col_atm: atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
+        
+        with col_atm:
+            atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
+        
         with col_grp:
             grupo_sel_trade = "Geral"
             if ROLE in ["master", "admin"]:
                 if not df_grupos.empty:
+                    # Lista de grupos cadastrados na nova tabela
                     lista_grupos = sorted(list(df_grupos['nome'].unique()))
                     grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
                 else:
@@ -417,6 +422,7 @@ if check_password():
                 c_pts, c_qtd = st.columns(2)
                 val_pts = float(parciais_pre[i]["pts"]) if i < len(parciais_pre) else 0.0
                 val_qtd = int(parciais_pre[i]["qtd"]) if i < len(parciais_pre) else (lt if i == 0 else 0)
+                
                 pts = c_pts.number_input(f"Pts Alvo {i+1}", value=val_pts, key=f"p_pts_{i}_{atm_sel}", step=0.25)
                 qtd = c_qtd.number_input(f"Contratos {i+1}", value=val_qtd, key=f"p_qtd_{i}_{atm_sel}", min_value=0)
                 saidas.append({"pts": pts, "qtd": qtd})
@@ -446,79 +452,136 @@ if check_password():
                         supabase.storage.from_("prints").upload(file_path, up.getvalue())
                         img_url = supabase.storage.from_("prints").get_public_url(file_path)
 
-                    supabase.table("trades").insert({
-                        "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
-                        "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
-                        "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
-                        "comportamento": psi,
-                        "risco_fin": (stp * MULTIPLIERS[atv] * lt)
-                    }).execute()
-                    st.balloons(); st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}"); time.sleep(2); st.rerun()
+                    # TENTA SALVAR (COM TRATAMENTO SE FALTAR COLUNA)
+                    try:
+                        supabase.table("trades").insert({
+                            "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
+                            "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
+                            "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
+                            "comportamento": psi,
+                            "risco_fin": (stp * MULTIPLIERS[atv] * lt)
+                        }).execute()
+                    except Exception as e:
+                        if "comportamento" in str(e) or "column" in str(e):
+                            st.warning("⚠️ Salvando sem Estado Mental (Coluna ausente)")
+                            supabase.table("trades").insert({
+                                "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
+                                "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
+                                "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
+                                "risco_fin": (stp * MULTIPLIERS[atv] * lt)
+                            }).execute()
+                        else:
+                            raise e
+
+                    st.balloons() 
+                    st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}")
+                    time.sleep(2); st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (TRANSPLANTADA E CORRIGIDA: SEM GRADES, 150K BASE, 1-STEP)
+    # 9. ABA CONTAS (CORRIGIDA: INFO DE CONTAS E HTML BUGADO)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
-        if ROLE not in ['master', 'admin']: st.error("Restrito.")
+        
+        if ROLE not in ['master', 'admin']:
+            st.error("Acesso restrito.")
         else:
             t1, t2, t3, t4 = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📊 Visão Geral", "🚀 Monitor de Performance"])
             
+            # --- ABA 1: CRIAR GRUPO ---
             with t1:
-                st.subheader("Novo Grupo")
+                st.subheader("Nova Estrutura de Contas")
                 with st.form("form_grupo"):
-                    gn = st.text_input("Nome")
-                    if st.form_submit_button("Criar"):
-                        if gn:
-                            supabase.table("grupos_config").insert({"usuario": USER, "nome": gn}).execute()
-                            st.success("Criado!"); time.sleep(1); st.rerun()
-                st.divider(); st.write("Grupos:"); df_g = load_grupos_config()
-                for i, r in df_g.iterrows():
-                    c1, c2 = st.columns([4,1]); c1.info(f"📂 {r['nome']}")
-                    if c2.button("X", key=f"dg_{r['id']}"): supabase.table("grupos_config").delete().eq("id", r['id']).execute(); st.rerun()
-
-            with t2:
-                st.subheader("Adicionar Conta")
+                    novo_grupo = st.text_input("Nome do Grupo (Ex: Mesa Apex, Fase 2)")
+                    if st.form_submit_button("Criar Grupo"):
+                        if novo_grupo:
+                            supabase.table("grupos_config").insert({"usuario": USER, "nome": novo_grupo}).execute()
+                            st.success(f"Grupo '{novo_grupo}' criado!")
+                            time.sleep(1); st.rerun()
+                        else:
+                            st.warning("Digite um nome.")
+                            
+                st.divider()
+                st.write("Grupos Existentes:")
                 df_g = load_grupos_config()
-                if df_g.empty: st.warning("Crie grupo.")
+                if not df_g.empty:
+                    for idx, row in df_g.iterrows():
+                        c1, c2 = st.columns([4, 1])
+                        c1.info(f"📂 {row['nome']}")
+                        if c2.button("Excluir", key=f"del_g_{row['id']}"):
+                            supabase.table("grupos_config").delete().eq("id", row['id']).execute()
+                            st.rerun()
+
+            # --- ABA 2: CADASTRAR CONTA ---
+            with t2:
+                st.subheader("Vincular Conta a um Grupo")
+                df_g = load_grupos_config()
+                
+                if df_g.empty:
+                    st.warning("⚠️ Crie um Grupo primeiro na aba anterior.")
                 else:
                     with st.form("form_conta"):
-                        gs = st.selectbox("Grupo", sorted(df_g['nome'].unique()))
-                        ci = st.text_input("ID")
-                        si = st.number_input("Saldo ATUAL", value=150000.0, step=100.0)
-                        fa = st.selectbox("Fase", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saque)"])
-                        if st.form_submit_button("Salvar"):
-                            if ci:
-                                supabase.table("contas_config").insert({"usuario": USER, "grupo_nome": gs, "conta_identificador": ci, "saldo_inicial": si, "fase": fa}).execute()
-                                st.success("Salvo!"); time.sleep(1); st.rerun()
+                        grupo_selecionado = st.selectbox("Selecione o Grupo", sorted(df_g['nome'].unique()))
+                        conta_id = st.text_input("Identificador da Conta (Ex: PA-001, 50k-01)")
+                        saldo_ini = st.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
+                        fase_atual = st.selectbox("Fase Atual", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"])
+                        
+                        if st.form_submit_button("Salvar Conta"):
+                            if conta_id:
+                                supabase.table("contas_config").insert({
+                                    "usuario": USER,
+                                    "grupo_nome": grupo_selecionado,
+                                    "conta_identificador": conta_id,
+                                    "saldo_inicial": saldo_ini,
+                                    "fase": fase_atual
+                                }).execute()
+                                st.success("Conta vinculada com sucesso!")
+                                time.sleep(1); st.rerun()
+                            else:
+                                st.warning("Preencha o ID da conta.")
 
+            # --- ABA 3: VISÃO GERAL (HTML BUG CORRIGIDO) ---
             with t3:
-                st.subheader("Monitoramento Individual")
-                dc = load_contas_config(); dt = load_trades_db()
-                if not dt.empty: dt = dt[dt['usuario'] == USER]
-                if not dc.empty:
-                    for g in sorted(dc['grupo_nome'].unique()):
-                        with st.expander(f"📂 {g}", expanded=True):
-                            tg = dt[dt['grupo_vinculo'] == g] if not dt.empty else pd.DataFrame()
-                            lg = tg['resultado'].sum() if not tg.empty else 0.0
-                            cg = dc[dc['grupo_nome'] == g]
-                            for _, r in cg.iterrows():
-                                sb = float(r['saldo_inicial']); sb = 150000.0 if sb < 1000 else sb
-                                sat = sb + lg
-                                c1, c2, c3 = st.columns([3, 0.5, 0.5])
-                                c1.markdown(f"💳 **{r['conta_identificador']}** | {r['fase']} | Saldo: **${sat:,.2f}** (<span style='color:{'#00FF88' if (sat-sb)>=0 else '#FF4B4B'}'>${sat-sb:+,.2f}</span>)", unsafe_allow_html=True)
-                                with c2.popover("⚙️"):
-                                    ns = st.number_input("Saldo Real", value=sb, key=f"ns_{r['id']}")
-                                    nf = st.selectbox("Fase", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saque)"], key=f"nf_{r['id']}")
-                                    if st.button("Salvar", key=f"sv_{r['id']}"):
-                                        supabase.table("contas_config").update({"saldo_inicial": ns, "fase": nf}).eq("id", r['id']).execute(); st.rerun()
-                                if c3.button("🗑️", key=f"dl_{r['id']}"):
-                                    supabase.table("contas_config").delete().eq("id", r['id']).execute(); st.rerun()
-                else: st.info("Vazio.")
+                st.subheader("📋 Acompanhamento de Saldo Individual")
+                df_c = load_contas_config()
+                df_t = load_trades_db()
+                if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
+                
+                if not df_c.empty:
+                    grupos_unicos = sorted(df_c['grupo_nome'].unique())
+                    for grp in grupos_unicos:
+                        with st.expander(f"📂 {grp}", expanded=True):
+                            trades_grp = df_t[df_t['grupo_vinculo'] == grp] if not df_t.empty else pd.DataFrame()
+                            lucro_grupo = trades_grp['resultado'].sum() if not trades_grp.empty else 0.0
+                            contas_g = df_c[df_c['grupo_nome'] == grp]
+                            for _, row in contas_g.iterrows():
+                                saldo_atual = float(row['saldo_inicial']) + lucro_grupo
+                                delta = saldo_atual - float(row['saldo_inicial'])
+                                cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
+                                
+                                c_info, c_edit, c_del = st.columns([3, 0.5, 0.5])
+                                # CORREÇÃO: Usando HTML puro para garantir renderização correta
+                                c_info.markdown(f"""<div style='background-color: #222; padding: 10px; border-radius: 5px; margin-bottom: 5px;'><div>💳 <b>{row['conta_identificador']}</b> <span style='color: #888; font-size: 0.9em;'>| {row['fase']}</span></div><div style='font-size: 1.2em; margin-top: 5px;'>💰 Saldo: <b>${saldo_atual:,.2f}</b> (<span style='color:{cor_delta}'>${delta:+,.2f}</span>)</div></div>""", unsafe_allow_html=True)
+                                
+                                with c_edit.popover("⚙️"):
+                                    st.write(f"Editar {row['conta_identificador']}")
+                                    n_fase = st.selectbox("Nova Fase", ["Fase 1 (Teste)", "Fase 2 (Colchão)", "Fase 3 (Dobro)", "Fase 4 (Saques)"], key=f"nf_{row['id']}")
+                                    n_saldo = st.number_input("Novo Saldo Inicial", value=float(row['saldo_inicial']), key=f"ns_{row['id']}")
+                                    if st.button("Salvar Alterações", key=f"save_{row['id']}"):
+                                        supabase.table("contas_config").update({"fase": n_fase, "saldo_inicial": n_saldo}).eq("id", row['id']).execute(); st.rerun()
 
-            # --- MONITOR DE PERFORMANCE (VERSÃO PREMIUM - GRÁFICO LIMPO E EIXO SEQUENCIAL) ---
+                                if c_del.button("🗑️", key=f"del_acc_{row['id']}"):
+                                    supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
+                            
+                            if lucro_grupo > 0:
+                                prog = min(1.0, lucro_grupo / 3000)
+                                st.progress(prog); st.caption(f"Meta Colchão ($3k): {prog*100:.1f}%")
+                            else: st.progress(0.0)
+                else: st.info("Nenhuma conta configurada.")
+
+            # --- ABA 4: MONITOR DE PERFORMANCE (COM CONTAGEM DE CONTAS) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config(); df_t = load_trades_db()
@@ -564,7 +627,8 @@ if check_password():
 
                         k1, k2, k3, k4 = st.columns(4)
                         k1.metric("Saldo", f"${saldo_atual:,.2f}")
-                        k2.metric("Lucro Período", f"${lucro_filt:+,.2f}")
+                        # CORREÇÃO AQUI: ADICIONADA A CONTAGEM DE CONTAS
+                        k2.metric("Lucro Período", f"${lucro_filt:+,.2f}", f"{len(contas_g)} contas")
                         k3.metric("Buffer", f"${buff:,.2f}")
                         k4.metric("Falta", f"${meta-saldo_atual:,.2f}" if meta>0 else "Livre")
 
@@ -584,7 +648,7 @@ if check_password():
                                     start_row = pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_base}])
                                     df_plot = pd.concat([start_row, df_plot], ignore_index=True)
                                 else:
-                                    # TRADE A TRADE (SEQ 1, 2, 3...)
+                                    # TRADE A TRADE (SEQ)
                                     df_sorted = trades_g.sort_values(by=['data', 'created_at'])
                                     df_sorted['seq'] = range(1, len(df_sorted) + 1)
                                     df_plot = df_sorted.copy()
@@ -752,8 +816,9 @@ if check_password():
         with c2:
             for u in us:
                 with st.container():
-                    st.write(f"👤 **{u['username']}** ({u.get('role','user')})")
-                    if st.button("Edit", key=f"e_{u['id']}"): st.session_state.uf = u; st.rerun()
+                    st.write(f"👤 **{u['username']}** ({u.get('role', 'user')})")
+                    if st.button("✏️", key=f"ue_{u['id']}"): st.session_state.user_form_data = {"id": u['id'], "username": u['username'], "password": u['password'], "role": u.get('role', 'user')}; st.rerun()
+                    st.divider()
         with c1:
             ud = st.session_state.get("uf", {"id": None, "username": "", "password": "", "role": "user"})
             nu = st.text_input("User", value=ud["username"]); np = st.text_input("Pass", value=ud["password"]); nr = st.selectbox("Role", ["user", "master", "admin"])
