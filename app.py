@@ -7,7 +7,7 @@ from streamlit_option_menu import option_menu
 import json
 import uuid
 import time
-import math  # Adicionado para cálculos de arredondamento
+import math
 from supabase import create_client, Client
 
 # ==============================================================================
@@ -755,13 +755,15 @@ if check_password():
                             else:
                                 porcentagem = 1.0 # Meta atingida
                             
-                            # >>> INSERÇÃO DO TEXTO "FALTAM X OPERAÇÕES" <<<
+                            # >>> INSERÇÃO DO TEXTO "FALTAM X OPERAÇÕES" + EV VALOR <<<
                             if trades_restantes > 0:
                                 st.markdown(f"""
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px;">
-                                    <span style="color: #bbb; font-size: 13px; font-weight: 500;">(faltam ~{trades_restantes} operações bem feitas)</span>
-                                    <span style="color: #444; font-size: 9px; border: 1px solid #333; padding: 2px 4px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px;" title="Cálculo baseado na sua Expectativa Matemática atual: ${ev_por_trade:.2f} por trade">
-                                        Baseado na E.M.
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                                    <span style="color: #e0e0e0; font-size: 14px; font-weight: 500;">
+                                        Faltam <b>~{trades_restantes}</b> trades
+                                    </span>
+                                    <span style="color: #888; font-size: 12px;">
+                                        (EV: <span style="color: #00FF88;">${ev_por_trade:,.2f}</span>)
                                     </span>
                                 </div>
                                 """, unsafe_allow_html=True)
