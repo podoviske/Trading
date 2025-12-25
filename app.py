@@ -141,7 +141,7 @@ if check_password():
         st.title("📊 Central de Controle")
         df = load_trades_db()
         if not df.empty:
-            with st.expander("🔍 Filtros Avançados", expanded=True):
+            with st.expander("🔍 Filtros", expanded=True):
                 if ROLE in ['master', 'admin']:
                     c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.8])
                     df_c_load = load_contas_config()
@@ -226,24 +226,32 @@ if check_password():
         else: st.warning("Vazio.")
 
     # ==============================================================================
-    # 8. REGISTRAR TRADE (COM TRATAMENTO DE ERRO)
+    # 8. REGISTRAR TRADE (VERSÃO CLÁSSICA - RESTAURADA)
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
-        atm_db = load_atms_db(); df_grupos = load_grupos_config()
+        atm_db = load_atms_db()
+        df_grupos = load_grupos_config()
         
-        c_atm, c_grp = st.columns([3, 1.5])
-        with c_atm: atm_sel = st.selectbox("🎯 ATM", ["Manual"] + list(atm_db.keys()))
-        with c_grp:
-            g_sel = "Geral"
+        col_atm, col_grp = st.columns([3, 1.5])
+        with col_atm: atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
+        with col_grp:
+            grupo_sel_trade = "Geral"
             if ROLE in ["master", "admin"]:
-                if not df_grupos.empty: g_sel = st.selectbox("📂 Grupo", sorted(df_grupos['nome'].unique()))
-                else: st.caption("Crie grupos em 'Contas'")
+                if not df_grupos.empty:
+                    lista_grupos = sorted(list(df_grupos['nome'].unique()))
+                    grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
+                else: st.caption("⚠️ Crie grupos na aba Contas.")
         
         if atm_sel != "Manual":
-            cf = atm_db[atm_sel]; lt_d, stp_d = int(cf["lote"]), float(cf["stop"])
-            parc = json.loads(cf["parciais"]) if isinstance(cf["parciais"], str) else cf["parciais"]
-        else: lt_d, stp_d, parc = 1, 0.0, []
+            config = atm_db[atm_sel]
+            lt_default = int(config["lote"])
+            stp_default = float(config["stop"])
+            try:
+                parciais_pre = json.loads(config["parciais"]) if isinstance(config["parciais"], str) else config["parciais"]
+            except: parciais_pre = []
+        else:
+            lt_default = 1; stp_default = 0.0; parciais_pre = []
 
         f1, f2, f3 = st.columns([1, 1, 2.5])
         with f1:
@@ -253,62 +261,63 @@ if check_password():
             ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
             psi = st.selectbox("Estado Mental", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Fomo", "Neutro"])
         with f2:
-            lt = st.number_input("Contratos Total", min_value=1, value=lt_d); stp = st.number_input("Stop (Pts)", min_value=0.0, value=stp_d, step=0.25)
-            if stp > 0: st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${stp * MULTIPLIERS[atv] * lt:,.2f}</div>', unsafe_allow_html=True)
-            up = st.file_uploader("📸 Print", type=['png', 'jpg'])
+            lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
+            stp = st.number_input("Stop (Pts)", min_value=0.0, value=stp_default, step=0.25)
+            if stp > 0:
+                risco_calc = stp * MULTIPLIERS[atv] * lt
+                st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
+            up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
 
         with f3:
             st.write("**Saídas (Alocação)**")
             if "num_parciais" not in st.session_state or atm_sel != st.session_state.get("last_atm"):
-                st.session_state.num_parciais = len(parc) if parc else 1
+                st.session_state.num_parciais = len(parciais_pre) if parciais_pre else 1
                 st.session_state.last_atm = atm_sel
-            cb1, cb2 = st.columns(2)
-            if cb1.button("➕ Add"): st.session_state.num_parciais += 1; st.rerun()
-            if cb2.button("🧹 Reset"): st.session_state.num_parciais = 1; st.rerun()
-            saidas, aloc = [], 0
+
+            col_btn1, col_btn2 = st.columns(2)
+            if col_btn1.button("➕ Add Parcial"): st.session_state.num_parciais += 1
+            if col_btn2.button("🧹 Limpar"): st.session_state.num_parciais = 1; st.rerun()
+
+            saidas = []
+            aloc = 0
             for i in range(st.session_state.num_parciais):
                 c_pts, c_qtd = st.columns(2)
-                vp = float(parc[i]["pts"]) if i < len(parc) else 0.0
-                vq = int(parc[i]["qtd"]) if i < len(parc) else (lt if i == 0 else 0)
-                p = c_pts.number_input(f"Pts {i+1}", value=vp, key=f"p_{i}"); q = c_qtd.number_input(f"Qtd {i+1}", value=vq, key=f"q_{i}")
-                saidas.append({"pts": p, "qtd": q}); aloc += q
-            if lt != aloc: st.markdown(f'<div class="piscante-erro">SALDO: {lt - aloc} CTTS</div>', unsafe_allow_html=True)
-            else: st.success("✅ Sincronizado")
+                val_pts = float(parciais_pre[i]["pts"]) if i < len(parciais_pre) else 0.0
+                val_qtd = int(parciais_pre[i]["qtd"]) if i < len(parciais_pre) else (lt if i == 0 else 0)
+                pts = c_pts.number_input(f"Pts Alvo {i+1}", value=val_pts, key=f"p_pts_{i}_{atm_sel}", step=0.25)
+                qtd = c_qtd.number_input(f"Contratos {i+1}", value=val_qtd, key=f"p_qtd_{i}_{atm_sel}", min_value=0)
+                saidas.append({"pts": pts, "qtd": qtd}); aloc += qtd
+            
+            if lt != aloc:
+                diff = lt - aloc
+                st.markdown(f'<div class="piscante-erro">{"FALTAM" if diff > 0 else "SOBRAM"} {abs(diff)} CONTRATOS</div>', unsafe_allow_html=True)
+            else: st.success("✅ Posição Sincronizada")
 
         st.divider(); cg, cl = st.columns(2); br = False
-        if cg.button("🟢 GAIN", use_container_width=True, disabled=(lt!=aloc)): br = True
-        if cl.button("🔴 STOP", use_container_width=True): saidas = [{"pts": -stp, "qtd": lt}]; br = True
+        if cg.button("🟢 REGISTRAR GAIN", use_container_width=True, disabled=(lt!=aloc)): br = True
+        if cl.button("🔴 REGISTRAR STOP FULL", use_container_width=True): saidas = [{"pts": -stp, "qtd": lt}]; br = True
         
         if br:
             with st.spinner("Salvando..."):
                 try:
                     res_fin = sum([s["pts"] * MULTIPLIERS[atv] * s["qtd"] for s in saidas])
                     pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
-                    tid = str(uuid.uuid4()); img_url = None
+                    trade_id = str(uuid.uuid4()); img_url = None
                     if up:
-                        supabase.storage.from_("prints").upload(f"{tid}.png", up.getvalue())
-                        img_url = supabase.storage.from_("prints").get_public_url(f"{tid}.png")
+                        file_path = f"{trade_id}.png"
+                        supabase.storage.from_("prints").upload(file_path, up.getvalue())
+                        img_url = supabase.storage.from_("prints").get_public_url(file_path)
                     
-                    try:
-                        supabase.table("trades").insert({
-                            "id": tid, "data": str(dt), "ativo": atv, "contexto": ctx, "direcao": dr, "lote": lt, 
-                            "resultado": res_fin, "pts_medio": pt_med, "prints": img_url, "usuario": USER, 
-                            "grupo_vinculo": g_sel, "comportamento": psi, "risco_fin": (stp * MULTIPLIERS[atv] * lt)
-                        }).execute()
-                    except Exception as e:
-                        if "comportamento" in str(e) or "column" in str(e):
-                            st.warning("⚠️ Coluna 'comportamento' não existe. Salvando sem ela.")
-                            supabase.table("trades").insert({
-                                "id": tid, "data": str(dt), "ativo": atv, "contexto": ctx, "direcao": dr, "lote": lt, 
-                                "resultado": res_fin, "pts_medio": pt_med, "prints": img_url, "usuario": USER, 
-                                "grupo_vinculo": g_sel, "risco_fin": (stp * MULTIPLIERS[atv] * lt)
-                            }).execute()
-                        else: raise e
-                    st.balloons(); st.success(f"✅ ${res_fin:,.2f}"); time.sleep(2); st.rerun()
+                    supabase.table("trades").insert({
+                        "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx, "direcao": dr, "lote": lt, 
+                        "resultado": res_fin, "pts_medio": pt_med, "prints": img_url, "usuario": USER, 
+                        "grupo_vinculo": grupo_sel_trade, "comportamento": psi, "risco_fin": (stp * MULTIPLIERS[atv] * lt)
+                    }).execute()
+                    st.balloons(); st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}"); time.sleep(2); st.rerun()
                 except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR COM VISUAL LIMPO - SEM GRADES, BASE 150K, STEP 1)
+    # 9. ABA CONTAS (MONITOR APEX - GRÁFICO CLEAN, EIXO 0=150K, STEP=1)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
@@ -368,7 +377,7 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", r['id']).execute(); st.rerun()
                 else: st.info("Vazio.")
 
-            # --- MONITOR DE PERFORMANCE (POLIMENTO FINAL) ---
+            # --- MONITOR DE PERFORMANCE (POLIDO E LIMPO) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config(); df_t = load_trades_db()
@@ -424,26 +433,22 @@ if check_password():
                         with cg:
                             st.markdown("##### 🌊 Evolução do Saldo")
                             
-                            # --- PREPARAÇÃO DOS DADOS ---
                             if not trades_g.empty:
                                 if vis_mode == "Diário":
                                     trades_g['data'] = pd.to_datetime(trades_g['data'])
                                     df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_base
                                     df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
-                                    
                                     start_x = df_plot['eixo_x'].min() - timedelta(days=1)
                                     start_row = pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_base}])
                                     df_plot = pd.concat([start_row, df_plot], ignore_index=True)
                                 else:
-                                    # Trade a Trade: Ordena
+                                    # TRADE A TRADE (SEQ)
                                     df_sorted = trades_g.sort_values(by=['data', 'created_at'])
                                     df_sorted['seq'] = range(1, len(df_sorted) + 1)
                                     df_plot = df_sorted.copy()
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_base
                                     df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
-                                    
-                                    # Ponto Inicial (0)
                                     start_row = pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_base}])
                                     df_plot = pd.concat([start_row, df_plot], ignore_index=True)
                             else:
@@ -452,7 +457,6 @@ if check_password():
                                 else:
                                     df_plot = pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_base}, {'eixo_x': 1, 'saldo_acc': saldo_base}])
 
-                            # --- TRAILING STOP ---
                             df_plot['hwm'] = df_plot['saldo_acc'].cummax()
                             if saldo_base > 155100: df_plot['stop_line'] = 150100.0
                             else: df_plot['stop_line'] = (df_plot['hwm'] - 5000.0).clip(upper=150100.0)
@@ -463,18 +467,14 @@ if check_password():
                             
                             if meta > 0: fig.add_hline(y=meta, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
                             
-                            # --- POLIMENTO VISUAL ---
-                            # 1. Eixo 0 na linha de 150k
+                            # --- POLIMENTO: Eixo 0 na linha de 150k + Sem Grades ---
                             fig.add_hline(y=saldo_base, line_width=1, line_color="white", opacity=0.3, annotation_text="Início")
+                            fig.update_layout(yaxis_showgrid=False, xaxis_showgrid=False) # SEM GRADES
                             
-                            # 2. Remoção de Grids Horizontais e Verticais
-                            fig.update_layout(yaxis_showgrid=False, xaxis_showgrid=False)
-                            
-                            # 3. Contagem de 1 em 1 no eixo X (Se for Trade a Trade)
+                            # EIXO X DE 1 EM 1
                             if vis_mode == "Trade a Trade":
                                 fig.update_xaxes(dtick=1)
 
-                            # Zoom Automático
                             min_y = min(df_plot['stop_line'].min(), df_plot['saldo_acc'].min()) - 1000
                             max_y = max(meta if meta > 0 else saldo_atual, df_plot['saldo_acc'].max()) + 1000
                             fig.update_layout(yaxis_range=[min_y, max_y], showlegend=True, legend=dict(orientation="h", y=1.02), xaxis_title="Sequência" if vis_mode == "Trade a Trade" else "Data")
