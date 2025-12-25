@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v134", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v135", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -481,10 +481,10 @@ if check_password():
                     st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v134 - CORREÇÃO DE RISCO)
+    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v135)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v134)")
+        st.title("💼 Gestão de Portfólio (v135)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -599,11 +599,12 @@ if check_password():
                     sel_g = col_sel.selectbox("Grupo", grps)
                     vis_mode = col_vis.radio("Visualização", ["Trade a Trade", "Diário"], horizontal=True)
 
-                    # --- SIMULAÇÃO DE RISCO PELA ATM (CORRIGIDO v134) ---
+                    # --- SIMULAÇÃO DE RISCO PELA ATM (CORRIGIDO v135: MNQ PADRÃO) ---
                     st.markdown("---")
                     col_atm_sel, col_atv_sel = st.columns([2, 1])
                     atm_selecionada = col_atm_sel.selectbox("🔧 Simular Risco com ATM (Define as Vidas)", ["Padrão ($300)"] + list(atm_db.keys()))
-                    ativo_simulacao = col_atv_sel.radio("Ativo Base", ["NQ", "MNQ"], horizontal=True, index=0)
+                    # [MNQ, NQ] inverte a ordem para MNQ ser o padrão (index=0)
+                    ativo_simulacao = col_atv_sel.radio("Ativo Base", ["MNQ", "NQ"], horizontal=True, index=0)
 
                     contas_g = df_c[df_c['grupo_nome'] == sel_g]
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
