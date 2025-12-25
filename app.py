@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v131-Fix", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v132", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -481,10 +481,10 @@ if check_password():
                     st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELIGENTE - CÓDIGO COMPLETO)
+    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v132)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v131)")
+        st.title("💼 Gestão de Portfólio (v132)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -712,37 +712,41 @@ if check_password():
                         else:
                              k3.metric("Falta para Próx. Fase", f"${max(0, gap_meta):,.2f}", f"Alvo: ${meta_dinamica:,.0f}")
 
+                        # --- CORREÇÃO DO LAYOUT (Criação das colunas ANTES de usar) ---
+                        cg, cp = st.columns([2, 1])
+
                         # --- GRÁFICO DE EVOLUÇÃO (EXISTENTE) ---
-                        st.markdown("##### 🌊 Curva do Grupo")
-                        if not trades_g.empty:
-                            if vis_mode == "Diário":
-                                trades_g['data'] = pd.to_datetime(trades_g['data'])
-                                df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
-                                df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + menor_saldo_inicial
-                                x_col = 'data'
+                        with cg:
+                            st.markdown("##### 🌊 Curva do Grupo")
+                            if not trades_g.empty:
+                                if vis_mode == "Diário":
+                                    trades_g['data'] = pd.to_datetime(trades_g['data'])
+                                    df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + menor_saldo_inicial
+                                    x_col = 'data'
+                                else:
+                                    df_sorted = trades_g.sort_values(by=['data', 'created_at'])
+                                    df_sorted['seq'] = range(1, len(df_sorted) + 1)
+                                    df_plot = df_sorted.copy()
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + menor_saldo_inicial
+                                    x_col = 'seq'
+
+                                # Plot
+                                fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
+                                fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)')
+                                
+                                # Linhas de Referência
+                                fig.add_hline(y=stop_loss_atual, line_dash="dash", line_color="#FF4B4B", annotation_text="Trailing Stop")
+                                fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta Fase")
+                                fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.5, annotation_text="Zona Saque")
+
+                                # Zoom Inteligente
+                                min_y = min(stop_loss_atual, df_plot['saldo_acc'].min()) - 500
+                                max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + 500
+                                fig.update_layout(yaxis_range=[min_y, max_y], showlegend=False)
+                                st.plotly_chart(fig, use_container_width=True)
                             else:
-                                df_sorted = trades_g.sort_values(by=['data', 'created_at'])
-                                df_sorted['seq'] = range(1, len(df_sorted) + 1)
-                                df_plot = df_sorted.copy()
-                                df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + menor_saldo_inicial
-                                x_col = 'seq'
-
-                            # Plot
-                            fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
-                            fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)')
-                            
-                            # Linhas de Referência
-                            fig.add_hline(y=stop_loss_atual, line_dash="dash", line_color="#FF4B4B", annotation_text="Trailing Stop")
-                            fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta Fase")
-                            fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.5, annotation_text="Zona Saque")
-
-                            # Zoom Inteligente
-                            min_y = min(stop_loss_atual, df_plot['saldo_acc'].min()) - 500
-                            max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + 500
-                            fig.update_layout(yaxis_range=[min_y, max_y], showlegend=False)
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info("Sem trades neste grupo.")
+                                st.info("Sem trades neste grupo.")
 
                         # --- COMPONENTE DE PROGRESSO COM EV (RESTAURADO E ATUALIZADO) ---
                         with cp:
