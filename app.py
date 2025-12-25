@@ -27,28 +27,80 @@ st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="�
 # ==============================================================================
 st.markdown("""
     <style>
-    /* Cards */
-    .trade-card { background-color: #161616; border-radius: 8px; padding: 12px; margin-bottom: 15px; border: 1px solid #333; transition: transform 0.2s; }
-    .trade-card:hover { transform: translateY(-3px); border-color: #B20000; }
-    .card-img-container { width: 100%; height: 140px; background-color: #222; border-radius: 5px; overflow: hidden; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+    /* Cards do Histórico */
+    .trade-card {
+        background-color: #161616;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 15px;
+        border: 1px solid #333;
+        transition: transform 0.2s, border-color 0.2s;
+    }
+    .trade-card:hover {
+        transform: translateY(-3px);
+        border-color: #B20000;
+    }
+    .card-img-container {
+        width: 100%; height: 140px; background-color: #222;
+        border-radius: 5px; overflow: hidden; display: flex;
+        align-items: center; justify-content: center; margin-bottom: 10px;
+    }
     .card-img { width: 100%; height: 100%; object-fit: cover; }
     .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 2px; }
     .card-sub { font-size: 11px; color: #888; margin-bottom: 8px; }
+    
+    /* Cores de Resultado */
     .card-res-win { font-size: 16px; font-weight: 800; color: #00FF88; } 
     .card-res-loss { font-size: 16px; font-weight: 800; color: #FF4B4B; }
-    
-    /* Métricas */
-    .metric-container { background-color: #161616; border: 1px solid #262626; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); min-height: 140px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-    .metric-label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; display: flex; justify-content: center; align-items: center; gap: 5px; }
+
+    /* Métricas do Dashboard */
+    .metric-container { 
+        background-color: #161616; 
+        border: 1px solid #262626; 
+        padding: 15px; 
+        border-radius: 10px; 
+        text-align: center; 
+        margin-bottom: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        transition: border-color 0.3s, transform 0.3s;
+        position: relative;
+        min-height: 140px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    .metric-container:hover {
+        border-color: #B20000;
+        transform: translateY(-3px);
+        cursor: help;
+    }
+    .metric-label { 
+        color: #888; font-size: 11px; text-transform: uppercase; 
+        letter-spacing: 1px; font-weight: 600; display: flex; 
+        justify-content: center; align-items: center; gap: 5px;
+    }
     .metric-value { color: white; font-size: 22px; font-weight: 800; margin-top: 5px; }
     .metric-sub { font-size: 12px; margin-top: 4px; color: #666; }
-    .help-icon { color: #555; font-size: 12px; border: 1px solid #444; border-radius: 50%; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
     
+    .help-icon {
+        color: #555; font-size: 12px; border: 1px solid #444;
+        border-radius: 50%; width: 14px; height: 14px;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+
     /* Geral */
     [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
     .stApp { background-color: #0F0F0F; }
-    .piscante-erro { padding: 15px; border-radius: 5px; color: white; font-weight: bold; text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; }
-    .risco-alert { color: #FF4B4B; font-weight: bold; font-size: 16px; margin-top: 5px; background-color: rgba(255, 75, 75, 0.1); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #FF4B4B; }
+    
+    .piscante-erro { 
+        padding: 15px; border-radius: 5px; color: white; font-weight: bold; 
+        text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; 
+    }
+    .risco-alert {
+        color: #FF4B4B; font-weight: bold; font-size: 16px; margin-top: 5px;
+        background-color: rgba(255, 75, 75, 0.1); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #FF4B4B;
+    }
     @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } }
     </style>
 """, unsafe_allow_html=True)
@@ -66,10 +118,24 @@ def check_password():
                 st.session_state["password_correct"] = True
                 st.session_state["logged_user"] = u
                 st.session_state["user_role"] = res.data[0].get('role', 'user')
-            else: st.session_state["password_correct"] = False
-        except Exception as e: st.error(f"Erro: {e}")
+            else:
+                st.session_state["password_correct"] = False
+        except Exception as e:
+            st.error(f"Erro de conexão: {e}")
 
-    if not st.session_state.get("password_correct"):
+    if "password_correct" not in st.session_state or not st.session_state["password_correct"]:
+        st.markdown("""
+            <style>
+            .login-container {
+                max-width: 400px; margin: 50px auto; padding: 30px;
+                background-color: #161616; border-radius: 15px;
+                border: 1px solid #B20000; text-align: center;
+            }
+            .logo-main { color: #B20000; font-size: 50px; font-weight: 900; }
+            .logo-sub { color: white; font-size: 35px; font-weight: 700; margin-top: -15px; }
+            </style>
+        """, unsafe_allow_html=True)
+        
         _, col_login, _ = st.columns([1, 2, 1])
         with col_login:
             st.markdown('<div class="login-container"><div class="logo-main">EVO</div><div class="logo-sub">TRADE</div>', unsafe_allow_html=True)
@@ -77,164 +143,216 @@ def check_password():
             st.text_input("Usuário", key="username_input")
             st.text_input("Senha", type="password", key="password_input")
             st.button("Acessar Terminal", on_click=password_entered, use_container_width=True)
-            if st.session_state.get("password_correct") == False: st.error("Credenciais inválidas.")
+            if st.session_state.get("password_correct") == False:
+                st.error("😕 Credenciais incorretas.")
+            st.markdown('</div>', unsafe_allow_html=True)
         return False
     return True
 
 if check_password():
+    # --- 4. CONSTANTES E USER ---
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
     USER = st.session_state["logged_user"]
     ROLE = st.session_state.get("user_role", "user")
 
     # ==============================================================================
-    # 5. FUNÇÕES DE DADOS
+    # 5. FUNÇÕES DE DADOS (NOMES CORRIGIDOS E PADRONIZADOS)
     # ==============================================================================
     def load_trades_db():
         try:
-            res = supabase.table("trades").select("*").eq("usuario", USER).execute()
+            res = supabase.table("trades").select("*").execute()
             df = pd.DataFrame(res.data)
             if not df.empty:
                 df['data'] = pd.to_datetime(df['data']).dt.date
                 df['created_at'] = pd.to_datetime(df['created_at'])
-                if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
-                if 'comportamento' not in df.columns: df['comportamento'] = 'Normal'
+                if 'grupo_vinculo' not in df.columns: 
+                    df['grupo_vinculo'] = 'Geral'
+                if 'comportamento' not in df.columns:
+                    df['comportamento'] = 'Normal'
             return df
-        except: return pd.DataFrame()
+        except:
+            return pd.DataFrame()
 
     def load_atms_db():
         try:
             res = supabase.table("atm_configs").select("*").execute()
             return {item['nome']: item for item in res.data}
-        except: return {}
+        except:
+            return {}
 
     def load_contas_config():
         try:
             res = supabase.table("contas_config").select("*").eq("usuario", USER).execute()
             return pd.DataFrame(res.data)
-        except: return pd.DataFrame()
+        except:
+            return pd.DataFrame()
             
     def load_grupos_config():
         try:
             res = supabase.table("grupos_config").select("*").eq("usuario", USER).execute()
             return pd.DataFrame(res.data)
-        except: return pd.DataFrame()
+        except:
+            return pd.DataFrame()
 
-    def card_metric(label, value, sub="", color="white", help_t=""):
-        st.markdown(f'<div class="metric-container" title="{help_t}"><div class="metric-label">{label}</div><div class="metric-value" style="color:{color}">{value}</div><div class="metric-sub">{sub}</div></div>', unsafe_allow_html=True)
+    def card_metric(label, value, sub_value="", color="white", help_text=""):
+        sub_html = f'<div class="metric-sub">{sub_value}</div>' if sub_value else '<div class="metric-sub">&nbsp;</div>'
+        help_html = f'<span class="help-icon" title="{help_text}">?</span>' if help_text else ""
+        
+        st.markdown(f"""
+            <div class="metric-container" title="{help_text}">
+                <div class="metric-label">{label} {help_html}</div>
+                <div class="metric-value" style="color: {color};">{value}</div>
+                {sub_html}
+            </div>
+        """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 6. SIDEBAR
+    # 6. MENU LATERAL
     # ==============================================================================
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
+        
         menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
         icons = ["grid", "currency-dollar", "gear", "clock"]
-        if ROLE in ['master', 'admin']: menu.insert(2, "Contas"); icons.insert(2, "briefcase")
-        if ROLE == 'admin': menu.append("Gerenciar Usuários"); icons.append("people")
+        
+        if ROLE in ['master', 'admin']:
+            menu.insert(2, "Contas")
+            icons.insert(2, "briefcase")
+            
+        if ROLE == 'admin':
+            menu.append("Gerenciar Usuários")
+            icons.append("people")
+            
         selected = option_menu(None, menu, icons=icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
-        if st.button("Sair"): st.session_state.clear(); st.rerun()
+        
+        if st.button("Sair / Logout"): 
+            st.session_state.clear()
+            st.rerun()
 
     # ==============================================================================
-    # 7. DASHBOARD
+    # 7. ABA: DASHBOARD
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
-        df = load_trades_db()
-        if not df.empty:
-            with st.expander("🔍 Filtros", expanded=True):
-                if ROLE in ['master', 'admin']:
-                    c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.8])
-                    df_c_load = load_contas_config()
-                    grupos_disp = sorted(list(df_c_load['grupo_nome'].unique())) if not df_c_load.empty else []
-                    grupos_trades = list(df['grupo_vinculo'].unique())
-                    todos_grupos = sorted(list(set(grupos_disp + grupos_trades)))
-                    sel_grp = c3.selectbox("Grupo", ["Todos"] + todos_grupos)
-                else:
-                    c1, c2, c4 = st.columns([1, 1, 2]); sel_grp = "Todos"
-                d_i = c1.date_input("Início", df['data'].min())
-                d_f = c2.date_input("Fim", df['data'].max())
-                f_ctx = c4.multiselect("Contextos", list(df['contexto'].unique()), default=list(df['contexto'].unique()))
-
-            mask = (df['data'] >= d_i) & (df['data'] <= d_f) & (df['contexto'].isin(f_ctx))
-            if sel_grp != "Todos": mask &= (df['grupo_vinculo'] == sel_grp)
-            df_f = df[mask].copy()
-
-            if not df_f.empty:
-                # --- APEX INFO ---
-                if sel_grp != "Todos" and ROLE in ['master', 'admin']:
-                    st.markdown(f"### 🛡️ Monitor Apex: {sel_grp}")
-                    df_c = load_contas_config()
-                    contas_g = df_c[df_c['grupo_nome'] == sel_grp]
+        df_raw = load_trades_db()
+        
+        if not df_raw.empty:
+            df = df_raw[df_raw['usuario'] == USER]
+            
+            if not df.empty:
+                # --- FILTROS COMPLETOS ---
+                with st.expander("🔍 Filtros Avançados", expanded=True):
+                    if ROLE in ['master', 'admin']:
+                        col_d1, col_d2, col_grp, col_ctx = st.columns([1, 1, 1.2, 1.8])
+                        grupos_disp = ["Todos"] + sorted(list(df['grupo_vinculo'].unique()))
+                        sel_grupo = col_grp.selectbox("Grupo de Contas", grupos_disp)
+                    else:
+                        col_d1, col_d2, col_ctx = st.columns([1, 1, 2])
+                        sel_grupo = "Todos"
                     
-                    if not contas_g.empty:
-                        ref = contas_g.iloc[0]; fase = ref['fase']; saldo_cadastrado = float(ref['saldo_inicial'])
-                        saldo_cadastrado = 150000.0 if saldo_cadastrado < 1000 else saldo_cadastrado
-                        
-                        lucro_periodo = df_f['resultado'].sum()
-                        saldo_atual_est = saldo_cadastrado + lucro_periodo
-                        
-                        equity_curve = df_f.sort_values('created_at')['resultado'].cumsum() + saldo_cadastrado
-                        hwm = max(saldo_cadastrado, equity_curve.max()) if not equity_curve.empty else saldo_cadastrado
-                        
-                        trailing_stop_teorico = hwm - 5000.0
-                        stop_real = 150100.0 if (saldo_cadastrado > 155100 or trailing_stop_teorico > 150100) else min(trailing_stop_teorico, 150100.0)
-                        buffer_vida = saldo_atual_est - stop_real
-                        
-                        meta_alvo = 0.0; base_prog = 150000.0
-                        if "Fase 1" in fase: meta_alvo = 159000.0
-                        elif "Fase 2" in fase: meta_alvo = 155100.0
-                        elif "Fase 3" in fase: meta_alvo = 160000.0; base_prog = 155100.0
-                        
-                        k1, k2, k3, k4 = st.columns(4)
-                        k1.metric("Contas", f"{len(contas_g)}", fase)
-                        k2.metric("Saldo Unitário", f"${saldo_atual_est:,.2f}", f"Stop: ${stop_real:,.0f}")
-                        cor_b = "inverse" if buffer_vida < 2500 else "normal"
-                        k3.metric("🔥 Buffer", f"${buffer_vida:,.2f}", "Até quebrar", delta_color=cor_b)
-                        
-                        if meta_alvo > 0:
-                            falta = meta_alvo - saldo_atual_est
-                            k4.metric("Falta Meta", f"${falta:,.2f}", f"Alvo: ${meta_alvo:,.0f}")
-                            pct = min(1.0, max(0.0, (saldo_atual_est - base_prog) / (meta_alvo - base_prog)))
-                            st.progress(pct)
-                        else:
-                            saque = max(0, saldo_atual_est - 152600) * len(contas_g)
-                            k4.metric("💰 Saque Disp.", f"${saque:,.2f}")
+                    min_date = df['data'].min()
+                    max_date = df['data'].max()
+                    d_inicio = col_d1.date_input("Data Início", min_date)
+                    d_fim = col_d2.date_input("Data Fim", max_date)
+                    
+                    all_contexts = list(df['contexto'].unique())
+                    filters_ctx = col_ctx.multiselect("Filtrar Contextos", all_contexts, default=all_contexts)
+
+                # Aplica Filtros
+                mask = (df['data'] >= d_inicio) & (df['data'] <= d_fim) & (df['contexto'].isin(filters_ctx))
+                if sel_grupo != "Todos":
+                    mask = mask & (df['grupo_vinculo'] == sel_grupo)
+                
+                df_filtered = df[mask].copy()
+
+                if df_filtered.empty:
+                    st.warning("⚠️ Nenhum trade encontrado com os filtros selecionados.")
+                else:
+                    # --- CÁLCULO DE KPIs ---
+                    total_trades = len(df_filtered)
+                    net_profit = df_filtered['resultado'].sum()
+                    wins = df_filtered[df_filtered['resultado'] > 0]
+                    losses = df_filtered[df_filtered['resultado'] < 0]
+                    gross_profit = wins['resultado'].sum()
+                    gross_loss = abs(losses['resultado'].sum())
+                    pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+                    pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
+                    win_rate = (len(wins) / total_trades) * 100
+                    avg_win = wins['resultado'].mean() if not wins.empty else 0
+                    avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
+                    payoff = avg_win / avg_loss if avg_loss > 0 else 0
+                    loss_rate = (len(losses) / total_trades)
+                    expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
+                    avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
+                    avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
+                    avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
+
+                    df_filtered = df_filtered.sort_values('created_at')
+                    df_filtered['equity'] = df_filtered['resultado'].cumsum()
+                    df_filtered['peak'] = df_filtered['equity'].cummax()
+                    df_filtered['drawdown'] = df_filtered['equity'] - df_filtered['peak']
+                    max_dd = df_filtered['drawdown'].min()
+
+                    # --- EXIBIÇÃO KPIs (12 CARDS) ---
+                    st.markdown("##### 🏁 Desempenho Geral")
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "Resultado financeiro total.")
+                    with c2: card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000", "Relação Lucro Bruto / Prejuízo Bruto.")
+                    with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Loss", "white", "Taxa de acerto das operações.")
+                    with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B", "Valor esperado por operação.")
+                    
+                    st.markdown("##### 💲 Médias Financeiras & Risco")
+                    c5, c6, c7, c8 = st.columns(4)
+                    with c5: card_metric("MÉDIA GAIN ($)", f"${avg_win:,.2f}", "", "#00FF88", "Valor médio financeiro das vitórias.")
+                    with c6: card_metric("MÉDIA LOSS ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B", "Valor médio financeiro das derrotas.")
+                    with c7: card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real", "white", "Quantas vezes seu Gain médio é maior que seu Loss médio.")
+                    with c8: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B", "O máximo que sua conta caiu desde um topo.")
+
+                    st.markdown("##### 🎯 Performance Técnica")
+                    c9, c10, c11, c12 = st.columns(4)
+                    with c9: card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88", "Média de pontos capturados nos trades vencedores.")
+                    with c10: card_metric("PTS MÉDIOS (LOSS)", f"{avg_pts_loss:.2f} pts", "", "#FF4B4B", "Média de pontos perdidos nos trades perdedores.")
+                    with c11: card_metric("LOTE MÉDIO", f"{avg_lot:.1f}", "Contratos", "white", "Tamanho médio da sua mão nas operações.")
+                    with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações no período.")
+
                     st.markdown("---")
 
-                # --- KPIs GERAIS ---
-                t_tr = len(df_f); net = df_f['resultado'].sum()
-                wins = df_f[df_f['resultado'] > 0]; losses = df_f[df_f['resultado'] < 0]
-                pf = (wins['resultado'].sum() / abs(losses['resultado'].sum())) if not losses.empty else float('inf')
-                wr = (len(wins)/t_tr)*100
-                avg_w = wins['resultado'].mean() if not wins.empty else 0
-                avg_l = abs(losses['resultado'].mean()) if not losses.empty else 0
-                payoff = avg_w/avg_l if avg_l > 0 else 0
-                exp = ((wr/100)*avg_w) - ((len(losses)/t_tr)*avg_l)
-                
-                df_f = df_f.sort_values('created_at')
-                df_f['equity'] = df_f['resultado'].cumsum()
-                max_dd = (df_f['equity'] - df_f['equity'].cummax()).min()
+                    # --- GRÁFICOS (3 GRAFICOS) ---
+                    g1, g2 = st.columns([2, 1])
+                    with g1:
+                        view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
+                        if view_mode == "Sequência de Trades":
+                            df_filtered['trade_seq'] = range(1, len(df_filtered) + 1)
+                            x_axis = 'trade_seq'
+                            x_title = "Quantidade de Trades"
+                        else:
+                            x_axis = 'data'
+                            x_title = "Data"
 
-                r1 = st.columns(4)
-                with r1[0]: card_metric("RESULTADO", f"${net:,.2f}", f"Bruto: ${wins['resultado'].sum():,.0f}", "#00FF88" if net>=0 else "#FF4B4B")
-                with r1[1]: card_metric("FATOR DE LUCRO", f"{pf:.2f}", "Ideal > 1.5", "#B20000")
-                with r1[2]: card_metric("WIN RATE", f"{wr:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
-                with r1[3]: card_metric("EXPECTATIVA", f"${exp:.2f}", "Por Trade", "#00FF88" if exp>0 else "#FF4B4B")
+                        fig_eq = px.area(df_filtered, x=x_axis, y='equity', title="📈 Curva de Patrimônio", template="plotly_dark")
+                        fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
+                        fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
+                        fig_eq.update_layout(xaxis_title=x_title, yaxis_title="Patrimônio ($)")
+                        st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
+                        
+                    with g2:
+                        st.markdown("<br>", unsafe_allow_html=True) 
+                        ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
+                        fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+                        st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
-                r2 = st.columns(4)
-                with r2[0]: card_metric("MÉDIA GAIN", f"${avg_w:,.2f}", "", "#00FF88")
-                with r2[1]: card_metric("MÉDIA LOSS", f"-${avg_l:,.2f}", "", "#FF4B4B")
-                with r2[2]: card_metric("PAYOFF", f"1 : {payoff:.2f}", "Risco:Retorno")
-                with r2[3]: card_metric("DRAWDOWN MÁX", f"${max_dd:,.2f}", "No Período", "#FF4B4B")
+                    st.markdown("### 📅 Performance por Dia da Semana")
+                    df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
+                    dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
+                    df_filtered['dia_pt'] = df_filtered['dia_semana'].map(dias_pt)
+                    
+                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
+                    fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+                    fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
+                    st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
 
-                g1, g2 = st.columns([2, 1])
-                with g1: st.plotly_chart(px.area(df_f, x='created_at', y='equity', title="Curva de Lucro", template="plotly_dark").update_traces(line_color='#B20000', fillcolor='rgba(178,0,0,0.2)'), use_container_width=True)
-                with g2: 
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.plotly_chart(px.pie(df_f, names='contexto', values='lote', title="Contexto", template="plotly_dark", hole=0.4), use_container_width=True)
-
-            else: st.info("Sem dados. Registre operações.")
-        else: st.warning("Vazio.")
+            else: st.info("Sem operações registradas para este usuário.")
+        else: st.warning("Banco de dados vazio.")
 
     # ==============================================================================
     # 8. REGISTRAR TRADE
@@ -245,13 +363,13 @@ if check_password():
         df_grupos = load_grupos_config()
         
         col_atm, col_grp = st.columns([3, 1.5])
-        with col_atm: atm_sel = st.selectbox("🎯 ATM", ["Manual"] + list(atm_db.keys()))
+        with col_atm: atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
         with col_grp:
-            g_sel = "Geral"
+            grupo_sel_trade = "Geral"
             if ROLE in ["master", "admin"]:
                 if not df_grupos.empty:
                     lista_grupos = sorted(list(df_grupos['nome'].unique()))
-                    g_sel = st.selectbox("📂 Grupo", lista_grupos)
+                    grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
                 else: st.caption("⚠️ Crie grupos na aba Contas.")
         
         if atm_sel != "Manual":
@@ -277,7 +395,7 @@ if check_password():
             if stp > 0:
                 risco_calc = stp * MULTIPLIERS[atv] * lt
                 st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
-            up = st.file_uploader("📸 Print", type=['png', 'jpg', 'jpeg'])
+            up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
 
         with f3:
             st.write("**Saídas (Alocação)**")
@@ -301,7 +419,7 @@ if check_password():
             
             if lt != aloc:
                 diff = lt - aloc
-                st.markdown(f'<div class="piscante-erro">SALDO: {lt - aloc} CTTS</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="piscante-erro">{"FALTAM" if diff > 0 else "SOBRAM"} {abs(diff)} CONTRATOS</div>', unsafe_allow_html=True)
             else: st.success("✅ Posição Sincronizada")
 
         st.divider()
@@ -324,12 +442,12 @@ if check_password():
                     supabase.table("trades").insert({
                         "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
                         "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
-                        "prints": img_url, "usuario": USER, "grupo_vinculo": g_sel, "comportamento": psi,
+                        "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
+                        "comportamento": psi, # --- GRAVA O ESTADO MENTAL ---
                         "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                     }).execute()
                     st.balloons(); st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}"); time.sleep(2); st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
+                except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
     # 9. ABA CONTAS (MONITOR APEX - GRÁFICO POLIDO E LIMPO)
@@ -392,7 +510,7 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", r['id']).execute(); st.rerun()
                 else: st.info("Vazio.")
 
-            # --- MONITOR DE PERFORMANCE (POLIMENTO FINAL) ---
+            # --- MONITOR DE PERFORMANCE (POLIDO E LIMPO) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config(); df_t = load_trades_db()
@@ -516,8 +634,8 @@ if check_password():
     # ==============================================================================
     elif selected == "Configurar ATM":
         st.title("⚙️ Gerenciar ATMs")
-        if "ae" not in st.session_state: st.session_state.ae = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
-        def reset_atm_form(): st.session_state.ae = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
+        if "atm_form_data" not in st.session_state: st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
+        def reset_atm_form(): st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
         res = supabase.table("atm_configs").select("*").order("nome").execute(); existing_atms = res.data
         c_form, c_list = st.columns([1.5, 1])
         with c_list:
@@ -528,29 +646,37 @@ if check_password():
                     with st.expander(f"📍 {item['nome']}", expanded=False):
                         st.write(f"**Lote:** {item['lote']} | **Stop:** {item['stop']}")
                         c_edit, c_del = st.columns(2)
-                        if c_edit.button("✏️ Editar", key=f"e_{item['id']}"): st.session_state.ae = {"id": item['id'], "nome": item['nome'], "lote": item['lote'], "stop": item['stop'], "parciais": item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])}; st.rerun()
-                        if c_del.button("🗑️ Excluir", key=f"d_{item['id']}"):
+                        if c_edit.button("✏️ Editar", key=f"edit_{item['id']}"):
+                            p_data = item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])
+                            st.session_state.atm_form_data = {"id": item['id'], "nome": item['nome'], "lote": item['lote'], "stop": item['stop'], "parciais": p_data}; st.rerun()
+                        if c_del.button("🗑️ Excluir", key=f"del_{item['id']}"):
                             supabase.table("atm_configs").delete().eq("id", item['id']).execute()
-                            if st.session_state.ae["id"] == item['id']: reset_atm_form()
+                            if st.session_state.atm_form_data["id"] == item['id']: reset_atm_form()
                             st.rerun()
             else: st.info("Nenhuma estratégia salva.")
         with c_form:
-            fd = st.session_state.ae; nn = st.text_input("Nome", value=fd["nome"]); nl = st.number_input("Lote", value=int(fd["lote"])); ns = st.number_input("Stop", value=float(fd["stop"]))
-            ca, cr = st.columns(2)
-            if ca.button("➕ Alvo"): fd["parciais"].append({"pts": 0.0, "qtd": 1}); st.rerun()
-            if cr.button("➖ Alvo"): fd["parciais"].pop(); st.rerun()
-            upp = []
-            for i, p in enumerate(fd["parciais"]):
+            form_data = st.session_state.atm_form_data
+            titulo = f"✏️ Editando: {form_data['nome']}" if form_data["id"] else "✨ Nova Estratégia"
+            st.subheader(titulo)
+            new_nome = st.text_input("Nome da Estratégia", value=form_data["nome"])
+            c_l, c_s = st.columns(2)
+            new_lote = c_l.number_input("Lote Total", min_value=1, value=int(form_data["lote"]))
+            new_stop = c_s.number_input("Stop Padrão (Pts)", min_value=0.0, value=float(form_data["stop"]), step=0.25)
+            st.markdown("---"); st.write("🎯 Configuração de Alvos"); c_add, c_rem = st.columns([1, 4])
+            if c_add.button("➕ Adicionar Alvo"): st.session_state.atm_form_data["parciais"].append({"pts": 0.0, "qtd": 1}); st.rerun()
+            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1: st.session_state.atm_form_data["parciais"].pop(); st.rerun()
+            updated_partials = []; total_aloc = 0
+            for i, p in enumerate(form_data["parciais"]):
                 c1, c2 = st.columns(2); pp = c1.number_input(f"Pts {i+1}", value=float(p["pts"]), key=f"ap_{i}"); pq = c2.number_input(f"Qtd {i+1}", value=int(p["qtd"]), key=f"aq_{i}")
                 upp.append({"pts": pp, "qtd": pq})
-            if st.button("💾 SALVAR"):
-                pay = {"nome": nn, "lote": nl, "stop": ns, "parciais": upp}
-                if fd["id"]: supabase.table("atm_configs").update(pay).eq("id", fd["id"]).execute()
-                else: supabase.table("atm_configs").insert(pay).execute()
-                st.rerun()
+            if st.button("💾 SALVAR ESTRATÉGIA", use_container_width=True):
+                payload = {"nome": new_nome, "lote": new_lote, "stop": new_stop, "parciais": updated_partials}
+                if form_data["id"]: supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute(); st.toast("Atualizado!", icon="✅")
+                else: supabase.table("atm_configs").insert(payload).execute(); st.toast("Criado!", icon="✨")
+                time.sleep(1); reset_atm_form(); st.rerun()
 
     # ==============================================================================
-    # 11. HISTÓRICO (RESTAURADO)
+    # 11. HISTÓRICO
     # ==============================================================================
     elif selected == "Histórico":
         st.title("📜 Galeria de Trades")
