@@ -23,7 +23,7 @@ except Exception as e:
 st.set_page_config(page_title="EvoTrade Terminal", layout="wide", page_icon="📈")
 
 # ==============================================================================
-# 2. ESTILOS CSS (COMPLETO E DETALHADO)
+# 2. ESTILOS CSS
 # ==============================================================================
 st.markdown("""
     <style>
@@ -41,15 +41,9 @@ st.markdown("""
         border-color: #B20000;
     }
     .card-img-container {
-        width: 100%; 
-        height: 140px; 
-        background-color: #222;
-        border-radius: 5px; 
-        overflow: hidden; 
-        display: flex;
-        align-items: center; 
-        justify-content: center; 
-        margin-bottom: 10px;
+        width: 100%; height: 140px; background-color: #222;
+        border-radius: 5px; overflow: hidden; display: flex;
+        align-items: center; justify-content: center; margin-bottom: 10px;
     }
     .card-img { width: 100%; height: 100%; object-fit: cover; }
     .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 2px; }
@@ -82,29 +76,17 @@ st.markdown("""
         cursor: help;
     }
     .metric-label { 
-        color: #888; 
-        font-size: 11px; 
-        text-transform: uppercase; 
-        letter-spacing: 1px; 
-        font-weight: 600; 
-        display: flex; 
-        justify-content: center; 
-        align-items: center; 
-        gap: 5px;
+        color: #888; font-size: 11px; text-transform: uppercase; 
+        letter-spacing: 1px; font-weight: 600; display: flex; 
+        justify-content: center; align-items: center; gap: 5px;
     }
     .metric-value { color: white; font-size: 22px; font-weight: 800; margin-top: 5px; }
     .metric-sub { font-size: 12px; margin-top: 4px; color: #666; }
     
     .help-icon {
-        color: #555; 
-        font-size: 12px; 
-        border: 1px solid #444;
-        border-radius: 50%; 
-        width: 14px; 
-        height: 14px;
-        display: inline-flex; 
-        align-items: center; 
-        justify-content: center;
+        color: #555; font-size: 12px; border: 1px solid #444;
+        border-radius: 50%; width: 14px; height: 14px;
+        display: inline-flex; align-items: center; justify-content: center;
     }
 
     /* Geral */
@@ -112,24 +94,12 @@ st.markdown("""
     .stApp { background-color: #0F0F0F; }
     
     .piscante-erro { 
-        padding: 15px; 
-        border-radius: 5px; 
-        color: white; 
-        font-weight: bold; 
-        text-align: center; 
-        animation: blinking 2.4s infinite; 
-        border: 1px solid #FF0000; 
+        padding: 15px; border-radius: 5px; color: white; font-weight: bold; 
+        text-align: center; animation: blinking 2.4s infinite; border: 1px solid #FF0000; 
     }
     .risco-alert {
-        color: #FF4B4B; 
-        font-weight: bold; 
-        font-size: 16px; 
-        margin-top: 5px;
-        background-color: rgba(255, 75, 75, 0.1); 
-        padding: 10px; 
-        border-radius: 5px; 
-        text-align: center; 
-        border: 1px solid #FF4B4B;
+        color: #FF4B4B; font-weight: bold; font-size: 16px; margin-top: 5px;
+        background-color: rgba(255, 75, 75, 0.1); padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #FF4B4B;
     }
     @keyframes blinking { 0% { background-color: #440000; } 50% { background-color: #B20000; } 100% { background-color: #440000; } }
     </style>
@@ -140,14 +110,14 @@ st.markdown("""
 # ==============================================================================
 def check_password():
     def password_entered():
-        user_input = st.session_state.get("username_input")
-        pass_input = st.session_state.get("password_input")
+        u = st.session_state.get("username_input")
+        p = st.session_state.get("password_input")
         try:
-            response = supabase.table("users").select("*").eq("username", user_input).eq("password", pass_input).execute()
-            if response.data:
+            res = supabase.table("users").select("*").eq("username", u).eq("password", p).execute()
+            if res.data:
                 st.session_state["password_correct"] = True
-                st.session_state["logged_user"] = user_input
-                st.session_state["user_role"] = response.data[0].get('role', 'user')
+                st.session_state["logged_user"] = u
+                st.session_state["user_role"] = res.data[0].get('role', 'user')
             else:
                 st.session_state["password_correct"] = False
         except Exception as e:
@@ -186,16 +156,15 @@ if check_password():
     ROLE = st.session_state.get("user_role", "user")
 
     # ==============================================================================
-    # 5. FUNÇÕES DE DADOS (NOMES COMPLETOS E LEGÍVEIS)
+    # 5. FUNÇÕES DE DADOS (ROBUSTAS)
     # ==============================================================================
     def load_trades_db():
         try:
-            response = supabase.table("trades").select("*").execute()
-            df = pd.DataFrame(response.data)
+            res = supabase.table("trades").select("*").execute()
+            df = pd.DataFrame(res.data)
             if not df.empty:
                 df['data'] = pd.to_datetime(df['data']).dt.date
                 df['created_at'] = pd.to_datetime(df['created_at'])
-                # Garante que colunas existam para evitar erro de chave
                 if 'grupo_vinculo' not in df.columns: 
                     df['grupo_vinculo'] = 'Geral'
                 if 'comportamento' not in df.columns:
@@ -206,28 +175,26 @@ if check_password():
 
     def load_atms_db():
         try:
-            response = supabase.table("atm_configs").select("*").execute()
-            # Retorna dicionário para acesso rápido pelo nome
-            return {item['nome']: item for item in response.data}
+            res = supabase.table("atm_configs").select("*").execute()
+            return {item['nome']: item for item in res.data}
         except:
             return {}
 
     def load_contas_config():
         try:
-            response = supabase.table("contas_config").select("*").eq("usuario", USER).execute()
-            return pd.DataFrame(response.data)
+            res = supabase.table("contas_config").select("*").eq("usuario", USER).execute()
+            return pd.DataFrame(res.data)
         except:
             return pd.DataFrame()
             
     def load_grupos_config():
         try:
-            response = supabase.table("grupos_config").select("*").eq("usuario", USER).execute()
-            return pd.DataFrame(response.data)
+            res = supabase.table("grupos_config").select("*").eq("usuario", USER).execute()
+            return pd.DataFrame(res.data)
         except:
             return pd.DataFrame()
 
     def card_metric(label, value, sub_value="", color="white", help_text=""):
-        # Função auxiliar para gerar HTML dos cards de métrica
         sub_html = f'<div class="metric-sub">{sub_value}</div>' if sub_value else '<div class="metric-sub">&nbsp;</div>'
         help_html = f'<span class="help-icon" title="{help_text}">?</span>' if help_text else ""
         
@@ -245,18 +212,18 @@ if check_password():
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         
-        menu_options = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
-        menu_icons = ["grid", "currency-dollar", "gear", "clock"]
+        menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
+        icons = ["grid", "currency-dollar", "gear", "clock"]
         
         if ROLE in ['master', 'admin']:
-            menu_options.insert(2, "Contas")
-            menu_icons.insert(2, "briefcase")
+            menu.insert(2, "Contas")
+            icons.insert(2, "briefcase")
             
         if ROLE == 'admin':
-            menu_options.append("Gerenciar Usuários")
-            menu_icons.append("people")
+            menu.append("Gerenciar Usuários")
+            icons.append("people")
             
-        selected_page = option_menu(None, menu_options, icons=menu_icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
+        selected = option_menu(None, menu, icons=icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
         
         if st.button("Sair / Logout"): 
             st.session_state.clear()
@@ -265,7 +232,7 @@ if check_password():
     # ==============================================================================
     # 7. ABA: DASHBOARD
     # ==============================================================================
-    if selected_page == "Dashboard":
+    if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
         
@@ -277,14 +244,8 @@ if check_password():
                 with st.expander("🔍 Filtros Avançados", expanded=True):
                     if ROLE in ['master', 'admin']:
                         col_d1, col_d2, col_grp, col_ctx = st.columns([1, 1, 1.2, 1.8])
-                        
-                        # Carrega lista de grupos
-                        load_grupos = load_contas_config()
-                        grupos_configurados = sorted(list(load_grupos['grupo_nome'].unique())) if not load_grupos.empty else []
-                        grupos_trades = list(df['grupo_vinculo'].unique())
-                        lista_final_grupos = ["Todos"] + sorted(list(set(grupos_configurados + grupos_trades)))
-                        
-                        sel_grupo = col_grp.selectbox("Grupo de Contas", lista_final_grupos)
+                        grupos_disp = ["Todos"] + sorted(list(df['grupo_vinculo'].unique()))
+                        sel_grupo = col_grp.selectbox("Grupo de Contas", grupos_disp)
                     else:
                         col_d1, col_d2, col_ctx = st.columns([1, 1, 2])
                         sel_grupo = "Todos"
@@ -314,22 +275,14 @@ if check_password():
                     losses = df_filtered[df_filtered['resultado'] < 0]
                     gross_profit = wins['resultado'].sum()
                     gross_loss = abs(losses['resultado'].sum())
-                    
-                    if gross_loss > 0:
-                        profit_factor = gross_profit / gross_loss
-                        pf_str = f"{profit_factor:.2f}"
-                    else:
-                        profit_factor = float('inf')
-                        pf_str = "∞"
-                        
+                    pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+                    pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
                     win_rate = (len(wins) / total_trades) * 100
                     avg_win = wins['resultado'].mean() if not wins.empty else 0
                     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
-                    
                     payoff = avg_win / avg_loss if avg_loss > 0 else 0
                     loss_rate = (len(losses) / total_trades)
                     expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
-                    
                     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
                     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
                     avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
@@ -404,7 +357,7 @@ if check_password():
     # ==============================================================================
     # 8. REGISTRAR TRADE
     # ==============================================================================
-    elif selected_page == "Registrar Trade":
+    elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_db = load_atms_db()
         df_grupos = load_grupos_config()
@@ -425,7 +378,6 @@ if check_password():
                 else:
                     st.caption("⚠️ Crie grupos na aba Contas.")
         
-        # Carrega dados do ATM selecionado
         if atm_sel != "Manual":
             config = atm_db[atm_sel]
             lt_default = int(config["lote"])
@@ -510,9 +462,8 @@ if check_password():
                             "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                         }).execute()
                     except Exception as e:
-                        # Se der erro de coluna, tenta salvar sem a coluna 'comportamento'
                         if "comportamento" in str(e) or "column" in str(e):
-                            st.warning("⚠️ Salvando sem Estado Mental (Coluna ausente no banco)")
+                            st.warning("⚠️ Salvando sem Estado Mental (Coluna ausente)")
                             supabase.table("trades").insert({
                                 "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
                                 "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
@@ -529,9 +480,9 @@ if check_password():
                     st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR APEX INTELIGENTE - CÓDIGO COMPLETO)
+    # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELIGENTE - CÓDIGO COMPLETO)
     # ==============================================================================
-    elif selected_page == "Contas":
+    elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
         
         if ROLE not in ['master', 'admin']:
@@ -547,8 +498,7 @@ if check_password():
                     if st.form_submit_button("Criar Grupo"):
                         if novo_grupo:
                             supabase.table("grupos_config").insert({"usuario": USER, "nome": novo_grupo}).execute()
-                            st.success(f"Grupo '{novo_grupo}' criado!")
-                            time.sleep(1); st.rerun()
+                            st.success("Criado!"); time.sleep(1); st.rerun()
                         else:
                             st.warning("Digite um nome.")
                             
@@ -635,7 +585,7 @@ if check_password():
                             else: st.progress(0.0)
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (LÓGICA AUTOMÁTICA DE FASES) ---
+            # --- ABA 4: MONITOR DE PERFORMANCE (LÓGICA AUTOMÁTICA DE FASES + GPS RECUPERADO) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
@@ -772,7 +722,7 @@ if check_password():
 
                             # Zoom Automático
                             min_y = min(df_plot['stop_line'].min(), df_plot['saldo_acc'].min()) - 1000
-                            max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + 1000
+                            max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + 500
                             fig.update_layout(yaxis_range=[min_y, max_y], showlegend=True, legend=dict(orientation="h", y=1.02), xaxis_title="Sequência" if vis_mode == "Trade a Trade" else "Data")
                             
                             st.plotly_chart(fig, use_container_width=True)
@@ -796,9 +746,17 @@ if check_password():
                             st.progress(porcentagem)
                             
                             st.info(f"Meta atual: ${meta_dinamica:,.0f}")
+                            
+                            # --- AQUI ESTÁ O CÁLCULO DE TRADES RESTANTES (O GPS) ---
+                            media_trades = trades_g['resultado'].mean() if not trades_g.empty else 0
+                            
                             if saldo_atual < meta_dinamica:
                                 falta = meta_dinamica - saldo_atual
                                 st.caption(f"Faltam ${falta:,.2f} para o próximo nível.")
+                                
+                                if media_trades > 0:
+                                    trades_necessarios = int(falta / media_trades) + 1
+                                    st.info(f"📍 Estimativa: **{trades_necessarios} trades** (média ${media_trades:.0f})")
                             else:
                                 st.success("Nível Concluído! 🚀")
 
@@ -810,14 +768,11 @@ if check_password():
     # ==============================================================================
     # 10. CONFIGURAR ATM (RESTAURADO)
     # ==============================================================================
-    elif selected_page == "Configurar ATM":
+    elif selected == "Configurar ATM":
         st.title("⚙️ Gerenciar ATMs")
         if "atm_form_data" not in st.session_state: st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
         def reset_atm_form(): st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
-        
-        response = supabase.table("atm_configs").select("*").order("nome").execute()
-        existing_atms = response.data
-        
+        res = supabase.table("atm_configs").select("*").order("nome").execute(); existing_atms = res.data
         c_form, c_list = st.columns([1.5, 1])
         with c_list:
             st.subheader("📋 Estratégias Salvas")
@@ -835,7 +790,6 @@ if check_password():
                             if st.session_state.atm_form_data["id"] == item['id']: reset_atm_form()
                             st.rerun()
             else: st.info("Nenhuma estratégia salva.")
-        
         with c_form:
             form_data = st.session_state.atm_form_data
             titulo = f"✏️ Editando: {form_data['nome']}" if form_data["id"] else "✨ Nova Estratégia"
@@ -844,22 +798,17 @@ if check_password():
             c_l, c_s = st.columns(2)
             new_lote = c_l.number_input("Lote Total", min_value=1, value=int(form_data["lote"]))
             new_stop = c_s.number_input("Stop Padrão (Pts)", min_value=0.0, value=float(form_data["stop"]), step=0.25)
-            
-            st.markdown("---"); st.write("🎯 Configuração de Alvos")
-            c_add, c_rem = st.columns([1, 4])
+            st.markdown("---"); st.write("🎯 Configuração de Alvos"); c_add, c_rem = st.columns([1, 4])
             if c_add.button("➕ Adicionar Alvo"): st.session_state.atm_form_data["parciais"].append({"pts": 0.0, "qtd": 1}); st.rerun()
             if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1: st.session_state.atm_form_data["parciais"].pop(); st.rerun()
-            
             updated_partials = []; total_aloc = 0
             for i, p in enumerate(form_data["parciais"]):
                 c1, c2 = st.columns(2)
                 p_pts = c1.number_input(f"Alvo {i+1} (Pts)", value=float(p["pts"]), key=f"edm_pts_{i}", step=0.25)
                 p_qtd = c2.number_input(f"Qtd {i+1}", value=int(p["qtd"]), min_value=1, key=f"edm_qtd_{i}")
                 updated_partials.append({"pts": p_pts, "qtd": p_qtd}); total_aloc += p_qtd
-            
             if total_aloc != new_lote: st.warning(f"⚠️ Atenção: Soma das parciais ({total_aloc}) difere do Lote Total ({new_lote}).")
             st.markdown("<br>", unsafe_allow_html=True)
-            
             if st.button("💾 SALVAR ESTRATÉGIA", use_container_width=True):
                 payload = {"nome": new_nome, "lote": new_lote, "stop": new_stop, "parciais": updated_partials}
                 if form_data["id"]: supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute(); st.toast("Atualizado!", icon="✅")
@@ -869,7 +818,7 @@ if check_password():
     # ==============================================================================
     # 11. HISTÓRICO (RESTAURADO)
     # ==============================================================================
-    elif selected_page == "Histórico":
+    elif selected == "Histórico":
         st.title("📜 Galeria de Trades")
         dfh = load_trades_db()
         if not dfh.empty:
@@ -924,33 +873,21 @@ if check_password():
     # ==============================================================================
     # 12. GERENCIAR USUÁRIOS
     # ==============================================================================
-    elif selected_page == "Gerenciar Usuários" and ROLE == "admin":
+    elif selected == "Gerenciar Usuários" and ROLE == "admin":
         st.title("👥 Usuários")
-        response = supabase.table("users").select("*").execute()
-        users_list = response.data
-        
+        us = supabase.table("users").select("*").execute().data
         c1, c2 = st.columns([1, 1.5])
         with c2:
-            if users_list:
-                for u in users_list:
-                    with st.container():
-                        st.write(f"👤 **{u['username']}** ({u.get('role', 'user')})")
-                        if st.button("✏️ Editar", key=f"ue_{u['id']}"): 
-                            st.session_state.user_form_data = {"id": u['id'], "username": u['username'], "password": u['password'], "role": u.get('role', 'user')}
-                            st.rerun()
-                        st.divider()
-            else: st.info("Nenhum usuário encontrado.")
-            
+            for u in us:
+                with st.container():
+                    st.write(f"👤 **{u['username']}** ({u.get('role','user')})")
+                    if st.button("Edit", key=f"ue_{u['id']}"): st.session_state.uf = u; st.rerun()
+                    st.divider()
         with c1:
-            ud = st.session_state.get("user_form_data", {"id": None, "username": "", "password": "", "role": "user"})
-            st.subheader("Novo/Editar Usuário")
-            nu = st.text_input("User", value=ud["username"])
-            np = st.text_input("Pass", value=ud["password"])
-            nr = st.selectbox("Role", ["user", "master", "admin"], index=["user", "master", "admin"].index(ud["role"]))
-            
-            if st.button("💾 Salvar Usuário"):
+            ud = st.session_state.get("uf", {"id": None, "username": "", "password": "", "role": "user"})
+            nu = st.text_input("User", value=ud["username"]); np = st.text_input("Pass", value=ud["password"]); nr = st.selectbox("Role", ["user", "master", "admin"])
+            if st.button("Salvar"):
                 pay = {"username": nu, "password": np, "role": nr}
                 if ud["id"]: supabase.table("users").update(pay).eq("id", ud["id"]).execute()
                 else: supabase.table("users").insert(pay).execute()
-                st.session_state.user_form_data = {"id": None, "username": "", "password": "", "role": "user"}
-                st.rerun()
+                st.session_state.uf = {"id": None, "username": "", "password": "", "role": "user"}; st.rerun()
