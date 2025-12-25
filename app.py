@@ -97,7 +97,6 @@ if check_password():
                 df['data'] = pd.to_datetime(df['data']).dt.date
                 df['created_at'] = pd.to_datetime(df['created_at'])
                 if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
-                # Previne erro se a coluna comportamento não existir no DF
                 if 'comportamento' not in df.columns: df['comportamento'] = 'Normal'
             return df
         except: return pd.DataFrame()
@@ -238,7 +237,7 @@ if check_password():
         else: st.warning("Vazio.")
 
     # ==============================================================================
-    # 8. REGISTRAR TRADE (COM TRATAMENTO DE ERRO DE COLUNA)
+    # 8. REGISTRAR TRADE
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
@@ -322,7 +321,6 @@ if check_password():
                         supabase.storage.from_("prints").upload(file_path, up.getvalue())
                         img_url = supabase.storage.from_("prints").get_public_url(file_path)
 
-                    # TENTA SALVAR COM ESTADO MENTAL
                     try:
                         supabase.table("trades").insert({
                             "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
@@ -332,7 +330,6 @@ if check_password():
                             "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                         }).execute()
                     except Exception as e:
-                        # SE DER ERRO DE COLUNA, SALVA SEM
                         if "comportamento" in str(e) or "column" in str(e):
                             st.warning("⚠️ Salvando sem Estado Mental (Coluna não existe no Banco)")
                             supabase.table("trades").insert({
@@ -349,7 +346,7 @@ if check_password():
                     st.error(f"Erro ao salvar: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (MONITOR CORRIGIDO - EIXO X SEQUENCIAL NO TRADE A TRADE)
+    # 9. ABA CONTAS (MONITOR CORRIGIDO - CORREÇÃO DO EIXO X VAZIO)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio")
@@ -409,7 +406,7 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", r['id']).execute(); st.rerun()
                 else: st.info("Vazio.")
 
-            # --- MONITOR DE PERFORMANCE (VERSÃO 21 - EIXO X SEQUENCIAL) ---
+            # --- MONITOR DE PERFORMANCE (VERSÃO 22 - CORREÇÃO DO EIXO X VAZIO) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config(); df_t = load_trades_db()
@@ -490,7 +487,18 @@ if check_password():
                                     start_row = pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_base}])
                                     df_plot = pd.concat([start_row, df_plot], ignore_index=True)
                             else:
-                                df_plot = pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_base}])
+                                # Se não tem trade, cria uma linha reta no saldo base
+                                if vis_mode == "Diário":
+                                    df_plot = pd.DataFrame([
+                                        {'eixo_x': d_ini, 'saldo_acc': saldo_base},
+                                        {'eixo_x': d_fim, 'saldo_acc': saldo_base}
+                                    ])
+                                else:
+                                    # Trade a Trade: linha do ponto 0 ao 1
+                                    df_plot = pd.DataFrame([
+                                        {'eixo_x': 0, 'saldo_acc': saldo_base},
+                                        {'eixo_x': 1, 'saldo_acc': saldo_base}
+                                    ])
 
                             # --- TRAILING STOP ---
                             df_plot['hwm'] = df_plot['saldo_acc'].cummax()
