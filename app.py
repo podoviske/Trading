@@ -370,11 +370,14 @@ if check_password():
                     # Fórmula: (WinRate * Payoff) - LossRate
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
 
-                    # 5. PROBABILIDADE DE RUÍNA (FÓRMULA DE BALSARA)
+                  # 5. PROBABILIDADE DE RUÍNA (FÓRMULA DE BALSARA CORRIGIDA)
                     if z_edge <= 0:
                         ror_final = 100.0 # Sem vantagem, a quebra é certa.
+                    elif z_edge >= 1.0:
+                        ror_final = 0.0 # Vantagem absoluta (Z > 1), risco matematicamente nulo.
                     else:
                         base_calc = (1 - z_edge) / (1 + z_edge)
+                        base_calc = max(0.0, base_calc) # Proteção contra números negativos
                         ror_final = (base_calc ** vidas_u) * 100
                     
                     ror_final = min(max(ror_final, 0.0), 100.0)
