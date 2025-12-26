@@ -514,7 +514,7 @@ if check_password():
 
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
-
+        
     # ==============================================================================
     # 8. REGISTRAR TRADE
     # ==============================================================================
