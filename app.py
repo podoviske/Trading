@@ -255,10 +255,10 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v155/156 - LSP 5 CASAS)
+    # 7. ABA: DASHBOARD (v165 - RISCO DE RUÍNA REAL / GAMBLER'S RUIN)
     # ==============================================================================
     if selected == "Dashboard":
-        st.title("📊 Central de Controle")
+        st.title("📊 Central de Controle (v165)")
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
@@ -329,21 +329,20 @@ if check_password():
                     max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
 
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO v156
+                    # 🛡️ MOTOR DE CÁLCULO v165 - A FÓRMULA DA REALIDADE
                     # ==============================================================================
                     
-                    # 1. RISCO UNITÁRIO REAL
+                    # 1. RISCO UNITÁRIO REAL (Baseado na dor média do histórico)
                     risco_comportamental = lote_medio_real * pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
                     if risco_comportamental == 0: risco_comportamental = 300.0
 
-                    # 2. BUFFER REAL DO GRUPO
+                    # 2. BUFFER REAL DO GRUPO (Oxigênio disponível até o Stop)
                     total_buffer_real = 0.0
                     contas_analisadas = 0
                     
                     if not df_contas.empty:
                         contas_alvo = df_contas if sel_grupo == "Todos" else df_contas[df_contas['grupo_nome'] == sel_grupo]
                         for _, row in contas_alvo.iterrows():
-                            # Só conta buffer de contas ATIVAS
                             if row.get('status_conta', 'Ativa') == 'Ativa':
                                 saldo_entrada = float(row['saldo_inicial'])
                                 pico_previo = float(row.get('pico_previo', saldo_entrada))
@@ -353,12 +352,14 @@ if check_password():
                                 if not trades_deste_grupo.empty:
                                     lucro_atual = trades_deste_grupo['resultado'].sum()
                                     saldo_agora = saldo_entrada + lucro_atual
-                                    pico_lucro_db = (trades_deste_grupo['resultado'].cumsum()).max()
-                                    pico_real = max(pico_previo, saldo_entrada + max(0, pico_lucro_db))
+                                    # Recalcula o HWM baseado no histórico + pico manual
+                                    equity_curve = trades_deste_grupo['resultado'].cumsum() + saldo_entrada
+                                    pico_real = max(pico_previo, equity_curve.max(), saldo_entrada)
                                 else:
                                     saldo_agora = saldo_entrada
                                     pico_real = pico_previo
                                 
+                                # Regra Apex 150k
                                 if pico_real >= 155100.0: trailing_stop = 150100.0
                                 else: trailing_stop = pico_real - 5000.0
                                 
@@ -367,43 +368,60 @@ if check_password():
                     
                     if total_buffer_real == 0 and contas_analisadas == 0: total_buffer_real = 0.0
 
-                    # 3. VIDAS REAIS
+                    # 3. VIDAS REAIS (U)
+                    # Quantas vezes eu posso errar antes de morrer?
                     fator_replicacao = contas_analisadas if contas_analisadas > 0 else 1
                     risco_grupo_total = risco_comportamental * fator_replicacao
+                    
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
-                    # 4. FÓRMULA LSP (5 Casas)
+                    # 4. FÓRMULA DE RUÍNA DO JOGADOR (Gambler's Ruin)
+                    # P = (q / p) ^ U
+                    
+                    p = win_rate_dec
+                    q = 1 - p
+                    prob_ruina = 0.0
                     msg_alerta = ""
-                    prob_liquidez = 0.0
                     
                     if total_trades < 5:
-                        msg_alerta = "⚠️ Baixa Amostragem"
+                        msg_alerta = "⚠️ Calibrando..."
+                        prob_ruina = 0.0
                         color_r = "gray"
-                    elif vidas_u <= 0:
-                        prob_liquidez = 100.0
-                        color_r = "#FF4B4B"
-                        msg_alerta = "Liquidação Iminente"
-                    elif win_rate_dec == 0:
-                        prob_liquidez = 100.0
-                        color_r = "#FF4B4B"
-                        msg_alerta = "Sem Vitórias"
+                    elif vidas_u <= 0.5:
+                        prob_ruina = 100.0
+                        msg_alerta = "LIQUIDAÇÃO IMINENTE"
+                        color_r = "#FF0000"
+                    elif p <= q:
+                        # Se você perde mais do que ganha (ou igual), a ruína é 100% certa no longo prazo
+                        prob_ruina = 100.0
+                        msg_alerta = "EDGE NEGATIVO (PARE)"
+                        color_r = "#FF0000"
                     else:
-                        prob_liquidez = ((1 - win_rate_dec) ** vidas_u) * 100
-                        prob_liquidez = min(max(prob_liquidez, 0.0), 100.0)
+                        # Fórmula Discreta (A Verdade)
+                        raw_ruin = (q / p) ** vidas_u
+                        prob_ruina = raw_ruin * 100
+                        prob_ruina = min(max(prob_ruina, 0.0), 100.0)
                         
-                        if prob_liquidez < 10: color_r = "#00FF88"
-                        elif prob_liquidez < 40: color_r = "#FFFF00"
-                        else: color_r = "#FF4B4B"
-                        msg_alerta = "Risco LSP (Curto Prazo)"
+                        if prob_ruina < 1.0: 
+                            color_r = "#00FF88" # Seguro
+                            msg_alerta = "Zona de Segurança"
+                        elif prob_ruina < 5.0: 
+                            color_r = "#FFFF00" # Atenção
+                            msg_alerta = "Risco Moderado"
+                        else: 
+                            color_r = "#FF4B4B" # Perigo
+                            msg_alerta = "RISCO CRÍTICO"
 
-                    # --- TRAVA DE SEGURANÇA VISUAL ---
-                    if prob_liquidez > 50:
+                    # --- TRAVA DE SEGURANÇA VISUAL (ALERTA DE PÂNICO) ---
+                    # Se o risco real for maior que 10%, o sistema grita.
+                    if prob_ruina > 10.0 and total_trades >= 5:
                         st.markdown(f"""
                             <div class="piscante-erro">
-                                🚨 PERIGO DE LIQUIDAÇÃO IMEDIATA ({prob_liquidez:.2f}%) 🚨<br>
-                                <span style="font-size:14px; font-weight:normal; text-transform:none;">
-                                    Você tem apenas <b>{vidas_u:.1f} vidas</b>. Sua chance de quebrar em breve é crítica.<br>
-                                    REDUZA O LOTE AGORA.
+                                💀 ALERTA DE RUÍNA: {prob_ruina:.2f}% 💀<br>
+                                <span style="font-size:16px; font-weight:normal; text-transform:none;">
+                                    Você tem apenas <b>{vidas_u:.1f} Vidas</b>. A estatística está contra você.<br>
+                                    A probabilidade de quebrar sua conta em breve é ALTÍSSIMA.<br>
+                                    <b>AÇÃO IMEDIATA: REDUZA O LOTE PELA METADE.</b>
                                 </span>
                             </div>
                         """, unsafe_allow_html=True)
@@ -430,9 +448,9 @@ if check_password():
                     with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white", "Tamanho médio da mão utilizada.")
                     with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações.")
 
-                    # --- CARD DO MOTOR v156 ---
+                    # --- CARD DO MOTOR v165 (NOVO) ---
                     st.markdown("---")
-                    st.subheader(f"🛡️ Análise de Sobrevivência Apex ({sel_grupo})")
+                    st.subheader(f"🛡️ Análise de Sobrevivência (Gambler's Ruin) - {sel_grupo}")
                     
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
 
@@ -440,21 +458,23 @@ if check_password():
                     with k1:
                         lbl_z = "EDGE POSITIVO" if z_edge > 0 else "EDGE NEGATIVO"
                         cor_z = "#00FF88" if z_edge > 0 else "#FF4B4B"
-                        card_metric("Z-SCORE (TEÓRICO)", f"{z_edge:.5f}", lbl_z, cor_z, "Mede sua vantagem matemática no longo prazo (Balsara).")
+                        card_metric("Z-SCORE (EDGE)", f"{z_edge:.4f}", lbl_z, cor_z, "Força estatística da sua estratégia.")
                     
                     with k2:
                         card_metric("BUFFER REAL (HOJE)", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Ativas", "#00FF88", "Oxigênio real: Distância do Saldo Atual para o Stop Apex.")
 
                     with k3:
-                        cor_v = "#FF4B4B" if vidas_u < 4 else ("#FFFF00" if vidas_u < 8 else "white")
-                        card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Custo: ${risco_grupo_total:,.0f}", cor_v, "Quantos stops cheios você suporta AGORA.")
+                        # Cores de Vidas baseadas na realidade discreta
+                        cor_v = "#FF4B4B" if vidas_u < 6 else ("#FFFF00" if vidas_u < 10 else "#00FF88")
+                        lbl_v = "CRÍTICO" if vidas_u < 6 else "OK"
+                        card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Base: ${risco_grupo_total:,.0f}", cor_v, "Quantos stops cheios você suporta AGORA.")
 
                     with k4:
                         st.markdown(f"""
                             <div style="background: #101010; border: 2px solid {color_r}; border-radius: 12px; padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
-                                <div style="color: #888; font-size: 11px; font-weight: bold; text-transform: uppercase;">RISCO LIQUIDAÇÃO (LSP)</div>
-                                <div style="color: {color_r}; font-size: 24px; font-weight: 900; margin: 2px 0;">{prob_liquidez:.5f}%</div>
-                                <div style="font-size: 10px; color: #666; margin-top:5px;">{msg_alerta}</div>
+                                <div style="color: #888; font-size: 11px; font-weight: bold; text-transform: uppercase;">PROB. RUÍNA (REAL)</div>
+                                <div style="color: {color_r}; font-size: 28px; font-weight: 900; margin: 2px 0;">{prob_ruina:.2f}%</div>
+                                <div style="font-size: 11px; color: #BBB; margin-top:5px; font-weight:bold;">{msg_alerta}</div>
                             </div>
                         """, unsafe_allow_html=True)
 
