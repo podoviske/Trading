@@ -596,7 +596,7 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
    # ==============================================================================
-    # 9. ABA CONTAS (v157 - RESTAURADA v153 + AUTO-FASE)
+    # 9. ABA CONTAS (v157 - CORREÇÃO TOTAL: ZOOM, INDENTAÇÃO, AUTO-FASE)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio (v157)")
@@ -606,106 +606,212 @@ if check_password():
         else:
             t1, t2, t3, t4 = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📋 Visão Geral", "🚀 Monitor de Performance"])
             
-            # [MANTENHA AS ABAS t1, t2 e t3 COMO ESTÃO NO SEU ARQUIVO v156]
+            # --- ABA 1: GRUPOS ---
+            with t1:
+                st.subheader("Nova Estrutura de Contas")
+                with st.form("form_grupo"):
+                    novo_grupo = st.text_input("Nome do Grupo (Ex: Apex 5 Contas - A)")
+                    if st.form_submit_button("Criar Grupo"):
+                        if novo_grupo:
+                            supabase.table("grupos_config").insert({"usuario": USER, "nome": novo_grupo}).execute(); st.rerun()
+                        else: st.warning("Digite um nome.")
+                st.divider()
+                st.write("Grupos Existentes:")
+                df_g = load_grupos_config()
+                if not df_g.empty:
+                    for idx, row in df_g.iterrows():
+                        c1, c2 = st.columns([4, 1])
+                        c1.info(f"📂 {row['nome']}")
+                        if c2.button("Excluir", key=f"del_g_{row['id']}"):
+                            supabase.table("grupos_config").delete().eq("id", row['id']).execute(); st.rerun()
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (RESTAURADO v153 + AUTO-FASE) ---
+            # --- ABA 2: CADASTRAR CONTA ---
+            with t2:
+                st.subheader("Vincular Conta")
+                df_g = load_grupos_config()
+                if not df_g.empty:
+                    with st.form("form_conta"):
+                        col_a, col_b = st.columns(2)
+                        g_sel = col_a.selectbox("Grupo", sorted(df_g['nome'].unique()))
+                        c_id = col_b.text_input("Identificador (Ex: PA-001)")
+                        s_ini = col_a.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
+                        p_pre = col_b.number_input("Pico Máximo (HWM)", value=150000.0, step=100.0)
+                        fase_ini = col_a.selectbox("Fase Inicial (Referência)", ["Fase 1", "Fase 2", "Fase 3", "Fase 4"])
+                        
+                        if st.form_submit_button("Cadastrar Conta"):
+                            if c_id:
+                                try:
+                                    supabase.table("contas_config").insert({
+                                        "usuario": USER, "grupo_nome": g_sel, "conta_identificador": c_id,
+                                        "saldo_inicial": s_ini, "pico_previo": p_pre,
+                                        "fase_entrada": fase_ini, "status_conta": "Ativa"
+                                    }).execute()
+                                    st.success("Conta cadastrada!"); time.sleep(1); st.rerun()
+                                except Exception as e: st.error(f"Erro: {e}")
+                else: st.warning("Crie um grupo antes.")
+
+            # --- ABA 3: VISÃO GERAL ---
+            with t3:
+                st.subheader("📋 Gestão e Mobilidade")
+                df_c = load_contas_config()
+                df_g_list = load_grupos_config()
+                df_t = load_trades_db()
+                if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
+                
+                lista_grupos_existentes = sorted(df_g_list['nome'].unique()) if not df_g_list.empty else []
+
+                if not df_c.empty:
+                    grupos_unicos = sorted(df_c['grupo_nome'].unique())
+                    for grp in grupos_unicos:
+                        with st.expander(f"📂 {grp}", expanded=True):
+                            trades_grp = df_t[df_t['grupo_vinculo'] == grp] if not df_t.empty else pd.DataFrame()
+                            lucro_grupo = trades_grp['resultado'].sum() if not trades_grp.empty else 0.0
+                            contas_g = df_c[df_c['grupo_nome'] == grp]
+                            
+                            for _, row in contas_g.iterrows():
+                                st_icon = "🟢" if row['status_conta'] == "Ativa" else "🔴"
+                                saldo_atual = float(row['saldo_inicial']) + lucro_grupo
+                                delta = saldo_atual - float(row['saldo_inicial'])
+                                cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
+                                
+                                c_info, c_edit, c_del = st.columns([3, 0.5, 0.5])
+                                c_info.markdown(f"""
+                                    <div style='background-color: #222; padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 3px solid {"#00FF88" if row['status_conta']=="Ativa" else "#FF4B4B"}'>
+                                        <div style="display:flex; justify-content:space-between;">
+                                            <span>💳 <b>{row['conta_identificador']}</b> <small>({row['fase_entrada']})</small></span>
+                                            <span>{st_icon} {row['status_conta']}</span>
+                                        </div>
+                                        <div style='font-size: 1.1em; margin-top: 5px;'>💰 Saldo: <b>${saldo_atual:,.2f}</b> (<span style='color:{cor_delta}'>${delta:+,.2f}</span>)</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                                
+                                with c_edit.popover("⚙️"):
+                                    idx_grp = lista_grupos_existentes.index(row['grupo_nome']) if row['grupo_nome'] in lista_grupos_existentes else 0
+                                    novo_grp = st.selectbox("Mover para Grupo", lista_grupos_existentes, index=idx_grp, key=f"mv_g_{row['id']}")
+                                    
+                                    status_ops = ["Ativa", "Pausada", "Quebrada"]
+                                    idx_st = status_ops.index(row['status_conta']) if row['status_conta'] in status_ops else 0
+                                    novo_status = st.selectbox("Status", status_ops, index=idx_st, key=f"mv_s_{row['id']}")
+                                    
+                                    novo_saldo_ini = st.number_input("Corrigir Saldo Inicial", value=float(row['saldo_inicial']), key=f"mv_si_{row['id']}")
+                                    
+                                    if st.button("💾 Salvar", key=f"btn_sv_{row['id']}"):
+                                        supabase.table("contas_config").update({"grupo_nome": novo_grp, "status_conta": novo_status, "saldo_inicial": novo_saldo_ini}).eq("id", row['id']).execute()
+                                        st.rerun()
+
+                                if c_del.button("🗑️", key=f"del_acc_{row['id']}"):
+                                    supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
+                else: st.info("Nenhuma conta configurada.")
+
+            # --- ABA 4: MONITOR DE PERFORMANCE (AUTO-FASE + ZOOM + INDENTAÇÃO FIX) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
-                
-                if not df_t.empty: 
-                    df_t = df_t[df_t['usuario'] == USER]
+                if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
 
                 if not df_c.empty:
                     grps = sorted(df_c['grupo_nome'].unique())
                     col_sel, col_vis = st.columns([2, 1])
-                    sel_g = col_sel.selectbox("Grupo", grps)
-                    vis_mode = col_vis.radio("Visualização", ["Trade a Trade", "Diário"], horizontal=True)
-
+                    sel_g = col_sel.selectbox("Escolher Grupo para Monitorar", grps)
+                    vis_mode = col_vis.radio("Eixo X", ["Trade a Trade", "Diário"], horizontal=True)
                     st.markdown("---")
                     
                     contas_g = df_c[df_c['grupo_nome'] == sel_g]
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
                     
                     if not contas_g.empty:
-                        # --- 1. DEFINIÇÃO DO SALDO BASE E ATUAL ---
                         saldo_inicial_base = contas_g['saldo_inicial'].min()
-                        pico_previo_base = contas_g['pico_previo'].max()
-                        
+                        pico_previo_base = contas_g['pico_previo'].max() if 'pico_previo' in contas_g.columns else saldo_inicial_base
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # --- 2. LÓGICA DE AUTO-FASE (SISTEMA PULA SOZINHO) ---
+                        # --- LÓGICA DE AUTO-FASE ---
                         if saldo_atual_base < 159000.0:
-                            meta_dinamica = 159000.0
-                            status_grupo = "Fase 1: Passar no Teste (Alvo 9k)"
-                            fase_index = 1
-                        elif saldo_atual_base < 155100.0: 
-                            meta_dinamica = 155100.0
-                            status_grupo = "Fase 2: Construindo Colchão (Alvo 5.1k)"
-                            fase_index = 2
+                            meta_dinamica = 159000.0; status_grupo = "Fase 1: Teste (Alvo 9k)"; fase_idx = 1
+                        elif saldo_atual_base < 155100.0:
+                            meta_dinamica = 155100.0; status_grupo = "Fase 2: Colchão PA (Alvo 5.1k)"; fase_idx = 2
                         elif saldo_atual_base < 161000.0:
-                            meta_dinamica = 161000.0
-                            status_grupo = "Fase 3: Escalada (Rumo aos 161k)"
-                            fase_index = 3
+                            meta_dinamica = 161000.0; status_grupo = "Fase 3: Escalada (Rumo aos 161k)"; fase_idx = 3
                         else:
-                            meta_dinamica = 162000.0
-                            status_grupo = "Fase 4: MODO SAQUE (Manter > 161k)"
-                            fase_index = 4
+                            meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE (> 161k)"; fase_idx = 4
 
-                        # --- 3. CÁLCULO DO TRAILING STOP (EXATO v153) ---
+                        # --- TRAILING STOP v153 ---
                         if not trades_g.empty:
-                            temp_trades = trades_g.sort_values('created_at')
-                            temp_trades['equity_curve'] = temp_trades['resultado'].cumsum() + saldo_inicial_base
-                            saldo_pico_historico = temp_trades['equity_curve'].max()
-                            hwm = max(saldo_inicial_base, saldo_pico_historico, pico_previo_base)
-                        else:
-                            hwm = max(saldo_inicial_base, pico_previo_base)
+                            temp_t = trades_g.sort_values('created_at')
+                            temp_t['equity'] = temp_t['resultado'].cumsum() + saldo_inicial_base
+                            hwm = max(saldo_inicial_base, temp_t['equity'].max(), pico_previo_base)
+                        else: hwm = max(saldo_inicial_base, pico_previo_base)
 
                         stop_calc = hwm - 5000.0
-                        stop_loss_atual = min(stop_calc, 150100.0)
-                        if hwm >= 155100.0: stop_loss_atual = 150100.0
+                        stop_val = 150100.0 if hwm >= 155100.0 else min(stop_calc, 150100.0)
 
-                        # --- EXIBIÇÃO: CARDS v153 ---
+                        # --- CARDS ---
                         k1, k2, k3 = st.columns(3)
-                        k1.metric("Saldo Base Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
-                        k2.metric("Status (Auto-Fase)", status_grupo)
-                        gap_meta = meta_dinamica - saldo_atual_base
-                        
-                        if fase_index == 4:
-                             saque_potencial = (saldo_atual_base - 161000.0)
-                             k3.metric("Potencial de Saque", f"${max(0, saque_potencial):,.2f}", "Saque Livre")
-                        else:
-                             k3.metric("Falta para Próxima Meta", f"${max(0, gap_meta):,.2f}", f"Alvo: ${meta_dinamica:,.0f}")
+                        k1.metric("Saldo Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
+                        k2.metric("Fase Automática", status_grupo)
+                        if fase_idx == 4: k3.metric("Saque Disponível", f"${max(0, saldo_atual_base - 161000):,.2f}", "Zona de Lucro")
+                        else: k3.metric("Falta para Meta", f"${max(0, meta_dinamica - saldo_atual_base):,.2f}", f"Alvo: ${meta_dinamica:,.0f}")
 
                         cg, cp = st.columns([2, 1])
 
-                        # --- GRÁFICO v153 COM FILL ---
+                        # --- GRÁFICO (INDENTAÇÃO CORRIGIDA) ---
                         with cg:
                             st.markdown("##### 🌊 Curva do Grupo")
+                            if not trades_g.empty:
+                                if vis_mode == "Diário":
+                                    trades_g['data'] = pd.to_datetime(trades_g['data'])
+                                    df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
+                                    df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
+                                    x_col = 'eixo_x'
+                                else:
+                                    df_sorted = trades_g.sort_values('created_at')
+                                    df_sorted['seq'] = range(1, len(df_sorted)+1)
+                                    df_plot = df_sorted
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
+                                    df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
+                                    x_col = 'eixo_x'
 
-                        # --- COMPONENTE DE PROGRESSO v153 ---
+                                fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
+                                fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)')
+                                fig.add_hline(y=stop_val, line_dash="dash", line_color="#FF4B4B", annotation_text="Stop")
+                                fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
+                                fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.3)
+                                
+                                # ZOOM INTELIGENTE
+                                padding = 1000
+                                min_y = min(stop_val, df_plot['saldo_acc'].min()) - padding
+                                max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + padding
+                                fig.update_layout(yaxis_range=[min_y, max_y], showlegend=False)
+                                
+                                if vis_mode == "Trade a Trade": fig.update_xaxes(dtick=1)
+                                st.plotly_chart(fig, use_container_width=True)
+                            else: st.info("Sem dados.")
+
+                        # --- PROGRESSO ---
                         with cp:
-                            st.markdown("##### 🎯 Progresso da Fase")
-                            base_progresso = 150000.0
-                            if fase_index == 3: base_progresso = 155100.0
-                            elif fase_index == 4: base_progresso = 160000.0
+                            st.markdown("##### 🎯 Progresso")
+                            base_p = 150000.0
+                            if fase_idx == 3: base_p = 155100.0
+                            elif fase_idx == 4: base_p = 160000.0
                             
-                            total_meta = meta_dinamica - base_progresso
-                            ja_feito = saldo_atual_base - base_progresso
+                            total_need = meta_dinamica - base_p
+                            done = saldo_atual_base - base_p
                             
-                            ev_por_trade = trades_g['resultado'].mean() if not trades_g.empty else 0.0
+                            pct = min(1.0, max(0.0, done / total_need)) if total_need > 0 else 1.0
+                            st.write(f"Conclusão: {pct*100:.1f}%")
+                            st.progress(pct)
                             
-                            porcentagem = min(1.0, max(0.0, ja_feito / total_meta)) if total_meta > 0 else 1.0
-                            
-                            st.write(f"Conclusão: {porcentagem*100:.1f}%")
-                            st.progress(porcentagem)
-                            st.info(f"Meta atual: ${meta_dinamica:,.0f}")
-                            
-                            if ev_por_trade > 0 and (meta_dinamica - saldo_atual_base) > 0:
-                                t_restantes = math.ceil((meta_dinamica - saldo_atual_base) / ev_por_trade)
-                                st.write(f"Faltam **~{t_restantes}** trades (EV: ${ev_por_trade:,.2f})")
+                            ev = trades_g['resultado'].mean() if not trades_g.empty else 0
+                            remain = meta_dinamica - saldo_atual_base
+                            if remain > 0 and ev > 0:
+                                trs = math.ceil(remain / ev)
+                                st.caption(f"Faltam ~{trs} trades (EV: ${ev:.2f})")
+                            elif remain <= 0:
+                                st.success("Meta Atingida! 🚀")
+
+                    else: st.warning("Grupo vazio.")
 
     # ==============================================================================
     # 10. CONFIGURAR ATM (COMPLETO)
