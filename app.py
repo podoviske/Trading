@@ -751,7 +751,7 @@ if check_password():
                         elif fase_final == 3: meta_dinamica = 161000.0; status_lbl = "Fase 3: Escalada (Rumo aos 161k)"
                         else: meta_dinamica = 162000.0; status_lbl = "Fase 4: MODO SAQUE"
 
-                        # 3. CÁLCULO DO STOP ATUAL (FINAL) PARA OS CARDS
+                        # 3. CÁLCULO DO STOP ATUAL (PARA OS CARDS)
                         if not trades_g.empty:
                             temp = trades_g.sort_values('created_at').copy()
                             temp['equity'] = temp['resultado'].cumsum() + saldo_inicial_base
@@ -771,7 +771,7 @@ if check_password():
 
                         cg, cp = st.columns([2, 1])
 
-                        # 5. GRÁFICO (COM LINHA DE STOP DINÂMICA/ESCADINHA)
+                        # 5. GRÁFICO (LINHA SÓLIDA E TOOLTIP CORRIGIDO)
                         with cg:
                             st.markdown("##### 🌊 Curva do Grupo")
                             if not trades_g.empty:
@@ -792,14 +792,11 @@ if check_password():
                                     df_plot = pd.concat([pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
                                     x_col = 'eixo_x'
 
-                                # --- LÓGICA DA ESCADINHA (TRAILING HISTÓRICO) ---
-                                # 1. Define o HWM histórico (Cumulativo Máximo)
-                                # O .clip(lower=pico_manual) garante que se você setou um HWM alto, o gráfico respeita desde o inicio
+                                # --- CÁLCULO DA ESCADINHA (HWM DINÂMICO) ---
                                 hwm_start = max(saldo_inicial_base, pico_manual)
                                 df_plot['hwm_historico'] = df_plot['saldo_acc'].cummax().clip(lower=hwm_start)
                                 
-                                # 2. Calcula o Stop para cada ponto do gráfico
-                                # Regra: HWM - 5000, travado em 150.100
+                                # Calcula a linha de stop ponto a ponto
                                 df_plot['stop_dinamico'] = df_plot['hwm_historico'].apply(
                                     lambda x: 150100.0 if x >= 155100.0 else x - 5000.0
                                 )
@@ -808,11 +805,18 @@ if check_password():
                                 fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
                                 fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)', name="Saldo")
                                 
-                                # Adiciona a Linha de Stop (Agora é uma série de dados, não uma reta fixa)
-                                fig.add_scatter(x=df_plot[x_col], y=df_plot['stop_dinamico'], mode='lines', 
-                                              line=dict(color='#FF4B4B', width=2, dash='dash'), name='Trailing Stop')
+                                # ADICIONA LINHA DE STOP (SÓLIDA E VERMELHA)
+                                # O hovertemplate vai garantir que mostre o valor exato da linha
+                                fig.add_scatter(
+                                    x=df_plot[x_col], 
+                                    y=df_plot['stop_dinamico'], 
+                                    mode='lines', 
+                                    line=dict(color='#FF4B4B', width=2), # Linha Sólida (sem dash)
+                                    name='Trailing Stop',
+                                    hovertemplate='Trailing Stop: $%{y:,.2f}<extra></extra>' # Tooltip limpo
+                                )
                                 
-                                # Linhas de Meta
+                                # Linhas Fixas de Meta
                                 fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
                                 fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.3)
                                 
@@ -850,7 +854,7 @@ if check_password():
                                 st.success("Meta Concluída! 🚀")
 
                     else: st.warning("Grupo vazio.")
-
+                    
     # ==============================================================================
     # 10. CONFIGURAR ATM (COMPLETO)
     # ==============================================================================
