@@ -683,42 +683,7 @@ if check_password():
 
                         # --- GRÁFICO v153 COM FILL ---
                         with cg:
-                            with cg:
-                            
                             st.markdown("##### 🌊 Curva do Grupo")
-                            if not trades_g.empty:
-                                if vis_mode == "Diário":
-                                    trades_g['data'] = pd.to_datetime(trades_g['data'])
-                                    df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
-                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
-                                    df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
-                                    start_x = df_plot['eixo_x'].min() - timedelta(days=1)
-                                    df_plot = pd.concat([pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
-                                    x_col = 'eixo_x'
-                                else:
-                                    df_sorted = trades_g.sort_values(by=['data', 'created_at'])
-                                    df_sorted['seq'] = range(1, len(df_sorted) + 1)
-                                    df_plot = df_sorted.copy()
-                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
-                                    df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
-                                    df_plot = pd.concat([pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
-                                    x_col = 'eixo_x'
-
-                                fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
-                                fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)')
-                                fig.add_hline(y=stop_loss_atual, line_dash="dash", line_color="#FF4B4B", annotation_text="Trailing Stop")
-                                fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
-                                fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.3)
-                                
-                                # AJUSTE DE ZOOM: Foca entre o Stop e a Meta com uma pequena margem
-                                padding = 1000
-                                min_y = min(stop_loss_atual, df_plot['saldo_acc'].min()) - padding
-                                max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + padding
-                                fig.update_layout(yaxis_range=[min_y, max_y], showlegend=False)
-                                
-                                if vis_mode == "Trade a Trade": fig.update_xaxes(dtick=1)
-                                st.plotly_chart(fig, use_container_width=True)
-                            else: st.info("Sem trades neste grupo.")
 
                         # --- COMPONENTE DE PROGRESSO v153 ---
                         with cp:
