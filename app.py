@@ -755,9 +755,9 @@ if check_password():
                         if fase_final == 1:
                             meta_dinamica = 159000.0; status_grupo = "Fase 1: Teste (Alvo 9k)"
                         elif fase_final == 2:
-                            meta_dinamica = 155100.0; status_grupo = "Fase 2: Colchão PA (Alvo 5.1k)"
+                            meta_dinamica = 155100.0; status_grupo = "Fase 2: Colchão PA"
                         elif fase_final == 3:
-                            meta_dinamica = 161000.0; status_grupo = "Fase 3: Escalada (Rumo aos 161k)"
+                            meta_dinamica = 161000.0; status_grupo = "Fase 3: Dobrar/Respirar"
                         else:
                             meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE (> 161k)"
 
