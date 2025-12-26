@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v135", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v140", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -231,11 +231,12 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD
+    # 7. ABA: DASHBOARD (ATUALIZADA v140 - COM MOTOR DE RUÍNA BALSARA)
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
         df_raw = load_trades_db()
+        df_contas = load_contas_config()
         
         if not df_raw.empty:
             df = df_raw[df_raw['usuario'] == USER]
@@ -278,12 +279,16 @@ if check_password():
                     gross_loss = abs(losses['resultado'].sum())
                     pf = gross_profit / gross_loss if gross_loss > 0 else float('inf')
                     pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
-                    win_rate = (len(wins) / total_trades) * 100
+                    
+                    win_rate_dec = len(wins) / total_trades
+                    loss_rate_dec = len(losses) / total_trades
+                    win_rate = win_rate_dec * 100
+                    
                     avg_win = wins['resultado'].mean() if not wins.empty else 0
                     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
-                    payoff = avg_win / avg_loss if avg_loss > 0 else 0
-                    loss_rate = (len(losses) / total_trades)
-                    expectancy = ( (win_rate/100) * avg_win ) - ( loss_rate * avg_loss )
+                    payoff = avg_win / avg_loss if avg_loss > 0 else 1.0 # Evita div zero
+                    
+                    expectancy = ( win_rate_dec * avg_win ) - ( loss_rate_dec * avg_loss )
                     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
                     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
                     avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
@@ -315,6 +320,89 @@ if check_password():
                     with c10: card_metric("PTS MÉDIOS (LOSS)", f"{avg_pts_loss:.2f} pts", "", "#FF4B4B", "Média de pontos perdidos nos trades perdedores.")
                     with c11: card_metric("LOTE MÉDIO", f"{avg_lot:.1f}", "Contratos", "white", "Tamanho médio da sua mão nas operações.")
                     with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações no período.")
+
+                    # ==============================================================================
+                    # 🛡️ MOTOR DE CÁLCULO: RISCO DE RUÍNA v140 (FÓRMULA DE BALSARA)
+                    # ==============================================================================
+                    st.markdown("---")
+                    st.subheader(f"🛡️ Análise Estatística de Sobrevivência ({sel_grupo})")
+
+                    # 1. PEGAR O RISCO MÉDIO (A "UNIDADE" DE VIDA)
+                    # Prioridade: Coluna risco_fin (o que você planejou na boleta)
+                    if 'risco_fin' in df_filtered.columns and df_filtered['risco_fin'].gt(0).any():
+                        unidade_risco = df_filtered[df_filtered['risco_fin'] > 0]['risco_fin'].mean()
+                        fonte_risco = "Planejado (ATM)"
+                    else:
+                        unidade_risco = avg_loss if avg_loss > 0 else 300.0
+                        fonte_risco = "Histórico (Loss Médio)"
+
+                    # 2. CALCULAR O BUFFER REAL DO GRUPO (CAPITAL DE MANOBRA)
+                    total_buffer_real = 0.0
+                    contas_analisadas = 0
+                    if not df_contas.empty:
+                        contas_alvo = df_contas if sel_grupo == "Todos" else df_contas[df_contas['grupo_nome'] == sel_grupo]
+                        for _, row in contas_alvo.iterrows():
+                            # Lógica Apex: Se saldo > 155.100, stop trava em 150.100. Senão, é Saldo - 5000.
+                            saldo_c = float(row['saldo_inicial']) # Aqui deve ser o saldo atualizado na aba Contas
+                            if saldo_c >= 155100:
+                                stop_c = 150100
+                            else:
+                                # Na Fase 2, o stop persegue o pico. Simplificação segura: Saldo - 5000.
+                                stop_c = max(150000, saldo_c) - 5000
+                                if stop_c > 150100: stop_c = 150100
+                            
+                            total_buffer_real += max(0, saldo_c - stop_c)
+                            contas_analisadas += 1
+                    
+                    if total_buffer_real == 0: total_buffer_real = 5000.0 # Visualização padrão
+
+                    # 3. CÁLCULO DAS "VIDAS" (QUANTOS TIROS VOCÊ TEM?)
+                    vidas_u = total_buffer_real / unidade_risco if unidade_risco > 0 else 0
+
+                    # 4. A VANTAGEM MATEMÁTICA (EDGE / Z-SCORE)
+                    # Fórmula: (WinRate * Payoff) - LossRate
+                    z_edge = (win_rate_dec * payoff) - loss_rate_dec
+
+                    # 5. PROBABILIDADE DE RUÍNA (FÓRMULA DE BALSARA)
+                    if z_edge <= 0:
+                        ror_final = 100.0 # Sem vantagem, a quebra é certa.
+                    else:
+                        base_calc = (1 - z_edge) / (1 + z_edge)
+                        ror_final = (base_calc ** vidas_u) * 100
+                    
+                    ror_final = min(max(ror_final, 0.0), 100.0)
+
+                    # --- EXIBIÇÃO VISUAL ---
+                    k1, k2, k3, k4 = st.columns(4)
+                    
+                    with k1:
+                        lbl_z = "EDGE POSITIVO" if z_edge > 0 else "EDGE NEGATIVO"
+                        cor_z = "#00FF88" if z_edge > 0 else "#FF4B4B"
+                        card_metric("Z-SCORE (VANTAGEM)", f"{z_edge:.3f}", lbl_z, cor_z, "Sua vantagem matemática sobre o mercado. Acima de 0.0 é bom.")
+                    
+                    with k2:
+                        card_metric("BUFFER DO GRUPO", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Somadas", "#00FF88", "Capital total disponível até o Stop da Apex.")
+
+                    with k3:
+                        card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Médio: ${unidade_risco:.0f}", "white", "Quantos stops médios o grupo aguenta antes de quebrar.")
+
+                    with k4:
+                        if ror_final < 1: color_r, emo = "#00FF88", "🛡️"
+                        elif ror_final < 10: color_r, emo = "#FFFF00", "⚠️"
+                        else: color_r, emo = "#FF4B4B", "☠️"
+                        
+                        st.markdown(f"""
+                            <div style="background: #101010; border: 2px solid {color_r}; border-radius: 12px; padding: 15px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
+                                <div style="color: #888; font-size: 12px; font-weight: bold; text-transform: uppercase;">Risco de Ruína</div>
+                                <div style="color: {color_r}; font-size: 32px; font-weight: 900; margin: 5px 0;">{ror_final:.2f}%</div>
+                                <div style="font-size: 20px;">{emo}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                    if z_edge <= 0:
+                        st.error("🚨 **ALERTA CRÍTICO:** Sua estatística atual é perdedora no longo prazo. O Risco de Ruína é 100% independente do saldo. Aumente o Payoff ou a Taxa de Acerto.")
+                    elif ror_final > 20:
+                        st.warning("⚠️ **ALERTA DE RISCO:** Seu buffer está baixo para o tamanho do seu stop atual. Probabilidade alta de quebra.")
 
                     st.markdown("---")
 
@@ -484,7 +572,7 @@ if check_password():
     # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v135)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v135)")
+        st.title("💼 Gestão de Portfólio (v140)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
