@@ -596,7 +596,7 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
    # ==============================================================================
-    # 9. ABA CONTAS (v157 - CORREÇÃO TOTAL: ZOOM, INDENTAÇÃO, AUTO-FASE)
+    # 9. ABA CONTAS (v157 FINAL - SEM ERROS DE INDENTAÇÃO + ZOOM + AUTO-FASE)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio (v157)")
@@ -703,7 +703,7 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (AUTO-FASE + ZOOM + INDENTAÇÃO FIX) ---
+            # --- ABA 4: MONITOR DE PERFORMANCE (AUTO-FASE + ZOOM + VISUAL v153) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
@@ -721,12 +721,13 @@ if check_password():
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
                     
                     if not contas_g.empty:
+                        # 1. Cálculos de Base
                         saldo_inicial_base = contas_g['saldo_inicial'].min()
                         pico_previo_base = contas_g['pico_previo'].max() if 'pico_previo' in contas_g.columns else saldo_inicial_base
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # --- LÓGICA DE AUTO-FASE ---
+                        # 2. Lógica de AUTO-FASE (Overrides Banco de Dados)
                         if saldo_atual_base < 159000.0:
                             meta_dinamica = 159000.0; status_grupo = "Fase 1: Teste (Alvo 9k)"; fase_idx = 1
                         elif saldo_atual_base < 155100.0:
@@ -736,7 +737,7 @@ if check_password():
                         else:
                             meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE (> 161k)"; fase_idx = 4
 
-                        # --- TRAILING STOP v153 ---
+                        # 3. Trailing Stop Real Apex
                         if not trades_g.empty:
                             temp_t = trades_g.sort_values('created_at')
                             temp_t['equity'] = temp_t['resultado'].cumsum() + saldo_inicial_base
@@ -746,7 +747,7 @@ if check_password():
                         stop_calc = hwm - 5000.0
                         stop_val = 150100.0 if hwm >= 155100.0 else min(stop_calc, 150100.0)
 
-                        # --- CARDS ---
+                        # 4. Exibição de Cards
                         k1, k2, k3 = st.columns(3)
                         k1.metric("Saldo Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
                         k2.metric("Fase Automática", status_grupo)
@@ -755,7 +756,7 @@ if check_password():
 
                         cg, cp = st.columns([2, 1])
 
-                        # --- GRÁFICO (INDENTAÇÃO CORRIGIDA) ---
+                        # 5. GRÁFICO (COM ZOOM FIX E INDENTAÇÃO CORRETA)
                         with cg:
                             st.markdown("##### 🌊 Curva do Grupo")
                             if not trades_g.empty:
@@ -764,6 +765,8 @@ if check_password():
                                     df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
                                     df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
+                                    start_x = df_plot['eixo_x'].min() - timedelta(days=1)
+                                    df_plot = pd.concat([pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
                                     x_col = 'eixo_x'
                                 else:
                                     df_sorted = trades_g.sort_values('created_at')
@@ -771,6 +774,7 @@ if check_password():
                                     df_plot = df_sorted
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
                                     df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
+                                    df_plot = pd.concat([pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
                                     x_col = 'eixo_x'
 
                                 fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
@@ -787,9 +791,9 @@ if check_password():
                                 
                                 if vis_mode == "Trade a Trade": fig.update_xaxes(dtick=1)
                                 st.plotly_chart(fig, use_container_width=True)
-                            else: st.info("Sem dados.")
+                            else: st.info("Sem dados para exibir o gráfico.")
 
-                        # --- PROGRESSO ---
+                        # 6. Barra de Progresso
                         with cp:
                             st.markdown("##### 🎯 Progresso")
                             base_p = 150000.0
@@ -799,19 +803,24 @@ if check_password():
                             total_need = meta_dinamica - base_p
                             done = saldo_atual_base - base_p
                             
-                            pct = min(1.0, max(0.0, done / total_need)) if total_need > 0 else 1.0
+                            if total_need > 0:
+                                pct = min(1.0, max(0.0, done / total_need))
+                            else:
+                                pct = 1.0
+                                
                             st.write(f"Conclusão: {pct*100:.1f}%")
                             st.progress(pct)
                             
                             ev = trades_g['resultado'].mean() if not trades_g.empty else 0
                             remain = meta_dinamica - saldo_atual_base
+                            
                             if remain > 0 and ev > 0:
                                 trs = math.ceil(remain / ev)
                                 st.caption(f"Faltam ~{trs} trades (EV: ${ev:.2f})")
                             elif remain <= 0:
                                 st.success("Meta Atingida! 🚀")
 
-                    else: st.warning("Grupo vazio.")
+                    else: st.warning("Este grupo não possui contas cadastradas.")
 
     # ==============================================================================
     # 10. CONFIGURAR ATM (COMPLETO)
