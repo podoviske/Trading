@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v141", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v143", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -230,7 +230,7 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-# ==============================================================================
+    # ==============================================================================
     # 7. ABA: DASHBOARD (v143 - BLINDADA CONTRA SALDO ZERADO E AMOSTRAGEM BAIXA)
     # ==============================================================================
     if selected == "Dashboard":
@@ -592,7 +592,7 @@ if check_password():
     # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v135)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v135)")
+        st.title("💼 Gestão de Portfólio (v143)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
