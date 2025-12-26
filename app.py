@@ -723,15 +723,13 @@ if check_password():
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
                     
                     if not contas_g.empty:
-                        # 1. SETUP DE DADOS
+                        # 1. SETUP DE DADOS - RESPEITO AO BANCO
                         conta_ref = contas_g.iloc[0]
                         saldo_inicial_base = float(conta_ref['saldo_inicial'])
-                        # Pega o Pico Manual editado pelo usuário (Ponto de partida do HWM)
                         pico_manual = float(conta_ref.get('pico_previo', saldo_inicial_base))
-                        
-                        # Lógica de Fase Blindada
                         fase_str_db = str(conta_ref.get('fase_entrada', 'Fase 1'))
                         
+                        # Define a fase base do banco (não rebaixa)
                         if "Fase 4" in fase_str_db: fase_base = 4
                         elif "Fase 3" in fase_str_db: fase_base = 3
                         elif "Fase 2" in fase_str_db: fase_base = 2
@@ -740,18 +738,19 @@ if check_password():
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # 2. PROMOÇÃO DE FASE
+                        # Promoção automática (SÓ SOBE)
                         fase_final = fase_base
                         if fase_base == 1 and saldo_atual_base >= 159000.0: fase_final = 2
                         if fase_final == 2 and saldo_atual_base >= 155100.0: fase_final = 3
                         if fase_final == 3 and saldo_atual_base >= 161000.0: fase_final = 4
 
+                        # Definição de Metas
                         if fase_final == 1: meta_dinamica = 159000.0; status_lbl = "Fase 1: Teste (Alvo 9k)"
                         elif fase_final == 2: meta_dinamica = 155100.0; status_lbl = "Fase 2: Colchão PA (Alvo 5.1k)"
                         elif fase_final == 3: meta_dinamica = 161000.0; status_lbl = "Fase 3: Escalada (Rumo aos 161k)"
                         else: meta_dinamica = 162000.0; status_lbl = "Fase 4: MODO SAQUE"
 
-                        # 3. CÁLCULO DO STOP ATUAL (PARA OS CARDS)
+                        # 2. CÁLCULO DE STOP E HWM ATUAL
                         if not trades_g.empty:
                             temp = trades_g.sort_values('created_at').copy()
                             temp['equity'] = temp['resultado'].cumsum() + saldo_inicial_base
@@ -761,17 +760,18 @@ if check_password():
                         hwm_real_atual = max(pico_manual, max_equity, saldo_inicial_base)
                         stop_atual_val = 150100.0 if hwm_real_atual >= 155100.0 else hwm_real_atual - 5000.0
 
-                        # 4. CARDS
+                        # 3. CARDS DE INFORMAÇÃO
                         k1, k2, k3, k4 = st.columns(4)
                         k1.metric("Saldo Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
                         k2.metric("HWM (Topo)", f"${hwm_real_atual:,.2f}")
+                        
                         dist_stop = saldo_atual_base - stop_atual_val
                         k3.metric("Dist. Stop", f"${dist_stop:,.2f}", f"Stop: ${stop_atual_val:,.0f}", delta_color="inverse" if dist_stop < 1500 else "normal")
                         k4.metric("Fase Atual", status_lbl)
 
                         cg, cp = st.columns([2, 1])
 
-                        # 5. GRÁFICO (LINHA SÓLIDA E TOOLTIP CORRIGIDO)
+                        # 4. GRÁFICO (LINHA SÓLIDA)
                         with cg:
                             st.markdown("##### 🌊 Curva do Grupo")
                             if not trades_g.empty:
@@ -789,69 +789,55 @@ if check_password():
                                     df_plot = df_sorted
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
                                     df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
-                                    df_plot = pd.concat([pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
                                     x_col = 'eixo_x'
 
-                                # --- CÁLCULO DA ESCADINHA (HWM DINÂMICO) ---
                                 hwm_start = max(saldo_inicial_base, pico_manual)
-                                df_plot['hwm_historico'] = df_plot['saldo_acc'].cummax().clip(lower=hwm_start)
-                                
-                                # Calcula a linha de stop ponto a ponto
-                                df_plot['stop_dinamico'] = df_plot['hwm_historico'].apply(
-                                    lambda x: 150100.0 if x >= 155100.0 else x - 5000.0
-                                )
+                                df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax().clip(lower=hwm_start)
+                                df_plot['stop_hist'] = df_plot['hwm_hist'].apply(lambda x: 150100.0 if x >= 155100.0 else x - 5000.0)
 
-                                # Plotagem
                                 fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
                                 fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)', name="Saldo")
                                 
-                                # ADICIONA LINHA DE STOP (SÓLIDA E VERMELHA)
-                                # O hovertemplate vai garantir que mostre o valor exato da linha
-                                fig.add_scatter(
-                                    x=df_plot[x_col], 
-                                    y=df_plot['stop_dinamico'], 
-                                    mode='lines', 
-                                    line=dict(color='#FF4B4B', width=2), # Linha Sólida (sem dash)
-                                    name='Trailing Stop',
-                                    hovertemplate='Trailing Stop: $%{y:,.2f}<extra></extra>' # Tooltip limpo
-                                )
+                                fig.add_scatter(x=df_plot[x_col], y=df_plot['stop_hist'], mode='lines', 
+                                              line=dict(color='#FF4B4B', width=2), name='Trailing Stop',
+                                              hovertemplate='Stop: $%{y:,.2f}<extra></extra>')
                                 
-                                # Linhas Fixas de Meta
                                 fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
                                 fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.3)
                                 
-                                # Zoom Inteligente
-                                y_min = min(df_plot['stop_dinamico'].min(), df_plot['saldo_acc'].min()) - 1000
+                                y_min = min(df_plot['stop_hist'].min(), df_plot['saldo_acc'].min()) - 1000
                                 y_max = max(df_plot['saldo_acc'].max(), meta_dinamica) + 1000
                                 fig.update_layout(yaxis_range=[y_min, y_max], showlegend=True, legend=dict(orientation="h", y=1.1))
-                                
-                                if vis_mode == "Trade a Trade": fig.update_xaxes(dtick=1)
                                 st.plotly_chart(fig, use_container_width=True)
-                            else:
-                                st.info("Sem trades registrados.")
+                            else: st.info("Sem trades registrados.")
 
-                        # 6. PROGRESSO
+                        # 5. PROGRESSO DA FASE + EV
                         with cp:
                             st.markdown("##### 🎯 Progresso da Fase")
-                            base_prog = 150000.0
-                            if fase_final == 3: base_prog = 155100.0
-                            elif fase_final == 4: base_prog = 160000.0
+                            if fase_final <= 2: p_zero = 150000.0
+                            elif fase_final == 3: p_zero = 155100.0
+                            else: p_zero = 161000.0
                             
-                            total_need = meta_dinamica - base_prog
-                            done = saldo_atual_base - base_prog
+                            total_fase = meta_dinamica - p_zero
+                            ganho_real = saldo_atual_base - p_zero
                             
-                            if total_need > 0:
-                                pct = min(1.0, max(0.0, done / total_need))
-                            else: pct = 1.0
-                                
-                            st.write(f"Conclusão: {pct*100:.1f}%")
-                            st.progress(pct)
+                            percent = min(1.0, max(0.0, ganho_real / total_fase)) if total_fase > 0 else 1.0
+                            st.write(f"Conclusão: {percent*100:.1f}%")
+                            st.progress(percent)
                             
-                            falta = meta_dinamica - saldo_atual_base
-                            if falta > 0:
-                                st.caption(f"Faltam: ${falta:,.2f}")
+                            falta_money = meta_dinamica - saldo_atual_base
+                            
+                            # Cálculo EV e Trades Restantes
+                            ev_por_trade = trades_g['resultado'].mean() if not trades_g.empty else 0.0
+                            
+                            if falta_money > 0:
+                                if ev_por_trade > 0:
+                                    trades_restantes = math.ceil(falta_money / ev_por_trade)
+                                    st.write(f"Faltam **~{trades_restantes} trades** (EV: ${ev_por_trade:,.2f})")
+                                else:
+                                    st.write(f"Faltam: **${falta_money:,.2f}**")
                             else:
-                                st.success("Meta Concluída! 🚀")
+                                st.success("Meta Batida! 🚀")
 
                     else: st.warning("Grupo vazio.")
                     
