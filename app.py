@@ -414,7 +414,7 @@ if check_password():
                         prob_liquidez = ((1 - win_rate_dec) ** vidas_u) * 100
                         prob_liquidez = min(max(prob_liquidez, 0.0), 100.0)
                         
-                        display_ror = f"{prob_liquidez:.2f}%"
+                        display_ror = f"{prob_liquidez:.5f}%"
                         
                         if prob_liquidez < 10: color_r = "#00FF88"
                         elif prob_liquidez < 40: color_r = "#FFFF00"
