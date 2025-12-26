@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v143", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v144", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -231,7 +231,7 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v143 - BLINDADA CONTRA SALDO ZERADO E AMOSTRAGEM BAIXA)
+    # 7. ABA: DASHBOARD (v144 - TUDO RESTAURADO E CORRIGIDO)
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
@@ -291,17 +291,19 @@ if check_password():
                     payoff = avg_win / avg_loss if avg_loss > 0 else 1.0
                     
                     expectancy = ( win_rate_dec * avg_win ) - ( loss_rate_dec * avg_loss )
-                    avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
                     
-                    # Médias Técnicas
+                    # Médias Técnicas (Restauradas)
                     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
                     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
+                    avg_lot = df_filtered['lote'].mean() if not df_filtered.empty else 0
 
                     df_filtered = df_filtered.sort_values('created_at')
                     df_filtered['equity'] = df_filtered['resultado'].cumsum()
                     max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
 
-                    # --- EXIBIÇÃO DE CARDS ---
+                    # --- EXIBIÇÃO DE CARDS (3 LINHAS) ---
+                    
+                    # Linha 1: Financeiro Geral
                     st.markdown("##### 🏁 Desempenho (Período)")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B")
@@ -309,6 +311,7 @@ if check_password():
                     with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
                     with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B")
                     
+                    # Linha 2: Financeiro Médio
                     st.markdown("##### 💲 Risco & Retorno")
                     c5, c6, c7, c8 = st.columns(4)
                     with c5: card_metric("MÉDIA GAIN ($)", f"${avg_win:,.2f}", "", "#00FF88")
@@ -316,22 +319,31 @@ if check_password():
                     with c7: card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real", "white")
                     with c8: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B")
 
+                    # Linha 3: Técnica (RESTAURADA)
+                    st.markdown("##### 🎯 Performance Técnica")
+                    c9, c10, c11, c12 = st.columns(4)
+                    with c9: card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
+                    with c10: card_metric("PTS MÉDIOS (LOSS)", f"{avg_pts_loss:.2f} pts", "", "#FF4B4B")
+                    with c11: card_metric("LOTE MÉDIO", f"{avg_lot:.1f}", "Contratos", "white")
+                    with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white")
+
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO: RISCO DE RUÍNA v143 (CORREÇÃO DE SALDO ZERADO)
+                    # 🛡️ MOTOR DE CÁLCULO: RISCO DE RUÍNA v144 (CORREÇÃO FINAL)
                     # ==============================================================================
                     st.markdown("---")
                     st.subheader(f"🛡️ Análise Estatística de Sobrevivência ({sel_grupo})")
 
-                    # 1. UNIDADE DE RISCO
+                    # 1. UNIDADE DE RISCO (Intenção de Risco)
                     if 'risco_fin' in df_filtered.columns and df_filtered['risco_fin'].gt(0).any():
                         risk_planned = df_filtered[df_filtered['risco_fin'] > 0]['risco_fin'].mean()
                         risk_source = "Stop Médio (ATM)"
                     else:
                         risk_planned = avg_loss if avg_loss > 0 else 300.0
                         risk_source = "Histórico (Loss Médio)"
+                    
                     if risk_planned == 0: risk_planned = 300.0
 
-                    # 2. BUFFER REAL DO GRUPO (AGORA COM CORREÇÃO DE SALDO 0)
+                    # 2. BUFFER REAL DO GRUPO (Autocorreção Saldo 0)
                     total_buffer_real = 0.0
                     contas_analisadas = 0
                     if not df_contas.empty:
@@ -339,11 +351,8 @@ if check_password():
                         for _, row in contas_alvo.iterrows():
                             saldo_c = float(row['saldo_inicial']) 
                             
-                            # --- CORREÇÃO AUTOMÁTICA ---
-                            # Se a conta estiver com saldo 0 ou muito baixo (erro de cadastro), 
-                            # assumimos 150k para a simulação não quebrar.
-                            if saldo_c < 1000: 
-                                saldo_c = 150000.0
+                            # Correção se o user deixou saldo 0
+                            if saldo_c < 1000: saldo_c = 150000.0
                             
                             # Regra Apex
                             if saldo_c >= 155100: stop_c = 150100
@@ -355,7 +364,7 @@ if check_password():
                     
                     if total_buffer_real == 0: total_buffer_real = 5000.0 
 
-                    # 3. CÁLCULO DAS VIDAS REAIS
+                    # 3. CÁLCULO DAS VIDAS REAIS (Copy Trading Fix)
                     fator_replicacao = contas_analisadas if contas_analisadas > 0 else 1
                     risco_grupo_total = risk_planned * fator_replicacao
                     
@@ -364,32 +373,28 @@ if check_password():
                     # 4. Z-SCORE E RUÍNA
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
 
-                    # Lógica de Proteção v143 (Sem nan% e sem ilusão)
+                    # Lógica de Exibição Segura
                     msg_alerta = ""
                     display_ror = "---"
                     emo = "❓"
                     color_r = "gray"
 
                     if total_trades < 10:
-                        # Baixa Amostragem
-                        msg_alerta = "⚠️ Dados Insuficientes (<10 trades) para estatística confiável."
+                        msg_alerta = "⚠️ Dados Insuficientes (<10 trades)"
                         display_ror = "---"
                     elif z_edge <= 0:
-                        # Edge Negativo
                         ror_final = 100.0
                         display_ror = "100%"
                         color_r, emo = "#FF4B4B", "☠️"
-                        msg_alerta = "Estratégia com Expectativa Negativa."
+                        msg_alerta = "Expectativa Negativa"
                     elif z_edge >= 1.0:
-                        # Edge Perfeito (Z > 1)
                         ror_final = 0.0
                         display_ror = "< 0.01%"
                         color_r, emo = "#00FF88", "🛡️"
-                        msg_alerta = "Performance excepcional (Cuidado com amostragem)."
+                        msg_alerta = "Performance Excepcional"
                     else:
-                        # Cálculo Normal Balsara
                         base_calc = (1 - z_edge) / (1 + z_edge)
-                        base_calc = max(0.0, base_calc) # Proteção contra negativo
+                        base_calc = max(0.0, base_calc) 
                         ror_val = (base_calc ** vidas_u) * 100
                         ror_final = min(max(ror_val, 0.0), 100.0)
                         
@@ -398,7 +403,7 @@ if check_password():
                         elif ror_final < 20: color_r, emo = "#FFFF00", "⚠️"
                         else: color_r, emo = "#FF4B4B", "☠️"
 
-                    # --- EXIBIÇÃO VISUAL ---
+                    # --- EXIBIÇÃO VISUAL (4 CARDS) ---
                     k1, k2, k3, k4 = st.columns(4)
                     
                     with k1:
@@ -410,7 +415,6 @@ if check_password():
                         card_metric("BUFFER GRUPO", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Somadas", "#00FF88", "Oxigênio total disponível.")
 
                     with k3:
-                        # Mostra o Risco Calculado para o usuário entender o valor alto
                         cor_v = "#FF4B4B" if vidas_u < 4 else ("#FFFF00" if vidas_u < 8 else "white")
                         card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Total: ${risco_grupo_total:,.0f}", cor_v, f"Baseado no {risk_source} x {contas_analisadas} Contas")
 
@@ -592,7 +596,7 @@ if check_password():
     # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v135)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v143)")
+        st.title("💼 Gestão de Portfólio (v144)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
