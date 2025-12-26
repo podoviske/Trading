@@ -122,6 +122,9 @@ st.markdown("""
 # ==============================================================================
 # 3. SISTEMA DE LOGIN
 # ==============================================================================
+if "password_correct" not in st.session_state:
+    st.session_state["password_correct"] = False
+
 def check_password():
     def password_entered():
         u = st.session_state.get("username_input")
@@ -197,7 +200,7 @@ if check_password():
         try:
             res = supabase.table("contas_config").select("*").eq("usuario", USER).execute()
             df = pd.DataFrame(res.data)
-            # Garantia v152: Coluna pico_previo
+            # Garantia v152: Coluna pico_previo para o cálculo correto
             if not df.empty and 'pico_previo' not in df.columns:
                 df['pico_previo'] = df['saldo_inicial']
             return df
@@ -229,8 +232,8 @@ if check_password():
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         
-        menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
-        icons = ["grid", "currency-dollar", "gear", "clock"]
+        menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Contas", "Histórico"]
+        icons = ["grid", "currency-dollar", "gear", "briefcase", "clock"]
         
         if ROLE in ['master', 'admin']:
             menu.insert(2, "Contas")
@@ -308,17 +311,16 @@ if check_password():
                     
                     expectancy = ( win_rate_dec * avg_win ) - ( loss_rate_dec * avg_loss )
                     
-                    # --- MÉDIAS COMPORTAMENTAIS (v152) ---
-                    # Calcula o comportamento REAL do período filtrado para usar no risco
+                    # --- MÉDIAS COMPORTAMENTAIS (v152 - Reais do Filtro) ---
                     lote_medio_real = df_filtered['lote'].mean() if not df_filtered.empty else 0
                     
                     # Stop médio real (em pontos)
                     if not losses.empty:
                         pts_loss_medio_real = abs(losses['pts_medio'].mean())
                     else:
-                        pts_loss_medio_real = 15.0 # Valor base se não houver losses
+                        pts_loss_medio_real = 15.0 # Valor base
                     
-                    # Ativo de referência (para saber o multiplicador)
+                    # Ativo de referência
                     ativo_referencia = df_filtered['ativo'].iloc[-1] if not df_filtered.empty else "MNQ"
                     
                     # Médias Técnicas
@@ -348,7 +350,7 @@ if check_password():
                             # [v152] Pega o pico prévio (check-in)
                             pico_previo = float(row.get('pico_previo', saldo_entrada))
                             
-                            # Filtra trades totais para saber saldo atual real
+                            # Filtra trades totais (não filtrados por data) para saber saldo atual real
                             trades_deste_grupo = df[df['grupo_vinculo'] == row['grupo_nome']].sort_values('created_at')
                             
                             if not trades_deste_grupo.empty:
@@ -369,7 +371,6 @@ if check_password():
                             else:
                                 trailing_stop = pico_real - 5000.0
                             
-                            # Buffer disponível nesta conta
                             buffer_disponivel = max(0, saldo_agora - trailing_stop)
                             
                             total_buffer_real += buffer_disponivel
@@ -384,11 +385,9 @@ if check_password():
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
                     # 4. FÓRMULA LSP (Loss Sequence Probability - v152)
-                    # "Qual a chance de quebrar dada a minha munição atual?"
-                    # P = (1 - WinRate) ^ Vidas
-                    
                     msg_alerta = ""
                     prob_liquidez = 0.0
+                    display_ror = "---"
                     
                     if total_trades < 5:
                         msg_alerta = "⚠️ Baixa Amostragem"
@@ -405,7 +404,7 @@ if check_password():
                         color_r = "#FF4B4B"
                         msg_alerta = "Sem Vitórias"
                     else:
-                        # Fórmula Exponencial de Morte Súbita
+                        # Fórmula Exponencial de Morte Súbita: P = (1 - WR)^Vidas
                         prob_liquidez = ((1 - win_rate_dec) ** vidas_u) * 100
                         prob_liquidez = min(max(prob_liquidez, 0.0), 100.0)
                         
@@ -454,7 +453,6 @@ if check_password():
                     st.markdown("---")
                     st.subheader(f"🛡️ Análise de Sobrevivência Apex ({sel_grupo})")
                     
-                    # Cálculo do Z-Score clássico apenas para referência
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
 
                     k1, k2, k3, k4 = st.columns(4)
@@ -517,7 +515,7 @@ if check_password():
         else: st.warning("Banco de dados vazio.")
 
     # ==============================================================================
-    # 8. REGISTRAR TRADE (MANTIDO DO BACKUP v148 - SEM FORM PARA INTERATIVIDADE)
+    # 8. REGISTRAR TRADE (MANTIDO 100% v148 - SEM FORM PARA PARCIAIS)
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
@@ -536,7 +534,8 @@ if check_password():
                 if not df_grupos.empty:
                     lista_grupos = sorted(list(df_grupos['nome'].unique()))
                     grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
-                else: st.caption("⚠️ Crie grupos na aba Contas.")
+                else:
+                    st.caption("⚠️ Crie grupos na aba Contas.")
         
         if atm_sel != "Manual":
             config = atm_db[atm_sel]
@@ -544,11 +543,11 @@ if check_password():
             stp_default = float(config["stop"])
             try:
                 parciais_pre = json.loads(config["parciais"]) if isinstance(config["parciais"], str) else config["parciais"]
-            except: parciais_pre = []
+            except:
+                parciais_pre = []
         else:
             lt_default = 1; stp_default = 0.0; parciais_pre = []
 
-        # Interface Principal (Sem Form para não quebrar botões de parciais)
         f1, f2, f3 = st.columns([1, 1, 2.5])
         with f1:
             dt = st.date_input("Data", datetime.now().date())
@@ -589,7 +588,8 @@ if check_password():
             if lt != aloc:
                 diff = lt - aloc
                 st.markdown(f'<div class="piscante-erro">{"FALTAM" if diff > 0 else "SOBRAM"} {abs(diff)} CONTRATOS</div>', unsafe_allow_html=True)
-            else: st.success("✅ Posição Sincronizada")
+            else:
+                st.success("✅ Posição Sincronizada")
 
         st.divider()
         col_gain, col_loss = st.columns(2)
@@ -622,10 +622,11 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (v152 - COM CHECK-IN E MONITOR RESTAURADO)
+    # 9. ABA CONTAS (v152 - COM MONITOR DE PERFORMANCE RESTAURADO DETALHADAMENTE)
     # ==============================================================================
     elif selected == "Contas":
         st.title("💼 Gestão de Portfólio (v152)")
+        
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
         else:
@@ -633,18 +634,21 @@ if check_password():
             
             # --- ABA 1: GRUPOS ---
             with t1:
+                st.subheader("Nova Estrutura de Contas")
                 with st.form("form_grupo"):
                     novo_grupo = st.text_input("Nome do Grupo (Ex: Apex 5 Contas - A)")
                     if st.form_submit_button("Criar Grupo"):
                         if novo_grupo:
                             supabase.table("grupos_config").insert({"usuario": USER, "nome": novo_grupo}).execute(); st.rerun()
+                        else: st.warning("Digite um nome.")
                 st.divider()
+                st.write("Grupos Existentes:")
                 df_g = load_grupos_config()
                 if not df_g.empty:
-                    for _, row in df_g.iterrows():
+                    for idx, row in df_g.iterrows():
                         c1, c2 = st.columns([4, 1])
                         c1.info(f"📂 {row['nome']}")
-                        if c2.button("X", key=f"del_g_{row['id']}"):
+                        if c2.button("Excluir", key=f"del_g_{row['id']}"):
                             supabase.table("grupos_config").delete().eq("id", row['id']).execute(); st.rerun()
 
             # --- ABA 2: CADASTRAR CONTA (COM CHECK-IN PICO PREVIO) ---
@@ -657,7 +661,7 @@ if check_password():
                         g_sel = col_a.selectbox("Grupo", sorted(df_g['nome'].unique()))
                         c_id = col_b.text_input("Identificador (Ex: PA-001)")
                         s_ini = col_a.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
-                        # [NOVO v152] Campo para o Check-in do Trailing Stop
+                        # [NOVO v152]
                         p_pre = col_b.number_input("Pico Máximo já Atingido (HWM)", value=150000.0, step=100.0, help="Fundamental para calcular o stop Apex")
                         
                         if st.form_submit_button("Cadastrar Conta"):
@@ -667,25 +671,42 @@ if check_password():
                                         "usuario": USER, "grupo_nome": g_sel, "conta_identificador": c_id,
                                         "saldo_inicial": s_ini, "pico_previo": p_pre
                                     }).execute()
-                                    st.success("Conta cadastrada com sucesso!"); time.sleep(1); st.rerun()
+                                    st.success("Conta cadastrada com Check-in!"); time.sleep(1); st.rerun()
                                 except Exception as e: st.error(f"Erro: {e}")
                 else: st.warning("Crie um grupo antes.")
 
             # --- ABA 3: VISÃO GERAL ---
             with t3:
+                st.subheader("📋 Acompanhamento de Saldo Individual")
                 df_c = load_contas_config()
+                df_t = load_trades_db()
+                if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
+                
                 if not df_c.empty:
-                    st.dataframe(df_c[["grupo_nome", "conta_identificador", "saldo_inicial", "pico_previo"]], use_container_width=True)
-                    st.divider()
-                    for _, row in df_c.iterrows():
-                        with st.expander(f"{row['conta_identificador']} ({row['grupo_nome']})"):
-                            if st.button("Excluir Conta", key=f"del_c_{row['id']}"):
-                                supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
-                else: st.info("Nenhuma conta cadastrada.")
+                    grupos_unicos = sorted(df_c['grupo_nome'].unique())
+                    for grp in grupos_unicos:
+                        with st.expander(f"📂 {grp}", expanded=True):
+                            trades_grp = df_t[df_t['grupo_vinculo'] == grp] if not df_t.empty else pd.DataFrame()
+                            lucro_grupo = trades_grp['resultado'].sum() if not trades_grp.empty else 0.0
+                            contas_g = df_c[df_c['grupo_nome'] == grp]
+                            for _, row in contas_g.iterrows():
+                                saldo_atual = float(row['saldo_inicial']) + lucro_grupo
+                                delta = saldo_atual - float(row['saldo_inicial'])
+                                cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
+                                c_info, c_edit, c_del = st.columns([3, 0.5, 0.5])
+                                c_info.markdown(f"<div style='background-color: #222; padding: 10px; border-radius: 5px; margin-bottom: 5px;'><div>💳 <b>{row['conta_identificador']}</b></div><div style='font-size: 1.2em; margin-top: 5px;'>💰 Saldo: <b>${saldo_atual:,.2f}</b> (<span style='color:{cor_delta}'>${delta:+,.2f}</span>)</div></div>", unsafe_allow_html=True)
+                                with c_edit.popover("⚙️"):
+                                    st.write(f"Editar {row['conta_identificador']}")
+                                    n_saldo = st.number_input("Novo Saldo Inicial", value=float(row['saldo_inicial']), key=f"ns_{row['id']}")
+                                    if st.button("Salvar", key=f"save_{row['id']}"):
+                                        supabase.table("contas_config").update({"saldo_inicial": n_saldo}).eq("id", row['id']).execute(); st.rerun()
+                                if c_del.button("🗑️", key=f"del_acc_{row['id']}"):
+                                    supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
+                else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (RESTAURADO E ATUALIZADO) ---
+            # --- ABA 4: MONITOR DE PERFORMANCE (RESTAURADO E EXPANDIDO v152) ---
             with t4:
-                st.subheader("🚀 Monitor de Performance Apex")
+                st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
@@ -698,14 +719,15 @@ if check_password():
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
                     
                     if not contas_g.empty:
-                        # Base de Cálculo v152: Considera Pico Prévio para o Gráfico
+                        # Base de Cálculo: Pega a conta com menor saldo para ser conservador
                         saldo_inicial_base = contas_g['saldo_inicial'].min()
+                        # [v152] Pega o maior pico prévio registrado para blindar o gráfico
                         pico_previo_base = contas_g['pico_previo'].max() if 'pico_previo' in contas_g.columns else saldo_inicial_base
                         
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # Definição de Fases
+                        # Definição de Fases (COMPLETA)
                         if saldo_atual_base < 159000.0:
                             meta = 159000.0; fase = "Fase 1: Passar no Teste"; idx_f = 1
                         elif saldo_atual_base < 155100.0:
@@ -722,7 +744,7 @@ if check_password():
                         
                         st.markdown("---")
                         
-                        # Barra de Progresso
+                        # Barra de Progresso da Fase
                         base_prog = 150000.0
                         if idx_f == 3: base_prog = 155100.0
                         elif idx_f == 4: base_prog = 160000.0
@@ -731,7 +753,7 @@ if check_password():
                         st.write(f"Progresso da Fase: {prog*100:.1f}%")
                         st.progress(prog)
                         
-                        # EV e Trades Restantes
+                        # Cálculo EV para Trades Restantes (DETALHADO)
                         if not trades_g.empty:
                             ev_por_trade = trades_g['resultado'].mean()
                             falta = meta - saldo_atual_base
@@ -739,7 +761,7 @@ if check_password():
                                 trades_restantes = math.ceil(falta / ev_por_trade)
                                 st.info(f"💡 Estimativa: Faltam ~{trades_restantes} trades para a meta (EV: ${ev_por_trade:.2f})")
                         
-                        # Gráfico de Evolução com HWM e Stop Apex Real
+                        # Gráfico de Evolução (Global do Grupo com HWM v152)
                         if not trades_g.empty:
                             trades_g = trades_g.sort_values('created_at')
                             trades_g['seq'] = range(1, len(trades_g)+1)
