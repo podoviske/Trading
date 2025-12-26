@@ -599,7 +599,7 @@ if check_password():
     # 9. ABA CONTAS (v157 FINAL - SEM ERROS DE INDENTAÇÃO + ZOOM + AUTO-FASE)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v157)")
+        st.title("💼 Gestão de Portfólio (v159)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -705,7 +705,7 @@ if check_password():
 
             # --- ABA 4: MONITOR DE PERFORMANCE (LÓGICA HÍBRIDA - CORREÇÃO DE REBAIXAMENTO) ---
             with t4:
-                st.subheader("🚀 Monitor de Performance (Apex 150k)")
+                st.subheader("🚀 Monitor de Performance")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
