@@ -703,7 +703,7 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (AUTO-FASE + ZOOM + VISUAL v153) ---
+            # --- ABA 4: MONITOR DE PERFORMANCE (LÓGICA HÍBRIDA - CORREÇÃO DE REBAIXAMENTO) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
@@ -723,26 +723,52 @@ if check_password():
                     if not contas_g.empty:
                         # 1. Cálculos de Base
                         saldo_inicial_base = contas_g['saldo_inicial'].min()
+                        # Garante que pico_previo exista, senão usa o saldo inicial
                         pico_previo_base = contas_g['pico_previo'].max() if 'pico_previo' in contas_g.columns else saldo_inicial_base
+                        
+                        # Pega a fase cadastrada no banco da primeira conta do grupo
+                        fase_banco_str = contas_g.iloc[0]['fase_entrada']
+                        
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # 2. Lógica de AUTO-FASE (Overrides Banco de Dados)
-                        if saldo_atual_base < 159000.0:
-                            meta_dinamica = 159000.0; status_grupo = "Fase 1: Teste (Alvo 9k)"; fase_idx = 1
-                        elif saldo_atual_base < 155100.0:
-                            meta_dinamica = 155100.0; status_grupo = "Fase 2: Colchão PA (Alvo 5.1k)"; fase_idx = 2
-                        elif saldo_atual_base < 161000.0:
-                            meta_dinamica = 161000.0; status_grupo = "Fase 3: Escalada (Rumo aos 161k)"; fase_idx = 3
+                        # 2. Lógica HÍBRIDA: O Banco define o PISO. O Saldo só PROMOVE.
+                        # Converte string do banco para número
+                        if "Fase 1" in fase_banco_str: idx_base = 1
+                        elif "Fase 2" in fase_banco_str: idx_base = 2
+                        elif "Fase 3" in fase_banco_str: idx_base = 3
+                        else: idx_base = 4
+                        
+                        fase_final = idx_base
+                        
+                        # Regras de Promoção (Só sobe, nunca desce)
+                        # Se começou na 1 e passou de 159k -> vai pra 2
+                        if idx_base == 1 and saldo_atual_base >= 159000.0: fase_final = 2
+                        
+                        # Se já está na 2 (pelo banco ou promoção) e passou de 155.1k -> vai pra 3
+                        if fase_final == 2 and saldo_atual_base >= 155100.0: fase_final = 3
+                        
+                        # Se já está na 3 e passou de 161k -> vai pra 4
+                        if fase_final == 3 and saldo_atual_base >= 161000.0: fase_final = 4
+                        
+                        # Definição de Variáveis Visuais
+                        if fase_final == 1:
+                            meta_dinamica = 159000.0; status_grupo = "Fase 1: Teste (Alvo 9k)"
+                        elif fase_final == 2:
+                            meta_dinamica = 155100.0; status_grupo = "Fase 2: Colchão PA (Alvo 5.1k)"
+                        elif fase_final == 3:
+                            meta_dinamica = 161000.0; status_grupo = "Fase 3: Escalada (Rumo aos 161k)"
                         else:
-                            meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE (> 161k)"; fase_idx = 4
+                            meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE (> 161k)"
 
-                        # 3. Trailing Stop Real Apex
+                        # 3. Trailing Stop Real Apex (Respeita o HWM do Banco + Lucro)
                         if not trades_g.empty:
                             temp_t = trades_g.sort_values('created_at')
                             temp_t['equity'] = temp_t['resultado'].cumsum() + saldo_inicial_base
+                            # O HWM considera o maior valor entre: Saldo Inicial, Histórico de Trades e Pico Prévio Manual
                             hwm = max(saldo_inicial_base, temp_t['equity'].max(), pico_previo_base)
-                        else: hwm = max(saldo_inicial_base, pico_previo_base)
+                        else: 
+                            hwm = max(saldo_inicial_base, pico_previo_base)
 
                         stop_calc = hwm - 5000.0
                         stop_val = 150100.0 if hwm >= 155100.0 else min(stop_calc, 150100.0)
@@ -750,13 +776,16 @@ if check_password():
                         # 4. Exibição de Cards
                         k1, k2, k3 = st.columns(3)
                         k1.metric("Saldo Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
-                        k2.metric("Fase Automática", status_grupo)
-                        if fase_idx == 4: k3.metric("Saque Disponível", f"${max(0, saldo_atual_base - 161000):,.2f}", "Zona de Lucro")
-                        else: k3.metric("Falta para Meta", f"${max(0, meta_dinamica - saldo_atual_base):,.2f}", f"Alvo: ${meta_dinamica:,.0f}")
+                        k2.metric("Status (Híbrido)", status_grupo)
+                        
+                        if fase_final == 4: 
+                            k3.metric("Saque Disponível", f"${max(0, saldo_atual_base - 161000):,.2f}", "Zona de Lucro")
+                        else: 
+                            k3.metric("Falta para Meta", f"${max(0, meta_dinamica - saldo_atual_base):,.2f}", f"Alvo: ${meta_dinamica:,.0f}")
 
                         cg, cp = st.columns([2, 1])
 
-                        # 5. GRÁFICO (COM ZOOM FIX E INDENTAÇÃO CORRETA)
+                        # 5. GRÁFICO
                         with cg:
                             st.markdown("##### 🌊 Curva do Grupo")
                             if not trades_g.empty:
@@ -783,7 +812,7 @@ if check_password():
                                 fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
                                 fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.3)
                                 
-                                # ZOOM INTELIGENTE
+                                # Zoom Inteligente
                                 padding = 1000
                                 min_y = min(stop_val, df_plot['saldo_acc'].min()) - padding
                                 max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + padding
@@ -791,22 +820,27 @@ if check_password():
                                 
                                 if vis_mode == "Trade a Trade": fig.update_xaxes(dtick=1)
                                 st.plotly_chart(fig, use_container_width=True)
-                            else: st.info("Sem dados para exibir o gráfico.")
+                            else: 
+                                # Gráfico vazio para visualização inicial
+                                fig = go.Figure()
+                                fig.add_hline(y=stop_val, line_dash="dash", line_color="#FF4B4B", annotation_text="Stop")
+                                fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
+                                fig.update_layout(template="plotly_dark", yaxis_range=[stop_val-1000, meta_dinamica+1000], title="Aguardando Trades...")
+                                st.plotly_chart(fig, use_container_width=True)
 
                         # 6. Barra de Progresso
                         with cp:
                             st.markdown("##### 🎯 Progresso")
                             base_p = 150000.0
-                            if fase_idx == 3: base_p = 155100.0
-                            elif fase_idx == 4: base_p = 160000.0
+                            if fase_final == 3: base_p = 155100.0
+                            elif fase_final == 4: base_p = 160000.0
                             
                             total_need = meta_dinamica - base_p
                             done = saldo_atual_base - base_p
                             
                             if total_need > 0:
                                 pct = min(1.0, max(0.0, done / total_need))
-                            else:
-                                pct = 1.0
+                            else: pct = 1.0
                                 
                             st.write(f"Conclusão: {pct*100:.1f}%")
                             st.progress(pct)
