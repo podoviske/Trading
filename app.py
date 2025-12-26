@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v140", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v141", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -231,7 +231,7 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (ATUALIZADA v140 - COM MOTOR DE RUÍNA BALSARA)
+    # 7. ABA: DASHBOARD (ATUALIZADA v141 - CORREÇÃO DE RISCO COPY TRADING)
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
@@ -322,7 +322,7 @@ if check_password():
                     with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações no período.")
 
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO: RISCO DE RUÍNA v140 (FÓRMULA DE BALSARA)
+                    # 🛡️ MOTOR DE CÁLCULO: RISCO DE RUÍNA v141 (COPY TRADING FIX)
                     # ==============================================================================
                     st.markdown("---")
                     st.subheader(f"🛡️ Análise Estatística de Sobrevivência ({sel_grupo})")
@@ -357,7 +357,14 @@ if check_password():
                     if total_buffer_real == 0: total_buffer_real = 5000.0 # Visualização padrão
 
                     # 3. CÁLCULO DAS "VIDAS" (QUANTOS TIROS VOCÊ TEM?)
-                    vidas_u = total_buffer_real / unidade_risco if unidade_risco > 0 else 0
+                    # CORREÇÃO COPY TRADING: 
+                    # Se tenho 5 contas, meu risco não é $300, é $300 * 5 = $1500.
+                    fator_replicacao = contas_analisadas if contas_analisadas > 0 else 1
+                    
+                    # Risco Real do Grupo = Risco Unitário x Número de Contas
+                    risco_real_grupo = unidade_risco * fator_replicacao
+                    
+                    vidas_u = total_buffer_real / risco_real_grupo if risco_real_grupo > 0 else 0
 
                     # 4. A VANTAGEM MATEMÁTICA (EDGE / Z-SCORE)
                     # Fórmula: (WinRate * Payoff) - LossRate
@@ -384,7 +391,7 @@ if check_password():
                         card_metric("BUFFER DO GRUPO", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Somadas", "#00FF88", "Capital total disponível até o Stop da Apex.")
 
                     with k3:
-                        card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Médio: ${unidade_risco:.0f}", "white", "Quantos stops médios o grupo aguenta antes de quebrar.")
+                        card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Grupo: ${risco_real_grupo:,.0f}", "white", "Quantos stops cheios o grupo (Copy Trading) aguenta.")
 
                     with k4:
                         if ror_final < 1: color_r, emo = "#00FF88", "🛡️"
@@ -572,7 +579,7 @@ if check_password():
     # 9. ABA CONTAS (MONITOR DE PERFORMANCE INTELLIGENT v135)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v140)")
+        st.title("💼 Gestão de Portfólio (v135)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
