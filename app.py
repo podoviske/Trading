@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v150", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v151", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -113,24 +113,48 @@ if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
 
 def check_password():
-    if not st.session_state["password_correct"]:
-        _, col, _ = st.columns([1, 2, 1])
-        with col:
-            st.title("EvoTrade Terminal")
-            u = st.text_input("Usuário")
-            p = st.text_input("Senha", type="password")
-            if st.button("Acessar"):
-                res = supabase.table("users").select("*").eq("username", u).eq("password", p).execute()
-                if res.data:
-                    st.session_state["password_correct"] = True
-                    st.session_state["logged_user"] = u
-                    st.session_state["user_role"] = res.data[0].get('role', 'user')
-                    st.rerun()
-                else: st.error("Credenciais Inválidas")
+    def password_entered():
+        u = st.session_state.get("username_input")
+        p = st.session_state.get("password_input")
+        try:
+            res = supabase.table("users").select("*").eq("username", u).eq("password", p).execute()
+            if res.data:
+                st.session_state["password_correct"] = True
+                st.session_state["logged_user"] = u
+                st.session_state["user_role"] = res.data[0].get('role', 'user')
+            else:
+                st.session_state["password_correct"] = False
+        except Exception as e:
+            st.error(f"Erro de conexão: {e}")
+
+    if "password_correct" not in st.session_state or not st.session_state["password_correct"]:
+        st.markdown("""
+            <style>
+            .login-container {
+                max-width: 400px; margin: 50px auto; padding: 30px;
+                background-color: #161616; border-radius: 15px;
+                border: 1px solid #B20000; text-align: center;
+            }
+            .logo-main { color: #B20000; font-size: 50px; font-weight: 900; }
+            .logo-sub { color: white; font-size: 35px; font-weight: 700; margin-top: -15px; }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        _, col_login, _ = st.columns([1, 2, 1])
+        with col_login:
+            st.markdown('<div class="login-container"><div class="logo-main">EVO</div><div class="logo-sub">TRADE</div>', unsafe_allow_html=True)
+            st.write("---")
+            st.text_input("Usuário", key="username_input")
+            st.text_input("Senha", type="password", key="password_input")
+            st.button("Acessar Terminal", on_click=password_entered, use_container_width=True)
+            if st.session_state.get("password_correct") == False:
+                st.error("😕 Credenciais incorretas.")
+            st.markdown('</div>', unsafe_allow_html=True)
         return False
     return True
 
 if check_password():
+    # --- 4. CONSTANTES E USER ---
     MULTIPLIERS = {"NQ": 20, "MNQ": 2}
     USER = st.session_state["logged_user"]
     ROLE = st.session_state.get("user_role", "user")
@@ -196,8 +220,8 @@ if check_password():
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         
-        menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Contas", "Histórico"]
-        icons = ["grid", "currency-dollar", "gear", "briefcase", "clock"]
+        menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
+        icons = ["grid", "currency-dollar", "gear", "clock"]
         
         if ROLE in ['master', 'admin']:
             menu.insert(2, "Contas")
@@ -214,10 +238,10 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v150 - MOTOR PRECISO DE PERFORMANCE E BUFFER)
+    # 7. ABA: DASHBOARD (v151 - MOTOR HÍBRIDO COMPORTAMENTAL + HWM)
     # ==============================================================================
     if selected == "Dashboard":
-        st.title("📊 Central de Controle (v150)")
+        st.title("📊 Central de Controle")
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
@@ -280,7 +304,7 @@ if check_password():
                     pts_loss_medio_real = abs(losses['pts_medio'].mean()) if not losses.empty else 15.0 # Fallback 15 pts se nao tiver loss
                     ativo_referencia = df_filtered['ativo'].iloc[-1] # Pega o ativo mais recente pra saber multiplicador
                     
-                    # --- EXIBIÇÃO DE CARDS (3 LINHAS) ---
+                    # --- EXIBIÇÃO DE CARDS (3 LINHAS RESTAURADAS) ---
                     st.markdown("##### 🏁 Desempenho no Período Selecionado")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B")
@@ -301,7 +325,7 @@ if check_password():
                     with c8: card_metric("DRAWDOWN PERÍODO", f"${max_dd:,.2f}", "Pior Queda Filtrada", "#FF4B4B")
 
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO: RISCO DE RUÍNA v150 (COMPORTAMENTO x REALIDADE APEX)
+                    # 🛡️ MOTOR DE CÁLCULO: RISCO DE RUÍNA v151 (COMPORTAMENTO x REALIDADE APEX)
                     # ==============================================================================
                     st.markdown("---")
                     st.subheader(f"🛡️ Sobrevivência Apex ({sel_grupo})")
@@ -426,12 +450,21 @@ if check_password():
                         ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
+                    
+                    # Performance por Dia da Semana (Restaurado)
+                    st.markdown("### 📅 Performance por Dia da Semana")
+                    df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
+                    dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
+                    df_filtered['dia_pt'] = df_filtered['dia_semana'].map(dias_pt)
+                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
+                    fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+                    st.plotly_chart(fig_day, use_container_width=True)
 
             else: st.info("Sem operações registradas para este usuário.")
         else: st.warning("Banco de dados vazio.")
 
     # ==============================================================================
-    # 8. REGISTRAR TRADE (COMPLETO)
+    # 8. REGISTRAR TRADE (COMPLETO COM PARCIAIS)
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
@@ -535,10 +568,10 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (v150 - COM MONITOR DE PERFORMANCE RESTAURADO)
+    # 9. ABA CONTAS (v151 - MONITOR DE PERFORMANCE COMPLETO RESTAURADO)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v150)")
+        st.title("💼 Gestão de Portfólio (v151)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -594,7 +627,7 @@ if check_password():
                                 supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
                 else: st.info("Nenhuma conta cadastrada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (RESTAURADO) ---
+            # --- ABA 4: MONITOR DE PERFORMANCE (RESTAURADO COMPLETO) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance Apex")
                 df_c = load_contas_config()
@@ -616,7 +649,7 @@ if check_password():
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # Definição de Fases
+                        # Definição de Fases (LÓGICA DETALHADA RESTAURADA)
                         if saldo_atual_base < 159000.0:
                             meta = 159000.0; fase = "Fase 1: Passar no Teste"; idx_f = 1
                         elif saldo_atual_base < 155100.0:
@@ -641,6 +674,14 @@ if check_password():
                         prog = min(1.0, max(0.0, (saldo_atual_base - base_prog) / (meta - base_prog))) if meta > base_prog else 1.0
                         st.write(f"Progresso da Fase: {prog*100:.1f}%")
                         st.progress(prog)
+                        
+                        # Cálculo EV para Trades Restantes (RESTAURADO)
+                        if not trades_g.empty:
+                            ev_por_trade = trades_g['resultado'].mean()
+                            falta = meta - saldo_atual_base
+                            if falta > 0 and ev_por_trade > 0:
+                                trades_restantes = math.ceil(falta / ev_por_trade)
+                                st.info(f"💡 Estimativa: Faltam ~{trades_restantes} trades para a meta (EV: ${ev_por_trade:.2f})")
                         
                         # Gráfico de Evolução (Global do Grupo)
                         if not trades_g.empty:
