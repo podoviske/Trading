@@ -703,9 +703,11 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (LÓGICA HÍBRIDA - CORREÇÃO DE REBAIXAMENTO) ---
+            # ==============================================================================
+            # ABA 4: MONITOR DE PERFORMANCE (v160 - TRAILING STOP CORRIGIDO)
+            # ==============================================================================
             with t4:
-                st.subheader("🚀 Monitor de Performance")
+                st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
@@ -721,67 +723,63 @@ if check_password():
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
                     
                     if not contas_g.empty:
-                        # 1. Cálculos de Base
-                        saldo_inicial_base = contas_g['saldo_inicial'].min()
-                        # Garante que pico_previo exista, senão usa o saldo inicial
-                        pico_previo_base = contas_g['pico_previo'].max() if 'pico_previo' in contas_g.columns else saldo_inicial_base
-                        
-                        # Pega a fase cadastrada no banco da primeira conta do grupo
-                        fase_banco_str = contas_g.iloc[0]['fase_entrada']
+                        # 1. CÁLCULOS DE BASE (Considera a 1ª conta do grupo como referência)
+                        conta_ref = contas_g.iloc[0]
+                        saldo_inicial_base = float(conta_ref['saldo_inicial'])
+                        # Pega o Pico Manual (HWM) editado na Visão Geral
+                        pico_manual = float(conta_ref.get('pico_previo', saldo_inicial_base))
+                        fase_banco_str = conta_ref['fase_entrada']
                         
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # 2. Lógica HÍBRIDA: O Banco define o PISO. O Saldo só PROMOVE.
-                        # Converte string do banco para número
+                        # 2. CÁLCULO DO TRAILING STOP REAL (CRÍTICO)
+                        # Descobre qual foi o maior equity atingido operando
+                        if not trades_g.empty:
+                            temp_t = trades_g.sort_values('created_at').copy()
+                            temp_t['equity_curve'] = temp_t['resultado'].cumsum() + saldo_inicial_base
+                            maior_equity_trades = temp_t['equity_curve'].max()
+                        else:
+                            maior_equity_trades = saldo_inicial_base
+
+                        # O HWM Real é o MAIOR valor entre: Saldo Inicial, Pico Manual e Pico dos Trades
+                        hwm_real = max(pico_manual, maior_equity_trades, saldo_inicial_base)
+
+                        # Regra do Stop Apex 150k
+                        if hwm_real >= 155100.0:
+                            stop_val = 150100.0
+                        else:
+                            stop_val = hwm_real - 5000.0
+
+                        # 3. LÓGICA HÍBRIDA DE FASES
                         if "Fase 1" in fase_banco_str: idx_base = 1
                         elif "Fase 2" in fase_banco_str: idx_base = 2
                         elif "Fase 3" in fase_banco_str: idx_base = 3
                         else: idx_base = 4
                         
                         fase_final = idx_base
-                        
-                        # Regras de Promoção (Só sobe, nunca desce)
-                        # Se começou na 1 e passou de 159k -> vai pra 2
+                        # Promoção automática se bater a meta
                         if idx_base == 1 and saldo_atual_base >= 159000.0: fase_final = 2
-                        
-                        # Se já está na 2 (pelo banco ou promoção) e passou de 155.1k -> vai pra 3
                         if fase_final == 2 and saldo_atual_base >= 155100.0: fase_final = 3
-                        
-                        # Se já está na 3 e passou de 161k -> vai pra 4
                         if fase_final == 3 and saldo_atual_base >= 161000.0: fase_final = 4
                         
-                        # Definição de Variáveis Visuais
-                        if fase_final == 1:
-                            meta_dinamica = 159000.0; status_grupo = "Fase 1: Teste (Alvo 9k)"
-                        elif fase_final == 2:
-                            meta_dinamica = 155100.0; status_grupo = "Fase 2: Colchão PA"
-                        elif fase_final == 3:
-                            meta_dinamica = 161000.0; status_grupo = "Fase 3: Dobrar/Respirar"
-                        else:
-                            meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE (> 161k)"
+                        if fase_final == 1: meta_dinamica = 159000.0; status_grupo = "Fase 1: Teste (Alvo 9k)"
+                        elif fase_final == 2: meta_dinamica = 155100.0; status_grupo = "Fase 2: Colchão PA (Alvo 5.1k)"
+                        elif fase_final == 3: meta_dinamica = 161000.0; status_grupo = "Fase 3: Escalada (Rumo aos 161k)"
+                        else: meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE"
 
-                        # 3. Trailing Stop Real Apex (Respeita o HWM do Banco + Lucro)
-                        if not trades_g.empty:
-                            temp_t = trades_g.sort_values('created_at')
-                            temp_t['equity'] = temp_t['resultado'].cumsum() + saldo_inicial_base
-                            # O HWM considera o maior valor entre: Saldo Inicial, Histórico de Trades e Pico Prévio Manual
-                            hwm = max(saldo_inicial_base, temp_t['equity'].max(), pico_previo_base)
-                        else: 
-                            hwm = max(saldo_inicial_base, pico_previo_base)
-
-                        stop_calc = hwm - 5000.0
-                        stop_val = 150100.0 if hwm >= 155100.0 else min(stop_calc, 150100.0)
-
-                        # 4. Exibição de Cards
-                        k1, k2, k3 = st.columns(3)
+                        # 4. CARDS INFORMATIVOS
+                        k1, k2, k3, k4 = st.columns(4)
                         k1.metric("Saldo Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
-                        k2.metric("Status (Híbrido)", status_grupo)
                         
-                        if fase_final == 4: 
-                            k3.metric("Saque Disponível", f"${max(0, saldo_atual_base - 161000):,.2f}", "Zona de Lucro")
-                        else: 
-                            k3.metric("Falta para Meta", f"${max(0, meta_dinamica - saldo_atual_base):,.2f}", f"Alvo: ${meta_dinamica:,.0f}")
+                        # Mostra o HWM que está puxando o stop
+                        k2.metric("Pico Máximo (HWM)", f"${hwm_real:,.2f}")
+                        
+                        distancia = saldo_atual_base - stop_val
+                        cor_dist = "inverse" if distancia < 1500 else "normal" # Fica vermelho se < 1.5k
+                        k3.metric("Distância Stop", f"${distancia:,.2f}", f"Stop em: ${stop_val:,.0f}", delta_color=cor_dist)
+                        
+                        k4.metric("Status Fase", status_grupo)
 
                         cg, cp = st.columns([2, 1])
 
@@ -798,7 +796,7 @@ if check_password():
                                     df_plot = pd.concat([pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
                                     x_col = 'eixo_x'
                                 else:
-                                    df_sorted = trades_g.sort_values('created_at')
+                                    df_sorted = trades_g.sort_values('created_at').copy()
                                     df_sorted['seq'] = range(1, len(df_sorted)+1)
                                     df_plot = df_sorted
                                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
@@ -808,53 +806,43 @@ if check_password():
 
                                 fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
                                 fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)')
+                                
+                                # Linhas de Referência
                                 fig.add_hline(y=stop_val, line_dash="dash", line_color="#FF4B4B", annotation_text="Stop")
                                 fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
                                 fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.3)
-                                
+
                                 # Zoom Inteligente
-                                padding = 1000
-                                min_y = min(stop_val, df_plot['saldo_acc'].min()) - padding
-                                max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + padding
-                                fig.update_layout(yaxis_range=[min_y, max_y], showlegend=False)
+                                y_min = min(df_plot['saldo_acc'].min(), stop_val) - 500
+                                y_max = max(df_plot['saldo_acc'].max(), meta_dinamica) + 500
+                                fig.update_layout(yaxis_range=[y_min, y_max], showlegend=False)
                                 
                                 if vis_mode == "Trade a Trade": fig.update_xaxes(dtick=1)
                                 st.plotly_chart(fig, use_container_width=True)
-                            else: 
-                                # Gráfico vazio para visualização inicial
-                                fig = go.Figure()
-                                fig.add_hline(y=stop_val, line_dash="dash", line_color="#FF4B4B", annotation_text="Stop")
-                                fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
-                                fig.update_layout(template="plotly_dark", yaxis_range=[stop_val-1000, meta_dinamica+1000], title="Aguardando Trades...")
-                                st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                st.info("Sem trades registrados.")
 
-                        # 6. Barra de Progresso
+                        # 6. PROGRESSO
                         with cp:
                             st.markdown("##### 🎯 Progresso")
-                            base_p = 150000.0
-                            if fase_final == 3: base_p = 155100.0
-                            elif fase_final == 4: base_p = 160000.0
+                            base_prog = 150000.0
+                            if fase_final == 3: base_prog = 155100.0
+                            elif fase_final == 4: base_prog = 160000.0
                             
-                            total_need = meta_dinamica - base_p
-                            done = saldo_atual_base - base_p
+                            total = meta_dinamica - base_prog
+                            feito = saldo_atual_base - base_prog
                             
-                            if total_need > 0:
-                                pct = min(1.0, max(0.0, done / total_need))
-                            else: pct = 1.0
-                                
+                            pct = min(1.0, max(0.0, feito / total)) if total > 0 else 1.0
                             st.write(f"Conclusão: {pct*100:.1f}%")
                             st.progress(pct)
                             
-                            ev = trades_g['resultado'].mean() if not trades_g.empty else 0
-                            remain = meta_dinamica - saldo_atual_base
-                            
-                            if remain > 0 and ev > 0:
-                                trs = math.ceil(remain / ev)
-                                st.caption(f"Faltam ~{trs} trades (EV: ${ev:.2f})")
-                            elif remain <= 0:
-                                st.success("Meta Atingida! 🚀")
+                            falta = meta_dinamica - saldo_atual_base
+                            if falta > 0:
+                                st.caption(f"Faltam: ${falta:,.2f}")
+                            else:
+                                st.success("Meta Batida!")
 
-                    else: st.warning("Este grupo não possui contas cadastradas.")
+                    else: st.warning("Grupo vazio.")
 
     # ==============================================================================
     # 10. CONFIGURAR ATM (COMPLETO)
