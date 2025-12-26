@@ -21,7 +21,7 @@ except Exception as e:
     st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v153", layout="wide", page_icon="📈")
+st.set_page_config(page_title="EvoTrade Terminal v154", layout="wide", page_icon="📈")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -90,7 +90,7 @@ st.markdown("""
         display: inline-flex; align-items: center; justify-content: center;
     }
 
-    /* Alerta de Perigo Imediato (v152) */
+    /* Alerta de Perigo Imediato (v152/154) */
     .piscante-erro { 
         padding: 20px; 
         border-radius: 8px; 
@@ -163,7 +163,6 @@ def check_password():
             st.text_input("Usuário", key="username_input")
             st.text_input("Senha", type="password", key="password_input")
             st.button("Acessar Terminal", on_click=password_entered, use_container_width=True)
-            # CORREÇÃO: Só mostra erro se tentou logar
             if st.session_state["login_attempted"] and not st.session_state["password_correct"]:
                 st.error("😕 Credenciais incorretas.")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -204,7 +203,6 @@ if check_password():
         try:
             res = supabase.table("contas_config").select("*").eq("usuario", USER).execute()
             df = pd.DataFrame(res.data)
-            # Garantia v153: Coluna pico_previo
             if not df.empty and 'pico_previo' not in df.columns:
                 df['pico_previo'] = df['saldo_inicial']
             return df
@@ -231,16 +229,14 @@ if check_password():
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 6. MENU LATERAL (CORRIGIDO: REMOVIDA DUPLICIDADE)
+    # 6. MENU LATERAL
     # ==============================================================================
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         
-        # Menu base
         menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
         icons = ["grid", "currency-dollar", "gear", "clock"]
         
-        # Inserção única de Contas
         if ROLE in ['master', 'admin']:
             menu.insert(2, "Contas")
             icons.insert(2, "briefcase")
@@ -256,7 +252,7 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v153 - MOTOR LSP & TRAVA VISUAL)
+    # 7. ABA: DASHBOARD (v154 - 5 CASAS DECIMAIS + TOOLTIPS COMPLETAS)
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle")
@@ -317,19 +313,11 @@ if check_password():
                     
                     expectancy = ( win_rate_dec * avg_win ) - ( loss_rate_dec * avg_loss )
                     
-                    # --- MÉDIAS COMPORTAMENTAIS (v153 - Reais do Filtro) ---
+                    # --- MÉDIAS COMPORTAMENTAIS (v154) ---
                     lote_medio_real = df_filtered['lote'].mean() if not df_filtered.empty else 0
-                    
-                    # Stop médio real (em pontos)
-                    if not losses.empty:
-                        pts_loss_medio_real = abs(losses['pts_medio'].mean())
-                    else:
-                        pts_loss_medio_real = 15.0 # Valor base
-                    
-                    # Ativo de referência
+                    pts_loss_medio_real = abs(losses['pts_medio'].mean()) if not losses.empty else 15.0 
                     ativo_referencia = df_filtered['ativo'].iloc[-1] if not df_filtered.empty else "MNQ"
                     
-                    # Médias Técnicas
                     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
                     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0
 
@@ -338,14 +326,14 @@ if check_password():
                     max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
 
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO v153: PROBABILIDADE DE LIQUIDAÇÃO (LSP)
+                    # 🛡️ MOTOR DE CÁLCULO v154: LSP + CHECK-IN
                     # ==============================================================================
                     
-                    # 1. RISCO UNITÁRIO REAL (Baseado no comportamento atual, SEM gordura)
+                    # 1. RISCO UNITÁRIO REAL
                     risco_comportamental = lote_medio_real * pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
-                    if risco_comportamental == 0: risco_comportamental = 300.0 # Fallback
+                    if risco_comportamental == 0: risco_comportamental = 300.0
 
-                    # 2. BUFFER REAL DO GRUPO (Respeitando Check-in de Pico)
+                    # 2. BUFFER REAL DO GRUPO
                     total_buffer_real = 0.0
                     contas_analisadas = 0
                     
@@ -353,79 +341,61 @@ if check_password():
                         contas_alvo = df_contas if sel_grupo == "Todos" else df_contas[df_contas['grupo_nome'] == sel_grupo]
                         for _, row in contas_alvo.iterrows():
                             saldo_entrada = float(row['saldo_inicial'])
-                            # [v153] Pega o pico prévio (check-in)
                             pico_previo = float(row.get('pico_previo', saldo_entrada))
                             
-                            # Filtra trades totais (não filtrados por data) para saber saldo atual real
                             trades_deste_grupo = df[df['grupo_vinculo'] == row['grupo_nome']].sort_values('created_at')
                             
                             if not trades_deste_grupo.empty:
                                 lucro_atual = trades_deste_grupo['resultado'].sum()
                                 saldo_agora = saldo_entrada + lucro_atual
-                                
-                                # HWM Dinâmico global
                                 pico_lucro_db = (trades_deste_grupo['resultado'].cumsum()).max()
-                                # O Pico Real é o maior entre (Check-in) e (Histórico do Sistema)
                                 pico_real = max(pico_previo, saldo_entrada + max(0, pico_lucro_db))
                             else:
                                 saldo_agora = saldo_entrada
                                 pico_real = pico_previo
                             
-                            # REGRA APEX: Trava em 150.100 se pico >= 155.100
-                            if pico_real >= 155100.0:
-                                trailing_stop = 150100.0
-                            else:
-                                trailing_stop = pico_real - 5000.0
+                            if pico_real >= 155100.0: trailing_stop = 150100.0
+                            else: trailing_stop = pico_real - 5000.0
                             
-                            buffer_disponivel = max(0, saldo_agora - trailing_stop)
-                            
-                            total_buffer_real += buffer_disponivel
+                            total_buffer_real += max(0, saldo_agora - trailing_stop)
                             contas_analisadas += 1
                     
                     if total_buffer_real == 0 and contas_analisadas == 0: total_buffer_real = 0.0
 
-                    # 3. VIDAS REAIS (MUNIÇÃO)
+                    # 3. VIDAS REAIS
                     fator_replicacao = contas_analisadas if contas_analisadas > 0 else 1
                     risco_grupo_total = risco_comportamental * fator_replicacao
-                    
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
-                    # 4. FÓRMULA LSP (Loss Sequence Probability)
+                    # 4. FÓRMULA LSP (v154 - 5 Casas)
                     msg_alerta = ""
                     prob_liquidez = 0.0
-                    display_ror = "---"
                     
                     if total_trades < 5:
                         msg_alerta = "⚠️ Baixa Amostragem"
-                        display_ror = "---"
                         color_r = "gray"
                     elif vidas_u <= 0:
                         prob_liquidez = 100.0
-                        display_ror = "100.00000%"
                         color_r = "#FF4B4B"
                         msg_alerta = "Liquidação Iminente"
                     elif win_rate_dec == 0:
                         prob_liquidez = 100.0
-                        display_ror = "100.00000%"
                         color_r = "#FF4B4B"
                         msg_alerta = "Sem Vitórias"
                     else:
-                        # Fórmula Exponencial de Morte Súbita
                         prob_liquidez = ((1 - win_rate_dec) ** vidas_u) * 100
                         prob_liquidez = min(max(prob_liquidez, 0.0), 100.0)
-                        
-                        display_ror = f"{prob_liquidez:.8f}%"
                         
                         if prob_liquidez < 10: color_r = "#00FF88"
                         elif prob_liquidez < 40: color_r = "#FFFF00"
                         else: color_r = "#FF4B4B"
                         msg_alerta = "Risco LSP (Curto Prazo)"
 
-                    # --- TRAVA DE SEGURANÇA VISUAL (v153) ---
+                    # --- TRAVA DE SEGURANÇA VISUAL ---
                     if prob_liquidez > 50:
                         st.markdown(f"""
                             <div class="piscante-erro">
-                                🚨 PERIGO DE LIQUIDAÇÃO IMEDIATA ({prob_liquidez:.1f}%) 🚨<br>
+                                🚨 PERIGO DE LIQUIDAÇÃO IMEDIATA ({prob_liquidez:.2f}%) 🚨<br>
                                 <span style="font-size:14px; font-weight:normal; text-transform:none;">
                                     Você tem apenas <b>{vidas_u:.1f} vidas</b>. Sua chance de quebrar em breve é crítica.<br>
                                     REDUZA O LOTE AGORA.
@@ -433,29 +403,29 @@ if check_password():
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # --- EXIBIÇÃO DE CARDS (3 LINHAS) ---
+                    # --- EXIBIÇÃO DE CARDS (TOOLTIPS REATIVADAS) ---
                     st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
-                    with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B")
-                    with c2: card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000")
-                    with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
-                    with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B")
+                    with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "Soma total dos lucros e prejuízos no período.")
+                    with c2: card_metric("FATOR DE LUCRO (PF)", pf_str, "Ideal > 1.5", "#B20000", "Razão entre lucro bruto e prejuízo bruto.")
+                    with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white", "Percentual de operações vencedoras.")
+                    with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B", "Valor financeiro esperado por operação no longo prazo.")
                     
                     st.markdown("##### 💲 Médias Financeiras")
                     c5, c6, c7, c8 = st.columns(4)
-                    with c5: card_metric("MÉDIA GAIN ($)", f"${avg_win:,.2f}", "", "#00FF88")
-                    with c6: card_metric("MÉDIA LOSS ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B")
-                    with c7: card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real", "white")
-                    with c8: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B")
+                    with c5: card_metric("MÉDIA GAIN ($)", f"${avg_win:,.2f}", "", "#00FF88", "Média financeira dos trades positivos.")
+                    with c6: card_metric("MÉDIA LOSS ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B", "Média financeira dos trades negativos.")
+                    with c7: card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real", "white", "Relação média entre risco assumido e retorno obtido.")
+                    with c8: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B", "Maior queda de capital a partir de um topo.")
 
-                    st.markdown("##### 🎯 Performance Técnica")
+                    st.markdown("##### 🎯 Performance Técnica (Base v154)")
                     c9, c10, c11, c12 = st.columns(4)
-                    with c9: card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
-                    with c10: card_metric("STOP MÉDIO (LOSS)", f"{pts_loss_medio_real:.2f} pts", "Base do Risco", "#FF4B4B")
-                    with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white")
-                    with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white")
+                    with c9: card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88", "Média de pontos capturados nos gains.")
+                    with c10: card_metric("STOP MÉDIO (LOSS)", f"{pts_loss_medio_real:.2f} pts", "Base do Risco", "#FF4B4B", "Média de pontos perdidos nos stops (define seu risco).")
+                    with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white", "Tamanho médio da mão utilizada.")
+                    with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações.")
 
-                    # --- CARD DO MOTOR v153 ---
+                    # --- CARD DO MOTOR v154 ---
                     st.markdown("---")
                     st.subheader(f"🛡️ Análise de Sobrevivência Apex ({sel_grupo})")
                     
@@ -465,20 +435,20 @@ if check_password():
                     with k1:
                         lbl_z = "EDGE POSITIVO" if z_edge > 0 else "EDGE NEGATIVO"
                         cor_z = "#00FF88" if z_edge > 0 else "#FF4B4B"
-                        card_metric("Z-SCORE (TEÓRICO)", f"{z_edge:.5f}", lbl_z, cor_z, "Vantagem Matemática.")
+                        card_metric("Z-SCORE (TEÓRICO)", f"{z_edge:.5f}", lbl_z, cor_z, "Mede sua vantagem matemática no longo prazo (Balsara).")
                     
                     with k2:
-                        card_metric("BUFFER REAL (HOJE)", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Somadas", "#00FF88", "Distância real do Stop Apex HOJE.")
+                        card_metric("BUFFER REAL (HOJE)", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Somadas", "#00FF88", "Oxigênio real: Distância do Saldo Atual para o Stop Apex.")
 
                     with k3:
                         cor_v = "#FF4B4B" if vidas_u < 4 else ("#FFFF00" if vidas_u < 8 else "white")
-                        card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Custo: ${risco_grupo_total:,.0f}", cor_v, f"Baseado no Lote Atual")
+                        card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Custo: ${risco_grupo_total:,.0f}", cor_v, "Quantos stops cheios você suporta AGORA.")
 
                     with k4:
                         st.markdown(f"""
                             <div style="background: #101010; border: 2px solid {color_r}; border-radius: 12px; padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
                                 <div style="color: #888; font-size: 11px; font-weight: bold; text-transform: uppercase;">RISCO LIQUIDAÇÃO (LSP)</div>
-                                <div style="color: {color_r}; font-size: 24px; font-weight: 900; margin: 2px 0;">{display_ror}</div>
+                                <div style="color: {color_r}; font-size: 24px; font-weight: 900; margin: 2px 0;">{prob_liquidez:.5f}%</div>
                                 <div style="font-size: 10px; color: #666; margin-top:5px;">{msg_alerta}</div>
                             </div>
                         """, unsafe_allow_html=True)
@@ -521,40 +491,33 @@ if check_password():
         else: st.warning("Banco de dados vazio.")
 
     # ==============================================================================
-    # 8. REGISTRAR TRADE (MANTIDO DO BACKUP v148 - SEM FORM PARA INTERATIVIDADE)
+    # 8. REGISTRAR TRADE (MANTIDO DO BACKUP v148)
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
         atm_db = load_atms_db()
         df_grupos = load_grupos_config()
         
-        # Topo Otimizado: ATM e Grupo
         col_atm, col_grp = st.columns([3, 1.5])
-        
         with col_atm:
             atm_sel = st.selectbox("🎯 Escolher Template ATM", ["Manual"] + list(atm_db.keys()))
-        
         with col_grp:
             grupo_sel_trade = "Geral"
             if ROLE in ["master", "admin"]:
                 if not df_grupos.empty:
                     lista_grupos = sorted(list(df_grupos['nome'].unique()))
                     grupo_sel_trade = st.selectbox("📂 Vincular ao Grupo", lista_grupos)
-                else:
-                    st.caption("⚠️ Crie grupos na aba Contas.")
+                else: st.caption("⚠️ Crie grupos na aba Contas.")
         
         if atm_sel != "Manual":
             config = atm_db[atm_sel]
             lt_default = int(config["lote"])
             stp_default = float(config["stop"])
-            try:
-                parciais_pre = json.loads(config["parciais"]) if isinstance(config["parciais"], str) else config["parciais"]
-            except:
-                parciais_pre = []
+            try: parciais_pre = json.loads(config["parciais"]) if isinstance(config["parciais"], str) else config["parciais"]
+            except: parciais_pre = []
         else:
             lt_default = 1; stp_default = 0.0; parciais_pre = []
 
-        # Interface Principal (Sem Form para não quebrar botões de parciais)
         f1, f2, f3 = st.columns([1, 1, 2.5])
         with f1:
             dt = st.date_input("Data", datetime.now().date())
@@ -628,10 +591,10 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (v153 - RESTAURADA COM CHECK-IN E VISUAL COMPLETO)
+    # 9. ABA CONTAS (v154 - INTEGRADA E RESTAURADA)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v153)")
+        st.title("💼 Gestão de Portfólio (v154)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -667,7 +630,6 @@ if check_password():
                         g_sel = col_a.selectbox("Grupo", sorted(df_g['nome'].unique()))
                         c_id = col_b.text_input("Identificador (Ex: PA-001)")
                         s_ini = col_a.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
-                        # [NOVO v153]
                         p_pre = col_b.number_input("Pico Máximo já Atingido (HWM)", value=150000.0, step=100.0, help="Fundamental para calcular o stop Apex")
                         
                         if st.form_submit_button("Cadastrar Conta"):
@@ -681,7 +643,7 @@ if check_password():
                                 except Exception as e: st.error(f"Erro: {e}")
                 else: st.warning("Crie um grupo antes.")
 
-            # --- ABA 3: VISÃO GERAL (MANTIDO DO BACKUP ORIGINAL) ---
+            # --- ABA 3: VISÃO GERAL ---
             with t3:
                 st.subheader("📋 Acompanhamento de Saldo Individual")
                 df_c = load_contas_config()
@@ -718,145 +680,85 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
                             
                             if lucro_grupo > 0:
-                                prog = min(1.0, lucro_grupo / 5100) # Usando a meta de colchão
+                                prog = min(1.0, lucro_grupo / 5100)
                                 st.progress(prog); st.caption(f"Meta Colchão ($5.1k): {prog*100:.1f}%")
                             else: st.progress(0.0)
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (RESTAURADO E ATUALIZADO v153) ---
+            # --- ABA 4: MONITOR DE PERFORMANCE (COMPLETO) ---
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
-                atm_db = load_atms_db()
-
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
 
                 if not df_c.empty:
                     grps = sorted(df_c['grupo_nome'].unique())
-                    col_sel, col_vis = st.columns([2, 1])
-                    sel_g = col_sel.selectbox("Grupo", grps)
-                    vis_mode = col_vis.radio("Visualização", ["Trade a Trade", "Diário"], horizontal=True)
-
-                    st.markdown("---")
+                    sel_g = st.selectbox("Selecione o Grupo para Análise", grps)
                     
                     contas_g = df_c[df_c['grupo_nome'] == sel_g]
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
                     
                     if not contas_g.empty:
-                        # --- 1. DEFINIÇÃO DO SALDO BASE E ATUAL ---
+                        # Base de Cálculo: Pega a conta com menor saldo para ser conservador
                         saldo_inicial_base = contas_g['saldo_inicial'].min()
-                        # [v153] Pega o maior pico prévio registrado para blindar o gráfico
                         pico_previo_base = contas_g['pico_previo'].max() if 'pico_previo' in contas_g.columns else saldo_inicial_base
                         
                         lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                         saldo_atual_base = saldo_inicial_base + lucro_total_grupo
                         
-                        # --- 2. LÓGICA DE FASES (RESTAURADA DO BACKUP) ---
+                        # Definição de Fases (COMPLETA)
                         if saldo_atual_base < 159000.0:
-                            meta_dinamica = 159000.0; status_grupo = "Fase 1: Passar no Teste (Alvo 9k)"; fase_index = 1; cor_fase = "#FF4B4B"
+                            meta = 159000.0; fase = "Fase 1: Passar no Teste"; idx_f = 1
                         elif saldo_atual_base < 155100.0:
-                            meta_dinamica = 155100.0; status_grupo = "Fase 2: Construindo Colchão (Alvo 5.1k)"; fase_index = 2; cor_fase = "#FFFF00"
+                            meta = 155100.0; fase = "Fase 2: Colchão"; idx_f = 2
                         elif saldo_atual_base < 161000.0:
-                            meta_dinamica = 161000.0; status_grupo = "Fase 3: Escalada (Rumo aos 161k)"; fase_index = 3; cor_fase = "#00FF88"
+                            meta = 161000.0; fase = "Fase 3: Escalada"; idx_f = 3
                         else:
-                            meta_dinamica = 162000.0; status_grupo = "Fase 4: MODO SAQUE (Manter > 161k)"; fase_index = 4; cor_fase = "#B20000"
+                            meta = 162000.0; fase = "Fase 4: Saque"; idx_f = 4
 
-                        # --- 3. CÁLCULO DO TRAILING STOP (APEX) E BUFFER REAL ---
-                        if not trades_g.empty:
-                            temp_trades = trades_g.sort_values('created_at')
-                            temp_trades['equity_curve'] = temp_trades['resultado'].cumsum() + saldo_inicial_base
-                            saldo_pico_historico = temp_trades['equity_curve'].max()
-                            # [v153] Considera o pico prévio no cálculo (CRÍTICO)
-                            hwm = max(saldo_inicial_base, saldo_pico_historico, pico_previo_base)
-                        else:
-                            hwm = max(saldo_inicial_base, pico_previo_base)
-
-                        stop_calc = hwm - 5000.0
-                        stop_loss_atual = min(stop_calc, 150100.0)
-                        if hwm >= 155100.0: stop_loss_atual = 150100.0
-
-                        buffer_vida = saldo_atual_base - stop_loss_atual
-
-                        # --- EXIBIÇÃO: CARDS (RESTAURADOS) ---
                         k1, k2, k3 = st.columns(3)
                         k1.metric("Saldo Base Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
-                        k2.metric("Status Atual", status_grupo)
-                        gap_meta = meta_dinamica - saldo_atual_base
-                        if fase_index == 4:
-                             saque_potencial = (saldo_atual_base - 161000.0)
-                             k3.metric("Potencial de Saque", f"${max(0, saque_potencial):,.2f}", "Saque Livre" if saque_potencial > 0 else "Manter > 161k")
-                        else:
-                             k3.metric("Falta para Próx. Fase", f"${max(0, gap_meta):,.2f}", f"Alvo: ${meta_dinamica:,.0f}")
-
-                        cg, cp = st.columns([2, 1])
-
-                        # --- GRÁFICO DE EVOLUÇÃO (RESTAURADO DO BACKUP) ---
-                        with cg:
-                            st.markdown("##### 🌊 Curva do Grupo")
-                            if not trades_g.empty:
-                                if vis_mode == "Diário":
-                                    trades_g['data'] = pd.to_datetime(trades_g['data'])
-                                    df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
-                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
-                                    df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
-                                    start_x = df_plot['eixo_x'].min() - timedelta(days=1)
-                                    start_row = pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_inicial_base}])
-                                    df_plot = pd.concat([start_row, df_plot], ignore_index=True)
-                                    x_col = 'eixo_x'
-                                else:
-                                    df_sorted = trades_g.sort_values(by=['data', 'created_at'])
-                                    df_sorted['seq'] = range(1, len(df_sorted) + 1)
-                                    df_plot = df_sorted.copy()
-                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
-                                    df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
-                                    start_row = pd.DataFrame([{'eixo_x': 0, 'saldo_acc': saldo_inicial_base}])
-                                    df_plot = pd.concat([start_row, df_plot], ignore_index=True)
-                                    x_col = 'eixo_x'
-
-                                fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
-                                fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)')
-                                fig.add_hline(y=stop_loss_atual, line_dash="dash", line_color="#FF4B4B", annotation_text="Trailing Stop")
-                                fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta Fase")
-                                fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.5, annotation_text="Zona Saque")
-                                min_y = min(stop_loss_atual, df_plot['saldo_acc'].min()) - 500
-                                max_y = max(meta_dinamica, df_plot['saldo_acc'].max()) + 500
-                                fig.update_layout(yaxis_range=[min_y, max_y], showlegend=False)
-                                if vis_mode == "Trade a Trade": fig.update_xaxes(dtick=1)
-                                st.plotly_chart(fig, use_container_width=True)
-                            else: st.info("Sem trades neste grupo.")
-
-                        # --- COMPONENTE DE PROGRESSO (RESTAURADO DO BACKUP) ---
-                        with cp:
-                            st.markdown("##### 🎯 Progresso da Fase")
-                            base_progresso = 150000.0
-                            if fase_index == 3: base_progresso = 155100.0
-                            elif fase_index == 4: base_progresso = 160000.0
+                        k2.metric("Fase Atual", fase)
+                        k3.metric("Meta Próxima", f"${meta:,.0f}", f"Falta: ${max(0, meta - saldo_atual_base):,.2f}")
+                        
+                        st.markdown("---")
+                        
+                        # Barra de Progresso
+                        base_prog = 150000.0
+                        if idx_f == 3: base_prog = 155100.0
+                        elif idx_f == 4: base_prog = 160000.0
+                        
+                        prog = min(1.0, max(0.0, (saldo_atual_base - base_prog) / (meta - base_prog))) if meta > base_prog else 1.0
+                        st.write(f"Progresso da Fase: {prog*100:.1f}%")
+                        st.progress(prog)
+                        
+                        # EV e Trades Restantes
+                        if not trades_g.empty:
+                            ev_por_trade = trades_g['resultado'].mean()
+                            falta = meta - saldo_atual_base
+                            if falta > 0 and ev_por_trade > 0:
+                                trades_restantes = math.ceil(falta / ev_por_trade)
+                                st.info(f"💡 Estimativa: Faltam ~{trades_restantes} trades para a meta (EV: ${ev_por_trade:.2f})")
+                        
+                        # Gráfico de Evolução com HWM e Stop Apex Real
+                        if not trades_g.empty:
+                            trades_g = trades_g.sort_values('created_at')
+                            trades_g['seq'] = range(1, len(trades_g)+1)
+                            trades_g['saldo_acc'] = trades_g['resultado'].cumsum() + saldo_inicial_base
                             
-                            total_meta = meta_dinamica - base_progresso
-                            ja_feito = saldo_atual_base - base_progresso
-                            falta_dinheiro = meta_dinamica - saldo_atual_base
+                            # Calcula HWM para o gráfico
+                            max_atingido = max(pico_previo_base, trades_g['saldo_acc'].max())
+                            stop_linha = 150100.0 if max_atingido >= 155100.0 else max_atingido - 5000.0
 
-                            # Cálculo EV para Trades Restantes
-                            ev_por_trade = trades_g['resultado'].mean() if not trades_g.empty else 0.0
-                            trades_restantes = 0
-                            if falta_dinheiro > 0 and ev_por_trade > 0:
-                                trades_restantes = math.ceil(falta_dinheiro / ev_por_trade)
-
-                            if total_meta > 0: porcentagem = min(1.0, max(0.0, ja_feito / total_meta))
-                            else: porcentagem = 1.0 
-                            
-                            if trades_restantes > 0:
-                                st.markdown(f"""<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;"><span style="color: #e0e0e0; font-size: 14px; font-weight: 500;">Faltam <b>~{trades_restantes}</b> trades</span><span style="color: #888; font-size: 12px;">(EV: <span style="color: #00FF88;">${ev_por_trade:,.2f}</span>)</span></div>""", unsafe_allow_html=True)
-
-                            st.write(f"Conclusão: {porcentagem*100:.1f}%")
-                            st.progress(porcentagem)
-                            st.info(f"Meta atual: ${meta_dinamica:,.0f}")
-                            if saldo_atual_base < meta_dinamica: st.caption(f"Financeiro restante: ${falta_dinheiro:,.2f}")
-                            else: st.success("Nível Concluído! 🚀")
-
-                    else: st.info("Este grupo não possui contas cadastradas.")
-                else: st.info("Cadastre contas na aba anterior.")
+                            fig = px.line(trades_g, x='seq', y='saldo_acc', title="Evolução do Grupo", template="plotly_dark")
+                            fig.add_hline(y=meta, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
+                            fig.add_hline(y=stop_linha, line_dash="dash", line_color="#FF4B4B", annotation_text="Stop Real")
+                            st.plotly_chart(fig, use_container_width=True)
+                        else: st.info("Sem trades.")
+                        
+                    else: st.warning("Grupo sem contas.")
+                else: st.warning("Cadastre contas primeiro.")
 
     # ==============================================================================
     # 10. CONFIGURAR ATM (COMPLETO)
