@@ -684,6 +684,7 @@ if check_password():
                         # --- GRÁFICO v153 COM FILL ---
                         with cg:
                             with cg:
+                            
                             st.markdown("##### 🌊 Curva do Grupo")
                             if not trades_g.empty:
                                 if vis_mode == "Diário":
