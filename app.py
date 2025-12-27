@@ -319,8 +319,8 @@ if check_password():
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         
-menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico", "Plano de Trading"]
-icons = ["grid", "currency-dollar", "gear", "clock", "file-earmark-text"]
+    menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico", "Plano de Trading"]
+    icons = ["grid", "currency-dollar", "gear", "clock", "file-earmark-text"]
         
         if ROLE in ['master', 'admin']:
             menu.insert(2, "Contas")
