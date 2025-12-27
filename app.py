@@ -232,12 +232,12 @@ if check_password():
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 🔥 MOTOR DE FASES v250 (COMPLETO E CORRIGIDO)
+    # 🔥 MOTOR DE FASES v250 (CORRIGIDO: RESPEITO AO PICO HISTÓRICO)
     # ==============================================================================
     def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
         """
         Calcula HWM, Trailing Stop e Buffer de forma dinâmica.
-        Sincroniza HWM com o gráfico real e retorna todas as chaves necessárias.
+        Sincroniza HWM considerando o PASSADO (pico_previo) e o PRESENTE (gráfico).
         """
         # 1. Regras por Tamanho de Conta (Dinâmico)
         if saldo_inicial >= 250000:   # 300k
@@ -253,42 +253,56 @@ if check_password():
         lucro_acc = trades_df['resultado'].sum() if not trades_df.empty else 0.0
         saldo_atual = saldo_inicial + lucro_acc
         
-        # Correção: Prioriza a curva real do gráfico
+        # --- CORREÇÃO CRÍTICA AQUI ---
+        # O Pico Real deve ser o maior valor entre:
+        # A) O Saldo Inicial
+        # B) O Pico Prévio (Histórico importado manualmente)
+        # C) O Pico atingido nos trades registrados (Gráfico)
+        
+        possiveis_picos = [saldo_inicial, pico_previo]
+        
         if not trades_df.empty:
             trades_sorted = trades_df.sort_values('created_at')
             equity_curve = trades_sorted['resultado'].cumsum() + saldo_inicial
             pico_grafico = equity_curve.max()
-            pico_real = max(saldo_inicial, pico_grafico)
-        else:
-            pico_real = saldo_inicial
+            possiveis_picos.append(pico_grafico)
+            
+        pico_real = max(possiveis_picos) # Pega o maior de todos
 
         # 3. Lógica Trailing (Lock/Trava)
         stop_travado = saldo_inicial + 100.0
+        
+        # Se o Pico Real (mesmo que antigo) já tocou na meta da trava:
         if pico_real >= meta_trava:
             stop_atual = stop_travado
+            status_stop = "TRAVADO (LOCK)"
         else:
             stop_atual = pico_real - dd_max
+            status_stop = "MÓVEL (TRAILING)"
             
         buffer = max(0.0, saldo_atual - stop_atual)
         
-        # 4. Fases Empire Builder
-        if saldo_atual < meta_trava:
+        # 4. Fases Empire Builder (Baseado no Saldo + Trava)
+        if stop_atual == stop_travado:
+            # Se o stop já travou, não importa se o saldo caiu, já passamos da Fase 2
+            if saldo_atual < meta_f3:
+                fase_nome = "Fase 3 (Blindagem)"
+                status_fase = "Rumo aos 161k"
+                meta_global = meta_f3
+                distancia_meta = meta_f3 - saldo_atual
+            else:
+                fase_nome = "Fase 4 (Império)"
+                status_fase = "Liberado Saque"
+                meta_global = 999999.0
+                distancia_meta = 0.0
+        else:
+            # Se o stop ainda é móvel, estamos na Fase 2
             fase_nome = "Fase 2 (Colchão)"
             status_fase = "Buscando Trava Stop"
             meta_global = meta_trava
             distancia_meta = meta_trava - saldo_atual
-        elif saldo_atual < meta_f3:
-            fase_nome = "Fase 3 (Blindagem)"
-            status_fase = "Rumo aos 161k"
-            meta_global = meta_f3
-            distancia_meta = meta_f3 - saldo_atual
-        else:
-            fase_nome = "Fase 4 (Império)"
-            status_fase = "Liberado Saque"
-            meta_global = 999999.0
-            distancia_meta = 0.0
         
-        # Retorno Completo (Evita KeyError)
+        # Retorno Completo
         return {
             "saldo_atual": saldo_atual,
             "stop_atual": stop_atual,
@@ -300,7 +314,8 @@ if check_password():
             "lock_threshold": meta_trava,
             "stop_travado": stop_travado,
             "fase_nome": fase_nome,
-            "status_fase": status_fase
+            "status_fase": status_fase,
+            "status_stop": status_stop
         }
 
     # ==============================================================================
