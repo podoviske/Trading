@@ -634,44 +634,50 @@ if check_password():
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
                     # ==========================================================
-                    # CORREÇÃO DEFINITIVA: GRÁFICO DIAS DA SEMANA (VIA NÚMERO)
+                    # CORREÇÃO BLINDADA: TIPAGEM DE DADOS + DIAS
                     # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
                     
-                    # 1. Converte para DateTime com segurança
-                    df_filtered['data_dt'] = pd.to_datetime(df_filtered['data'])
+                    # 1. CRÍTICO: Força a coluna 'resultado' para Números (Float)
+                    # Se houver algum erro ou texto, ele transforma em 0.0 para não quebrar
+                    df_filtered['resultado'] = pd.to_numeric(df_filtered['resultado'], errors='coerce').fillna(0.0)
                     
-                    # 2. Extrai o NÚMERO do dia (0=Segunda, 6=Domingo)
-                    # Isso blinda o código contra servidores em Inglês ou Português
-                    df_filtered['dia_num'] = df_filtered['data_dt'].dt.dayofweek
+                    # 2. Converte para DateTime com segurança
+                    df_filtered['data_dt'] = pd.to_datetime(df_filtered['data'], errors='coerce')
                     
-                    # 3. Mapa Numérico (0 -> Seg, 1 -> Ter...)
-                    mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
-                    df_filtered['dia_pt'] = df_filtered['dia_num'].map(mapa_dias)
+                    # 3. Remove linhas que por ventura tenham ficado com data inválida (NaT)
+                    df_clean = df_filtered.dropna(subset=['data_dt']).copy()
                     
-                    # 4. Agrupa somando os resultados
-                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum()
-                    
-                    # 5. Força a ordem correta (Seg -> Sex) e preenche vazios com 0.0
-                    ordem_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
-                    day_perf = day_perf.reindex(ordem_semana, fill_value=0.0).reset_index()
-                    
-                    # 6. Plota o Gráfico
-                    fig_day = px.bar(
-                        day_perf, 
-                        x='dia_pt', 
-                        y='resultado', 
-                        template="plotly_dark", 
-                        color='resultado', 
-                        color_continuous_scale=["#FF4B4B", "#00FF88"],
-                        text_auto='.2s' # Mostra o valor em cima da barra
-                    )
-                    
-                    fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
-                    # Remove a barra de ferramentas para ficar limpo
-                    st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
-
-            else: st.info("Sem operações registradas para este usuário.")
+                    if not df_clean.empty:
+                        # 4. Extrai o NÚMERO do dia (0=Segunda, 6=Domingo)
+                        df_clean['dia_num'] = df_clean['data_dt'].dt.dayofweek
+                        
+                        # 5. Mapa Numérico
+                        mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
+                        df_clean['dia_pt'] = df_clean['dia_num'].map(mapa_dias)
+                        
+                        # 6. Agrupa SOMANDO os valores (agora garantidamente numéricos)
+                        day_perf = df_clean.groupby('dia_pt')['resultado'].sum()
+                        
+                        # 7. Força a ordem correta e preenche dias vazios com 0.0
+                        ordem_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
+                        day_perf = day_perf.reindex(ordem_semana, fill_value=0.0).reset_index()
+                        
+                        # 8. Plota o Gráfico
+                        fig_day = px.bar(
+                            day_perf, 
+                            x='dia_pt', 
+                            y='resultado', 
+                            template="plotly_dark", 
+                            color='resultado', 
+                            color_continuous_scale=["#FF4B4B", "#00FF88"],
+                            text_auto='.2s'
+                        )
+                        
+                        fig_day.update_layout(xaxis_title=None, yaxis_title="Resultado ($)")
+                        st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
+                    else:
+                        st.caption("Sem dados de data válidos para exibir este gráfico.")
         else: st.warning("Banco de dados vazio.")
         
     # ==============================================================================
