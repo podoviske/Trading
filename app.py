@@ -18,13 +18,13 @@ try:
     key: str = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 except Exception as e:
-    st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
+    st.error(f"Erro crítico de conexão: {e}")
     st.stop()
 
 st.set_page_config(page_title="EvoTrade Empire v240", layout="wide", page_icon="🦅")
 
 # ==============================================================================
-# 2. ESTILOS CSS (VERSÃO COMPLETA / DARK MODE)
+# 2. ESTILOS CSS
 # ==============================================================================
 st.markdown("""
     <style>
@@ -169,7 +169,7 @@ def check_password():
         return False
     return True
 
-# >>> O CÓDIGO SÓ AVANÇA AQUI SE O LOGIN FOR VERDADEIRO <<<
+# >>> O CÓDIGO SÓ AVANÇA SE ESTIVER LOGADO (INDENTAÇÃO CRÍTICA AQUI) <<<
 if check_password():
     MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
     USER = st.session_state["logged_user"]
@@ -304,7 +304,7 @@ if check_password():
         }
 
     # ==============================================================================
-    # 6. MENU LATERAL (AGORA DENTRO DO IF)
+    # 6. MENU LATERAL (AGORA DENTRO DO IF - CORREÇÃO CRÍTICA)
     # ==============================================================================
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
@@ -327,7 +327,7 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v240)
+    # 7. ABA: DASHBOARD (v240 - INDENTAÇÃO Z-EDGE CORRIGIDA)
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle (v240)")
@@ -432,11 +432,12 @@ if check_password():
                     risco_grupo_total = risco_comportamental * fator_replicacao
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
-                    # Fórmula de Ruína
+                    # Fórmula de Ruína (CORREÇÃO DE ESCOPO: Variáveis p e q agora são usadas dentro deste bloco else)
                     p = win_rate_dec
                     q = 1 - p
                     prob_ruina = 0.0
                     msg_alerta = ""
+                    loss_rate_dec = len(losses) / total_trades
                     
                     if total_trades < 5:
                         msg_alerta = "⚠️ Calibrando..."
@@ -495,10 +496,13 @@ if check_password():
                     with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white", "Tamanho médio da mão utilizada.")
                     with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações.")
 
-                    # --- ANÁLISE DE SOBREVIVÊNCIA ---
+                    # --- ANÁLISE DE SOBREVIVÊNCIA (CORREÇÃO INDENTAÇÃO) ---
                     st.markdown("---")
                     st.subheader(f"🛡️ Análise de Sobrevivência (Brownian Motion) - {sel_grupo}")
+                    
+                    # CORREÇÃO DO NAME_ERROR (LOSS_RATE_DEC)
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
+                    
                     k1, k2, k3, k4 = st.columns(4)
                     with k1:
                         lbl_z = "EDGE POSITIVO" if z_edge > 0 else "EDGE NEGATIVO"
@@ -663,7 +667,7 @@ if check_password():
         f1, f2, f3 = st.columns([1, 1, 2.5])
         with f1:
             dt = st.date_input("Data", datetime.now().date())
-            atv = st.selectbox("Ativo", ["MNQ", "NQ", "ES", "MES"])
+            atv = st.selectbox("Ativo", ["MNQ", "NQ"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
             ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
             psi = st.selectbox("Estado Mental", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Fomo", "Neutro"])
@@ -722,9 +726,9 @@ if check_password():
 
                     supabase.table("trades").insert({
                         "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
-                        "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
-                        "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
-                        "comportamento": psi, "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
+                        "direcao": dr, "lote": lt, "resultado": fin, "pts_medio": pt_med,
+                        "grupo_vinculo": grp_sel, "contexto": ctx, "comportamento": psi,
+                        "prints": img_url, "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
                     }).execute()
 
                     st.balloons() 
