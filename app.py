@@ -319,8 +319,8 @@ if check_password():
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
         
-        menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico"]
-        icons = ["grid", "currency-dollar", "gear", "clock"]
+menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico", "Plano de Trading"]
+icons = ["grid", "currency-dollar", "gear", "clock", "file-earmark-text"]
         
         if ROLE in ['master', 'admin']:
             menu.insert(2, "Contas")
@@ -1104,3 +1104,32 @@ if check_password():
                 if ud["id"]: supabase.table("users").update(pay).eq("id", ud["id"]).execute()
                 else: supabase.table("users").insert(pay).execute()
                 st.session_state.uf = {"id": None, "username": "", "password": "", "role": "user"}; st.rerun()
+
+    # ==============================================================================
+    # 13. PLANO DE TRADING (v215)
+    # ==============================================================================
+    elif selected == "Plano de Trading":
+        st.title("📜 Meu Plano de Trading - Empire Builder")
+        
+        col_p1, col_p2 = st.columns([2, 1])
+        
+        with col_p1:
+            st.markdown("""
+            ### 🎯 Objetivo Macro
+            * Manter meta de **$500/semana** por conta até atingir **$161.000** em todas as 20 contas PA.
+            * Após a meta: Sacar **$1.000/mês** de cada conta ($20k total) mantendo o crescimento do capital.
+
+            ### 🛠️ Regras Operacionais
+            1. **Ativos:** MNQ (Principal) / NQ (Apenas com Edge confirmado).
+            2. **Horário:** Definir sua janela de foco.
+            3. **Limite de Lote:** Seguir a sugestão do Dashboard (Alvo: 20 Vidas).
+            4. **Stop Diário:** Definir um limite financeiro de perda por dia por grupo.
+            """)
+            
+        with col_p2:
+            st.info("💡 **Dica de Disciplina:** Leia este plano antes de abrir a primeira ordem do dia.")
+            st.warning("⚠️ **Regra de Ouro:** Se o Dashboard marcar 'Risco Crítico', reduza o lote ou pare o dia.")
+
+        # Campo para você editar seu plano diretamente no terminal (opcional)
+        st.divider()
+        plano_custom = st.text_area("Bloco de Notas / Ajustes do Plano", height=300, placeholder="Escreva aqui detalhes técnicos, setups ou lembretes psicológicos...")
