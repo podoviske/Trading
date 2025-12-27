@@ -765,26 +765,41 @@ if check_password():
         if btn_registrar:
             with st.spinner("Salvando..."):
                 try:
+                    # 1. Calcula o Resultado Financeiro (Nome correto: res_fin)
                     res_fin = sum([s["pts"] * MULTIPLIERS.get(atv, 2) * s["qtd"] for s in saidas])
+                    
+                    # 2. Calcula Pontos Médios
                     pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
+                    
                     trade_id = str(uuid.uuid4())
                     img_url = ""
+                    
+                    # 3. Upload da Imagem
                     if up:
                         file_path = f"{trade_id}.png"
                         supabase.storage.from_("prints").upload(file_path, up.getvalue())
                         img_url = supabase.storage.from_("prints").get_public_url(file_path)
 
+                    # 4. Salva no Banco (Com os nomes de variáveis CORRIGIDOS)
                     supabase.table("trades").insert({
-                        "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
-                        "direcao": dr, "lote": lt, "resultado": fin, "pts_medio": pt_med,
-                        "grupo_vinculo": grp_sel, "contexto": ctx, "comportamento": psi,
-                        "prints": img_url, "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
+                        "id": trade_id, 
+                        "data": str(dt), 
+                        "ativo": atv, 
+                        "contexto": ctx,
+                        "direcao": dr, 
+                        "lote": lt, 
+                        "resultado": res_fin,         # <--- CORRIGIDO (Era 'fin')
+                        "pts_medio": pt_med,
+                        "grupo_vinculo": grupo_sel_trade, # <--- CORRIGIDO (Era 'grp_sel')
+                        "comportamento": psi,
+                        "prints": img_url, 
+                        "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
                     }).execute()
 
                     st.balloons() 
                     st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}")
                     time.sleep(2); st.rerun()
-                except Exception as e: st.error(f"Erro: {e}")
+                except Exception as e: st.error(f"Erro ao salvar: {e}")
 
     # ==============================================================================
     # 9. ABA CONTAS (v250 - INTEGRAÇÃO MOTOR DE FASES CORRIGIDA)
