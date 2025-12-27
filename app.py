@@ -333,7 +333,7 @@ with st.sidebar:
         
     selected = option_menu(None, menu, icons=icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
         
-        if st.button("Sair / Logout"): 
+    if st.button("Sair / Logout"): 
             st.session_state.clear()
             st.rerun()
 
