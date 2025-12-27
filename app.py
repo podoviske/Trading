@@ -232,12 +232,12 @@ if check_password():
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 🔥 MOTOR DE FASES v250 (CORRIGIDO: RESPEITO AO PICO HISTÓRICO)
+    # 🔥 MOTOR DE FASES v250 (COMPLETO E CORRIGIDO)
     # ==============================================================================
     def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
         """
         Calcula HWM, Trailing Stop e Buffer de forma dinâmica.
-        Sincroniza HWM considerando o PASSADO (pico_previo) e o PRESENTE (gráfico).
+        Sincroniza HWM com o gráfico real e retorna todas as chaves necessárias.
         """
         # 1. Regras por Tamanho de Conta (Dinâmico)
         if saldo_inicial >= 250000:   # 300k
@@ -253,56 +253,42 @@ if check_password():
         lucro_acc = trades_df['resultado'].sum() if not trades_df.empty else 0.0
         saldo_atual = saldo_inicial + lucro_acc
         
-        # --- CORREÇÃO CRÍTICA AQUI ---
-        # O Pico Real deve ser o maior valor entre:
-        # A) O Saldo Inicial
-        # B) O Pico Prévio (Histórico importado manualmente)
-        # C) O Pico atingido nos trades registrados (Gráfico)
-        
-        possiveis_picos = [saldo_inicial, pico_previo]
-        
+        # Correção: Prioriza a curva real do gráfico
         if not trades_df.empty:
             trades_sorted = trades_df.sort_values('created_at')
             equity_curve = trades_sorted['resultado'].cumsum() + saldo_inicial
             pico_grafico = equity_curve.max()
-            possiveis_picos.append(pico_grafico)
-            
-        pico_real = max(possiveis_picos) # Pega o maior de todos
+            pico_real = max(saldo_inicial, pico_grafico)
+        else:
+            pico_real = saldo_inicial
 
         # 3. Lógica Trailing (Lock/Trava)
         stop_travado = saldo_inicial + 100.0
-        
-        # Se o Pico Real (mesmo que antigo) já tocou na meta da trava:
         if pico_real >= meta_trava:
             stop_atual = stop_travado
-            status_stop = "TRAVADO (LOCK)"
         else:
             stop_atual = pico_real - dd_max
-            status_stop = "MÓVEL (TRAILING)"
             
         buffer = max(0.0, saldo_atual - stop_atual)
         
-        # 4. Fases Empire Builder (Baseado no Saldo + Trava)
-        if stop_atual == stop_travado:
-            # Se o stop já travou, não importa se o saldo caiu, já passamos da Fase 2
-            if saldo_atual < meta_f3:
-                fase_nome = "Fase 3 (Blindagem)"
-                status_fase = "Rumo aos 161k"
-                meta_global = meta_f3
-                distancia_meta = meta_f3 - saldo_atual
-            else:
-                fase_nome = "Fase 4 (Império)"
-                status_fase = "Liberado Saque"
-                meta_global = 999999.0
-                distancia_meta = 0.0
-        else:
-            # Se o stop ainda é móvel, estamos na Fase 2
+        # 4. Fases Empire Builder
+        if saldo_atual < meta_trava:
             fase_nome = "Fase 2 (Colchão)"
             status_fase = "Buscando Trava Stop"
             meta_global = meta_trava
             distancia_meta = meta_trava - saldo_atual
+        elif saldo_atual < meta_f3:
+            fase_nome = "Fase 3 (Blindagem)"
+            status_fase = "Rumo aos 161k"
+            meta_global = meta_f3
+            distancia_meta = meta_f3 - saldo_atual
+        else:
+            fase_nome = "Fase 4 (Império)"
+            status_fase = "Liberado Saque"
+            meta_global = 999999.0
+            distancia_meta = 0.0
         
-        # Retorno Completo
+        # Retorno Completo (Evita KeyError)
         return {
             "saldo_atual": saldo_atual,
             "stop_atual": stop_atual,
@@ -314,8 +300,7 @@ if check_password():
             "lock_threshold": meta_trava,
             "stop_travado": stop_travado,
             "fase_nome": fase_nome,
-            "status_fase": status_fase,
-            "status_stop": status_stop
+            "status_fase": status_fase
         }
 
     # ==============================================================================
@@ -582,9 +567,6 @@ if check_password():
                     else:
                         kelly_half = 0.0; lote_min = 0; lote_max = 0
                         txt_range = "0"; cor_k = "#888"; status_k = "Sem Dados/Edge"
-                        # --- CORREÇÃO: Definindo as variáveis para não quebrar o card abaixo ---
-                        r_min_show = 0.0
-                        r_max_show = 0.0
 
                     ka, kb, kc, kd = st.columns(4)
                     with ka:
@@ -652,58 +634,57 @@ if check_password():
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
                   # ==========================================================
-                    # GRÁFICO DIAS DA SEMANA (VERSÃO BLINDADA v2)
+                    # NOVO GRÁFICO: PERFORMANCE SEMANAL (LIMPO E REFEITO)
                     # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
                     
-                    # 1. Cria uma cópia isolada para não quebrar o resto
+                    # 1. Limpeza Profunda de Dados (O Segredo)
+                    # Garante que a data é data e o dinheiro é número. Se falhar, ignora a linha.
                     df_clean = df_filtered.copy()
-                    
-                    # 2. Converte Data e Dinheiro (Força Bruta)
                     df_clean['data_dt'] = pd.to_datetime(df_clean['data'], errors='coerce')
-                    df_clean['res_num'] = pd.to_numeric(df_clean['resultado'], errors='coerce').fillna(0.0)
-                    
-                    # 3. Remove datas inválidas
-                    df_clean = df_clean.dropna(subset=['data_dt'])
+                    df_clean['resultado_num'] = pd.to_numeric(df_clean['resultado'], errors='coerce').fillna(0.0)
+                    df_clean = df_clean.dropna(subset=['data_dt']) # Remove datas inválidas
 
                     if not df_clean.empty:
-                        # 4. Extrai dia numérico (0=Segunda)
+                        # 2. Criação do Mapa de Dias (0 = Seg, 4 = Sex)
+                        # Usamos números para não depender do idioma do servidor
                         df_clean['dia_idx'] = df_clean['data_dt'].dt.dayofweek
-                        
-                        # 5. Mapeia para Nome
                         mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
-                        df_clean['dia_nome'] = df_clean['dia_idx'].map(mapa_dias)
-                        
-                        # 6. Agrupa e Soma (Usando a coluna numérica criada)
-                        df_agrupado = df_clean.groupby('dia_nome')['res_num'].sum()
-                        
-                        # 7. Força a ordem da semana
+                        df_clean['dia_pt'] = df_clean['dia_idx'].map(mapa_dias)
+
+                        # 3. Agrupamento e Soma
+                        # Somamos apenas a coluna limpa 'resultado_num'
+                        df_agrupado = df_clean.groupby('dia_pt')['resultado_num'].sum()
+
+                        # 4. Ordenação Forçada (Segunda a Sexta)
+                        # O reindex(..., fill_value=0.0) garante que dias sem trade fiquem com 0 no gráfico
                         dias_ordem = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
-                        # O reindex garante que dias sem trade apareçam como 0 no gráfico
                         df_final = df_agrupado.reindex(dias_ordem, fill_value=0.0).reset_index()
-                        
-                        # 8. Plota
+                        df_final.columns = ['Dia', 'Resultado ($)'] # Renomeia bonito para o gráfico
+
+                        # 5. Plotagem Limpa
                         fig_day = px.bar(
                             df_final, 
-                            x='dia_nome', 
-                            y='res_num',
-                            text_auto='.2s',
+                            x='Dia', 
+                            y='Resultado ($)',
+                            text_auto='.2s', # Formata o valor na barra (ex: 1.5k)
                             template="plotly_dark",
-                            color='res_num',
-                            # Gradiente Vermelho para Verde
-                            color_continuous_scale=["#FF4B4B", "#00FF88"] 
+                            color='Resultado ($)',
+                            color_continuous_scale=["#FF4B4B", "#00FF88"] # Gradiente Vermelho -> Verde
                         )
                         
+                        # Ajustes visuais finais
                         fig_day.update_layout(
                             xaxis_title=None, 
                             yaxis_title="Resultado ($)",
                             showlegend=False,
-                            coloraxis_showscale=False # Limpa a barra lateral
+                            coloraxis_showscale=False # Remove a barra de cores lateral para limpar
                         )
                         
                         st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
+                    
                     else:
-                        st.info("Sem dados válidos para o gráfico semanal.")
+                        st.info("Aguardando dados para gerar o gráfico semanal.")
         
     # ==============================================================================
     # 8. REGISTRAR TRADE (CORRIGIDO: USUÁRIO + MULTI-UPLOAD)
