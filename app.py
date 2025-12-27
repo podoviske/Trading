@@ -644,7 +644,7 @@ if check_password():
         else: st.warning("Banco de dados vazio.")
         
     # ==============================================================================
-    # 8. REGISTRAR TRADE (COMPLETO)
+    # 8. REGISTRAR TRADE (CORRIGIDO: ERROS DE VARIÁVEL + USUÁRIO + UPLOAD)
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
@@ -674,9 +674,9 @@ if check_password():
         f1, f2, f3 = st.columns([1, 1, 2.5])
         with f1:
             dt = st.date_input("Data", datetime.now().date())
-            atv = st.selectbox("Ativo", ["MNQ", "NQ"])
+            atv = st.selectbox("Ativo", ["MNQ", "NQ", "ES", "MES"])
             dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True)
-            ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C", "Outro"])
+            ctx = st.selectbox("Contexto", ["Tendência", "Lateral", "Rompimento", "Contra-Tendência"])
             psi = st.selectbox("Estado Mental", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Fomo", "Neutro"])
         with f2:
             lt = st.number_input("Contratos Total", min_value=1, value=lt_default)
@@ -684,7 +684,9 @@ if check_password():
             if stp > 0:
                 risco_calc = stp * MULTIPLIERS.get(atv, 2) * lt
                 st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
-            up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
+            
+            # CORREÇÃO: Habilita múltiplos arquivos
+            up = st.file_uploader("📸 Anexar Prints (O primeiro será a capa)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
 
         with f3:
             st.write("**Saídas (Alocação)**")
@@ -722,26 +724,42 @@ if check_password():
         if btn_registrar:
             with st.spinner("Salvando..."):
                 try:
+                    # Cálculo financeiro
                     res_fin = sum([s["pts"] * MULTIPLIERS.get(atv, 2) * s["qtd"] for s in saidas])
                     pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
+                    
                     trade_id = str(uuid.uuid4())
                     img_url = ""
+                    
+                    # Lógica de Upload (Pega o primeiro da lista se houver múltiplos)
                     if up:
+                        # Se for lista (multiplos), pega o primeiro. Se for unico, usa ele.
+                        arquivo_final = up[0] if isinstance(up, list) else up
                         file_path = f"{trade_id}.png"
-                        supabase.storage.from_("prints").upload(file_path, up.getvalue())
+                        supabase.storage.from_("prints").upload(file_path, arquivo_final.getvalue())
                         img_url = supabase.storage.from_("prints").get_public_url(file_path)
 
+                    # CORREÇÃO NO INSERT: Adicionado 'usuario' e corrigido variáveis
                     supabase.table("trades").insert({
-                        "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
-                        "direcao": dr, "lote": lt, "resultado": fin, "pts_medio": pt_med,
-                        "grupo_vinculo": grp_sel, "contexto": ctx, "comportamento": psi,
-                        "prints": img_url, "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
+                        "id": trade_id, 
+                        "usuario": USER,              # <--- OBRIGATÓRIO PARA APARECER NO DASHBOARD
+                        "data": str(dt), 
+                        "ativo": atv, 
+                        "contexto": ctx,
+                        "direcao": dr, 
+                        "lote": lt, 
+                        "resultado": res_fin,         # Corrigido (antes estava 'fin')
+                        "pts_medio": pt_med,
+                        "grupo_vinculo": grupo_sel_trade, # Corrigido (antes estava 'grp_sel')
+                        "comportamento": psi,
+                        "prints": img_url, 
+                        "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
                     }).execute()
 
                     st.balloons() 
                     st.success(f"✅ SUCESSO! Resultado: ${res_fin:,.2f}")
                     time.sleep(2); st.rerun()
-                except Exception as e: st.error(f"Erro: {e}")
+                except Exception as e: st.error(f"Erro ao salvar: {e}")
 
     # ==============================================================================
     # 9. ABA CONTAS (v250 - INTEGRAÇÃO MOTOR DE FASES CORRIGIDA)
