@@ -255,10 +255,10 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v165 - RISCO DE RUÍNA REAL / GAMBLER'S RUIN)
+    # 7. ABA: DASHBOARD (v166 - RISCO REAL + INTELIGÊNCIA KELLY)
     # ==============================================================================
     if selected == "Dashboard":
-        st.title("📊 Central de Controle (v165)")
+        st.title("📊 Central de Controle (v166)")
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
@@ -369,15 +369,11 @@ if check_password():
                     if total_buffer_real == 0 and contas_analisadas == 0: total_buffer_real = 0.0
 
                     # 3. VIDAS REAIS (U)
-                    # Quantas vezes eu posso errar antes de morrer?
                     fator_replicacao = contas_analisadas if contas_analisadas > 0 else 1
                     risco_grupo_total = risco_comportamental * fator_replicacao
-                    
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
-                    # 4. FÓRMULA DE RUÍNA DO JOGADOR (Gambler's Ruin)
-                    # P = (q / p) ^ U
-                    
+                    # 4. FÓRMULA DE RUÍNA DO JOGADOR
                     p = win_rate_dec
                     q = 1 - p
                     prob_ruina = 0.0
@@ -392,41 +388,27 @@ if check_password():
                         msg_alerta = "LIQUIDAÇÃO IMINENTE"
                         color_r = "#FF0000"
                     elif p <= q:
-                        # Se você perde mais do que ganha (ou igual), a ruína é 100% certa no longo prazo
                         prob_ruina = 100.0
                         msg_alerta = "EDGE NEGATIVO (PARE)"
                         color_r = "#FF0000"
                     else:
-                        # Fórmula Discreta (A Verdade)
                         raw_ruin = (q / p) ** vidas_u
                         prob_ruina = raw_ruin * 100
                         prob_ruina = min(max(prob_ruina, 0.0), 100.0)
                         
-                        if prob_ruina < 1.0: 
-                            color_r = "#00FF88" # Seguro
-                            msg_alerta = "Zona de Segurança"
-                        elif prob_ruina < 5.0: 
-                            color_r = "#FFFF00" # Atenção
-                            msg_alerta = "Risco Moderado"
-                        else: 
-                            color_r = "#FF4B4B" # Perigo
-                            msg_alerta = "RISCO CRÍTICO"
+                        if prob_ruina < 1.0: color_r = "#00FF88"; msg_alerta = "Zona de Segurança"
+                        elif prob_ruina < 5.0: color_r = "#FFFF00"; msg_alerta = "Risco Moderado"
+                        else: color_r = "#FF4B4B"; msg_alerta = "RISCO CRÍTICO"
 
-                    # --- TRAVA DE SEGURANÇA VISUAL (ALERTA DE PÂNICO) ---
-                    # Se o risco real for maior que 10%, o sistema grita.
                     if prob_ruina > 10.0 and total_trades >= 5:
                         st.markdown(f"""
                             <div class="piscante-erro">
                                 💀 ALERTA DE RUÍNA: {prob_ruina:.2f}% 💀<br>
-                                <span style="font-size:16px; font-weight:normal; text-transform:none;">
-                                    Você tem apenas <b>{vidas_u:.1f} Vidas</b>. A estatística está contra você.<br>
-                                    A probabilidade de quebrar sua conta em breve é ALTÍSSIMA.<br>
-                                    <b>AÇÃO IMEDIATA: REDUZA O LOTE PELA METADE.</b>
-                                </span>
+                                <span style="font-size:16px; font-weight:normal; text-transform:none;">REDUZA O LOTE AGORA.</span>
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # --- EXIBIÇÃO DE CARDS ---
+                    # --- EXIBIÇÃO DE CARDS GERAIS ---
                     st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "Soma total dos lucros e prejuízos no período.")
@@ -448,27 +430,20 @@ if check_password():
                     with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white", "Tamanho médio da mão utilizada.")
                     with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações.")
 
-                    # --- CARD DO MOTOR v165 (NOVO) ---
+                    # --- ANÁLISE DE SOBREVIVÊNCIA ---
                     st.markdown("---")
                     st.subheader(f"🛡️ Análise de Sobrevivência (Gambler's Ruin) - {sel_grupo}")
-                    
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
-
                     k1, k2, k3, k4 = st.columns(4)
                     with k1:
                         lbl_z = "EDGE POSITIVO" if z_edge > 0 else "EDGE NEGATIVO"
                         cor_z = "#00FF88" if z_edge > 0 else "#FF4B4B"
                         card_metric("Z-SCORE (EDGE)", f"{z_edge:.4f}", lbl_z, cor_z, "Força estatística da sua estratégia.")
-                    
                     with k2:
                         card_metric("BUFFER REAL (HOJE)", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Ativas", "#00FF88", "Oxigênio real: Distância do Saldo Atual para o Stop Apex.")
-
                     with k3:
-                        # Cores de Vidas baseadas na realidade discreta
                         cor_v = "#FF4B4B" if vidas_u < 6 else ("#FFFF00" if vidas_u < 10 else "#00FF88")
-                        lbl_v = "CRÍTICO" if vidas_u < 6 else "OK"
                         card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Base: ${risco_grupo_total:,.0f}", cor_v, "Quantos stops cheios você suporta AGORA.")
-
                     with k4:
                         st.markdown(f"""
                             <div style="background: #101010; border: 2px solid {color_r}; border-radius: 12px; padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
@@ -477,6 +452,64 @@ if check_password():
                                 <div style="font-size: 11px; color: #BBB; margin-top:5px; font-weight:bold;">{msg_alerta}</div>
                             </div>
                         """, unsafe_allow_html=True)
+
+                    # ==============================================================================
+                    # 🧠 MÓDULO KELLY v166 (NOVO)
+                    # ==============================================================================
+                    st.markdown("---")
+                    st.subheader("🧠 Recomendações de Kelly (Position Sizing)")
+                    
+                    # Cálculo Kelly: W - [(1-W)/R]
+                    if payoff > 0:
+                        kelly_full = win_rate_dec - ((1 - win_rate_dec) / payoff)
+                    else:
+                        kelly_full = -1.0
+                    
+                    # Só calcula se tiver Edge e Buffer
+                    if kelly_full > 0 and total_buffer_real > 0 and pts_loss_medio_real > 0:
+                        # Half Kelly (Conservador)
+                        kelly_half = kelly_full / 2
+                        
+                        # Risco Sugerido ($) = Buffer Real * Kelly Fraction
+                        # AVISO: Isso é o risco TOTAL da carteira (todas as contas juntas)
+                        risco_sugerido_half = total_buffer_real * kelly_half
+                        
+                        # Conversão para Lotes
+                        # Risco unitário por lote = pts_loss_medio * multiplier
+                        risco_por_lote = pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
+                        
+                        lotes_sugeridos_half = math.floor(risco_sugerido_half / risco_por_lote) if risco_por_lote > 0 else 0
+                        
+                        # Ajuste para número de contas (se for grupo com 5 contas, divide o lote sugerido por 5? 
+                        # Não, se o risco_sugerido é sobre o Buffer TOTAL, o lote sugerido é o TOTAL para distribuir).
+                        # Mas como o trader opera replicando, esse lote seria o 'Input' no replicador?
+                        # Vamos assumir que Lote Sugerido = Lote a ser boletado no replicador (Unitário * Contas) ou Lote por Conta?
+                        # Melhor: Lote Total do Grupo.
+                        
+                        color_k = "#00FF88"
+                        lbl_k = "APLICÁVEL"
+                        
+                        # Limite de segurança Apex (Ex: 20 contratos é max em algumas contas, mas aqui é sugestão matemática)
+                        if lotes_sugeridos_half > 40: lotes_sugeridos_half = 40; lbl_k = "MAX CAP"
+
+                    else:
+                        kelly_full = 0.0; kelly_half = 0.0
+                        risco_sugerido_half = 0.0; lotes_sugeridos_half = 0
+                        color_k = "#FF4B4B"
+                        lbl_k = "NÃO APLICAR (SEM EDGE)"
+
+                    ka, kb, kc, kd = st.columns(4)
+                    with ka:
+                        card_metric("FRAÇÃO KELLY (FULL)", f"{kelly_full*100:.1f}%", "Agressivo (Não Use)", "#888", "Percentual teórico do Buffer para arriscar (Matematicamente Ótimo, mas volátil).")
+                    with kb:
+                        card_metric("HALF-KELLY (SUGERIDO)", f"{kelly_half*100:.1f}%", "Conservador", color_k, "Fração recomendada para crescimento sustentável.")
+                    with kc:
+                        card_metric("RISCO SUGERIDO ($)", f"${risco_sugerido_half:,.2f}", f"Baseado no Buffer ${total_buffer_real/1000:.0f}k", color_k, "Quanto dinheiro arriscar na próxima operação (Stop Loss Financeiro).")
+                    with kd:
+                        card_metric("LOTE SUGERIDO (TOTAL)", f"{lotes_sugeridos_half}", f"Contratos ({ativo_referencia})", color_k, "Quantidade de contratos calculada baseada no seu Stop Médio histórico.")
+
+                    if kelly_full <= 0:
+                        st.caption("⚠️ O Critério de Kelly não sugere trades quando a Expectativa Matemática é negativa ou o Payoff é insuficiente.")
 
                     st.markdown("---")
 
