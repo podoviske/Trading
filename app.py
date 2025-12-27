@@ -21,10 +21,10 @@ except Exception as e:
     st.error(f"Erro crítico de conexão: {e}")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v200", layout="wide", page_icon="💀")
+st.set_page_config(page_title="EvoTrade Terminal v210", layout="wide", page_icon="🦅")
 
 # ==============================================================================
-# 2. ESTILOS CSS
+# 2. ESTILOS CSS (MANTIDOS DO SEU BACKUP ORIGINAL)
 # ==============================================================================
 st.markdown("""
     <style>
@@ -90,7 +90,7 @@ st.markdown("""
         display: inline-flex; align-items: center; justify-content: center;
     }
 
-    /* Alerta de Perigo Imediato */
+    /* Alerta de Perigo Imediato (v152/155) */
     .piscante-erro { 
         padding: 20px; 
         border-radius: 8px; 
@@ -232,24 +232,34 @@ if check_password():
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # ⚙️ MOTOR DE FASES CENTRALIZADO (v200 - CORREÇÃO DE CHAVES E LÓGICA)
+    # 🔥 MOTOR DE FASES CENTRALIZADO (v210 - EMPIRE BUILDER)
     # ==============================================================================
+    # Este motor calcula a saúde da conta com a lógica "Trava -> 161k -> Saques"
     def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
         """
-        Calcula HWM, Trailing Stop e Buffer de forma dinâmica por conta.
+        Calcula HWM, Trailing Stop, Buffer e Fase atual da conta.
         Retorna dicionário completo para evitar KeyError.
         """
-        # 1. Detectar Regras por Tamanho de Conta (Lógica Dinâmica)
+        # 1. Determinar Regras pelo Tamanho da Conta (Heurística Segura)
+        # Ex: 150k -> Drawdown 5k. Trava em 155.100. Meta 3: 161.000
         if saldo_inicial >= 250000:   # 300k
-            dd_max = 7500.0; meta_step = 20000.0
-        elif saldo_inicial >= 100000: # 150k/100k
-            dd_max = 5000.0; meta_step = 9000.0
+            dd_max = 7500.0; 
+            meta_trava = saldo_inicial + dd_max + 100.0 # 307.600
+            meta_f3 = saldo_inicial + 15000.0 # Exemplo proporcional
+        elif saldo_inicial >= 100000: # 150k (Padrão do Usuário)
+            dd_max = 5000.0; 
+            meta_trava = 155100.0 # Saldo Ini + 5000 + 100
+            meta_f3 = 161000.0    # Meta Blindagem
         elif saldo_inicial >= 50000:  # 50k
-            dd_max = 2500.0; meta_step = 3000.0
+            dd_max = 2500.0; 
+            meta_trava = 52600.0
+            meta_f3 = 56000.0
         else:                         # 25k ou menor
-            dd_max = 1500.0; meta_step = 1500.0
+            dd_max = 1500.0; 
+            meta_trava = 26600.0
+            meta_f3 = 28000.0
             
-        # 2. Calcular Saldo e Pico Real (HWM)
+        # 2. Calcular Saldo Atual e Equity Curve
         lucro_acc = trades_df['resultado'].sum() if not trades_df.empty else 0.0
         saldo_atual = saldo_inicial + lucro_acc
         
@@ -260,19 +270,35 @@ if check_password():
             pico_real = max(pico_previo, saldo_inicial)
         
         # 3. Lógica de Trava (Lock do Stop em BE + 100)
-        lock_threshold = saldo_inicial + dd_max + 100.0
         stop_travado = saldo_inicial + 100.0
         
-        if pico_real >= lock_threshold:
+        # O Stop sobe junto com o pico até o pico atingir a meta_trava (155.100)
+        # Se Pico >= 155.100, Stop = 150.100 (Travado)
+        if pico_real >= meta_trava:
             stop_atual = stop_travado
         else:
             stop_atual = pico_real - dd_max
             
         buffer = max(0.0, saldo_atual - stop_atual)
-        meta_global = saldo_inicial + meta_step
-        distancia_meta = meta_global - saldo_atual
         
-        # RETORNO COMPLETO (CORRIGE KEY ERROR)
+        # 4. Definição de Fase e Próxima Meta
+        if saldo_atual < meta_trava:
+            fase_nome = "Fase 2 (Colchão)"
+            status_fase = "Buscando Trava Stop"
+            meta_global = meta_trava
+            distancia_meta = meta_trava - saldo_atual
+        elif saldo_atual < meta_f3:
+            fase_nome = "Fase 3 (Blindagem)"
+            status_fase = "Rumo aos 161k"
+            meta_global = meta_f3
+            distancia_meta = meta_f3 - saldo_atual
+        else:
+            fase_nome = "Fase 4 (Império)"
+            status_fase = "Liberado Saque"
+            meta_global = 999999.0
+            distancia_meta = 0.0
+        
+        # RETORNO COMPLETO
         return {
             "saldo_atual": saldo_atual,
             "stop_atual": stop_atual,
@@ -281,8 +307,10 @@ if check_password():
             "meta_global": meta_global,
             "distancia_meta": distancia_meta,
             "dd_max": dd_max,
-            "lock_threshold": lock_threshold,
-            "stop_travado": stop_travado
+            "lock_threshold": meta_trava,
+            "stop_travado": stop_travado,
+            "fase_nome": fase_nome,
+            "status_fase": status_fase
         }
 
     # ==============================================================================
@@ -309,10 +337,10 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v200 - MOTOR INTEGRADO + CORREÇÃO DE SCOPE)
+    # 7. ABA: DASHBOARD (v210 - MOTOR INTEGRADO)
     # ==============================================================================
     if selected == "Dashboard":
-        st.title("📊 Central de Controle (v200)")
+        st.title("📊 Central de Controle (v210)")
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
@@ -383,7 +411,7 @@ if check_password():
                     max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
 
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO v200 - USO DO MOTOR CENTRAL
+                    # 🛡️ MOTOR DE CÁLCULO v210 - USO DO MOTOR CENTRAL
                     # ==============================================================================
                     
                     risco_comportamental = lote_medio_real * pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
@@ -401,7 +429,7 @@ if check_password():
                             if row.get('status_conta', 'Ativa') == 'Ativa':
                                 trades_deste_grupo = df[df['grupo_vinculo'] == row['grupo_nome']].sort_values('created_at')
                                 
-                                # CHAMA O MOTOR
+                                # CHAMA O MOTOR (Com as fases Empire)
                                 status_conta = calcular_saude_apex(float(row['saldo_inicial']), float(row.get('pico_previo', row['saldo_inicial'])), trades_deste_grupo)
                                 
                                 total_buffer_real += status_conta['buffer']
@@ -420,7 +448,6 @@ if check_password():
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
                     # 4. FÓRMULA DE RUÍNA (BROWNIAN MOTION)
-                    # Corrige erro de 100% ruína e "CALC"
                     p = win_rate_dec
                     q = 1 - p
                     prob_ruina = 0.0
@@ -510,7 +537,7 @@ if check_password():
                         """, unsafe_allow_html=True)
 
                     # ==============================================================================
-                    # 🧠 MÓDULO KELLY v200
+                    # 🧠 MÓDULO KELLY v210
                     # ==============================================================================
                     st.markdown("---")
                     st.subheader("🧠 Inteligência de Lote (Faixa de Operação)")
@@ -572,7 +599,7 @@ if check_password():
                             </div>
                         """, unsafe_allow_html=True)
         
-                    # --- GRÁFICOS (SOMA SALDO INICIAL) ---
+                    # --- GRÁFICOS (SOMA SALDO INICIAL CORRETO) ---
                     st.markdown("---")
                     
                     g1, g2 = st.columns([2, 1])
@@ -583,6 +610,11 @@ if check_password():
                         if pd.isna(soma_saldo_agora) or soma_saldo_agora == 0:
                             # Fallback se não calculou no loop
                             saldo_inicial_plot = 0.0
+                            if not df_contas.empty:
+                                if sel_grupo == "Todos":
+                                    saldo_inicial_plot = df_contas[df_contas['status_conta'] == 'Ativa']['saldo_inicial'].sum()
+                                else:
+                                    saldo_inicial_plot = df_contas[(df_contas['grupo_nome'] == sel_grupo) & (df_contas['status_conta'] == 'Ativa')]['saldo_inicial'].sum()
                         else:
                             saldo_inicial_plot = soma_saldo_agora - net_profit
 
@@ -728,10 +760,10 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (v200 - INTEGRAÇÃO MOTOR DE FASES CORRIGIDA)
+    # 9. ABA CONTAS (v210 - INTEGRAÇÃO MOTOR DE FASES CORRIGIDA)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v195)")
+        st.title("💼 Gestão de Portfólio (v210)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -856,13 +888,12 @@ if check_password():
                         # 1. SETUP DE DADOS VIA MOTOR
                         conta_ref = contas_g.iloc[0]
                         
-                        # CHAMA O MOTOR DE FASES (CORRIGIDO PARA RETORNAR DISTANCIA_META)
+                        # CHAMA O MOTOR DE FASES
                         saude = calcular_saude_apex(float(conta_ref['saldo_inicial']), float(conta_ref.get('pico_previo', conta_ref['saldo_inicial'])), trades_g)
                         
                         # Labels
-                        status_lbl = "Em Progresso"
-                        if saude['saldo_atual'] >= saude['meta_global']: status_lbl = "META BATIDA 🚀"
-
+                        status_lbl = saude['status_fase']
+                        
                         # 2. CARDS DE INFORMAÇÃO
                         k1, k2, k3, k4 = st.columns(4)
                         k1.metric("Saldo Atual", f"${saude['saldo_atual']:,.2f}", f"Lucro: ${saude['saldo_atual'] - float(conta_ref['saldo_inicial']):+,.2f}")
@@ -872,7 +903,7 @@ if check_password():
                         k3.metric("Dist. Stop", f"${dist_stop:,.2f}", f"Stop: ${saude['stop_atual']:,.0f}", delta_color="inverse" if dist_stop < 1500 else "normal")
                         
                         # USO DA CHAVE CORRIGIDA (distancia_meta)
-                        k4.metric("Alvo (Fase)", f"${saude['meta_global']:,.0f}", status_lbl)
+                        k4.metric(saude['fase_nome'], f"Meta: ${saude['meta_global']:,.0f}", f"Faltam ${saude['distancia_meta']:,.0f}")
 
                         cg, cp = st.columns([2, 1])
 
@@ -922,7 +953,12 @@ if check_password():
                             total_fase = saude['meta_global'] - float(conta_ref['saldo_inicial'])
                             ganho_real = saude['saldo_atual'] - float(conta_ref['saldo_inicial'])
                             
-                            percent = min(1.0, max(0.0, ganho_real / total_fase)) if total_fase > 0 else 1.0
+                            # Evita divisão por zero se a meta for infinita (Fase 4)
+                            if total_fase > 0:
+                                percent = min(1.0, max(0.0, ganho_real / total_fase))
+                            else:
+                                percent = 1.0
+                                
                             st.write(f"Conclusão: {percent*100:.1f}%")
                             st.progress(percent)
                             
