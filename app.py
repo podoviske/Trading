@@ -453,109 +453,95 @@ if check_password():
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # ==============================================================================
-                    # 🧠 MÓDULO KELLY v167 (COM TRAVA DE SOBREVIVÊNCIA - 20 VIDAS)
+                   # ==============================================================================
+                    # 🧠 MÓDULO KELLY v168 (RANGE DINÂMICO 15-20 VIDAS)
                     # ==============================================================================
                     st.markdown("---")
-                    st.subheader("🧠 Recomendações de Kelly (Ajustado por Sobrevivência)")
+                    st.subheader("🧠 Inteligência de Lote (Faixa de Operação)")
                     
-                    # 1. Cálculo Kelly Teórico (Full e Half)
+                    # 1. Cálculo Kelly Teórico
                     if payoff > 0:
                         kelly_full = win_rate_dec - ((1 - win_rate_dec) / payoff)
                     else: kelly_full = -1.0
                     
                     kelly_half = max(0.0, kelly_full / 2)
 
-                    # 2. Definição do Nível de Conforto (Vidas)
-                    # Você disse: "10 é pouco, 20 é ideal, 15 aceitável"
-                    # Vamos configurar o sistema para mirar 20 VIDAS. 
-                    # Se o Kelly pedir mais risco que isso, o sistema BLOQUEIA.
-                    VIDAS_ALVO = 20.0
+                    # 2. Definição do Range (Zona de Conforto vs. Zona de Performance)
+                    VIDAS_IDEAL = 20.0  # Chão (Segurança)
+                    VIDAS_MIN = 15.0    # Teto (Aceleração Aceitável)
                     
                     if kelly_full > 0 and total_buffer_real > 0 and pts_loss_medio_real > 0:
                         
-                        # Risco Máximo permitido pela matemática do Edge (Half Kelly)
+                        # Risco Máximo permitido pelo Edge Matemático (Half Kelly)
                         risco_teto_kelly = total_buffer_real * kelly_half
                         
-                        # Risco Máximo permitido pela sua Segurança (Manter 20 vidas)
-                        risco_teto_vidas = total_buffer_real / VIDAS_ALVO
+                        # Risco para 20 Vidas (Conservador)
+                        risco_vidas_20 = total_buffer_real / VIDAS_IDEAL
+                        # Risco para 15 Vidas (Agressivo Aceitável)
+                        risco_vidas_15 = total_buffer_real / VIDAS_MIN
                         
-                        # O SISTEMA ESCOLHE O MENOR DOS DOIS (O mais seguro)
-                        risco_final_sugerido = min(risco_teto_kelly, risco_teto_vidas)
+                        # O Sistema define o Range respeitando o TETO do Kelly
+                        # Se o Kelly mandar arriscar menos que 20 vidas, o teto cai.
+                        risco_piso_final = min(risco_vidas_20, risco_teto_kelly)
+                        risco_teto_final = min(risco_vidas_15, risco_teto_kelly)
                         
-                        # Cálculo de Lotes
+                        # Conversão para Lotes
                         risco_por_lote = pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
-                        lotes_sugeridos = math.floor(risco_final_sugerido / risco_por_lote) if risco_por_lote > 0 else 0
                         
-                        # Análise do gargalo: Quem está travando o lote?
-                        if risco_teto_vidas < risco_teto_kelly:
-                            motivo_trava = f"🛡️ Limitado por Segurança (Manter {int(VIDAS_ALVO)} vidas)"
-                            cor_sugestao = "#FFFF00" # Amarelo (Cautela)
+                        if risco_por_lote > 0:
+                            lote_min = math.floor(risco_piso_final / risco_por_lote)
+                            lote_max = math.floor(risco_teto_final / risco_por_lote)
                         else:
-                            motivo_trava = "🚀 Liberado pelo Kelly (Edge Alto)"
-                            cor_sugestao = "#00FF88" # Verde (Aceleração)
-
-                        # Limite de segurança Apex Hard Cap (Ex: 40 contratos)
-                        if lotes_sugeridos > 40: lotes_sugeridos = 40; motivo_trava = "🔒 Max Cap da Mesa"
+                            lote_min = 0; lote_max = 0
                         
-                    else:
-                        risco_final_sugerido = 0.0; lotes_sugeridos = 0
-                        motivo_trava = "⛔ Sem Edge ou Sem Buffer"
-                        cor_sugestao = "#FF4B4B"
+                        # Limite Hard Cap da Mesa (Ex: 40)
+                        HARD_CAP = 40
+                        if lote_min > HARD_CAP: lote_min = HARD_CAP
+                        if lote_max > HARD_CAP: lote_max = HARD_CAP
+                        
+                        # Formatação do Texto do Range
+                        if lote_min == lote_max:
+                            txt_range = f"{lote_min}"
+                        else:
+                            txt_range = f"{lote_min} a {lote_max}"
+                            
+                        # Status
+                        if lote_max < 1:
+                            cor_k = "#FF4B4B"; status_k = "AGUARDE (Gordura Baixa)"
+                        elif risco_teto_final < risco_vidas_15:
+                            cor_k = "#FFFF00"; status_k = "LIMITADO PELO EDGE" # Kelly segurou
+                        else:
+                            cor_k = "#00FF88"; status_k = "ZONA DE ACELERAÇÃO"
 
-                    # --- EXIBIÇÃO ---
+                    else:
+                        kelly_half = 0.0; lote_min = 0; lote_max = 0
+                        txt_range = "0"; cor_k = "#888"; status_k = "Sem Dados/Edge"
+
+                    # --- EXIBIÇÃO VISUAL LIMPA (v168) ---
+                    # Removemos o card "Filosofia" e focamos no prático
                     ka, kb, kc, kd = st.columns(4)
+                    
                     with ka:
+                        card_metric("BUFFER DISPONÍVEL", f"${total_buffer_real:,.0f}", f"Stop: ${stop_atual_val:,.0f}", "#00FF88", "Gordura real disponível para queimar antes de perder a conta.")
+                    
+                    with kb:
+                        card_metric("HALF-KELLY (MATH)", f"{kelly_half*100:.1f}%", f"Teto Teórico", "#888", "Percentual matemático ideal de risco (usado apenas como teto limite).")
+                    
+                    with kc:
+                        # Mostra o Risco Financeiro do Range
+                        r_min_show = lote_min * risco_por_lote
+                        r_max_show = lote_max * risco_por_lote
+                        card_metric("RISCO FINANCEIRO", f"${r_min_show:,.0f} - ${r_max_show:,.0f}", "Por Trade", cor_k, "Valor financeiro que você vai colocar na mesa.")
+
+                    with kd:
+                        # O Grande Card de Decisão
                         st.markdown(f"""
-                            <div style="border:1px solid #333; border-radius:10px; padding:10px; text-align:center;">
-                                <div style="color:#888; font-size:11px;">FILOSOFIA</div>
-                                <div style="color:white; font-size:18px; font-weight:bold;">{int(VIDAS_ALVO)} Vidas</div>
-                                <div style="color:#666; font-size:10px;">Buffer Alvo: {int(VIDAS_ALVO)}x o Risco</div>
+                            <div style="background: #101010; border: 2px solid {cor_k}; border-radius: 12px; padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
+                                <div style="color: #888; font-size: 11px; font-weight: bold; text-transform: uppercase;">SUGESTÃO DE LOTE</div>
+                                <div style="color: {cor_k}; font-size: 26px; font-weight: 900; margin: 5px 0;">{txt_range} <span style="font-size:14px">ctrs</span></div>
+                                <div style="font-size: 11px; color: #BBB; font-weight:bold;">{status_k}</div>
                             </div>
                         """, unsafe_allow_html=True)
-                    with kb:
-                        card_metric("HALF-KELLY (TETO)", f"{kelly_half*100:.1f}%", f"Max Risk: ${total_buffer_real * kelly_half:,.0f}", "#888", "O máximo matemático que seu Edge permite (sem olhar sobrevivência).")
-                    with kc:
-                        card_metric("RISCO SUGERIDO ($)", f"${risco_final_sugerido:,.2f}", f"Vidas Resultantes: {total_buffer_real/risco_final_sugerido if risco_final_sugerido > 0 else 0:.1f}", cor_sugestao, "Quanto dinheiro arriscar respeitando Kelly E as 20 Vidas.")
-                    with kd:
-                        card_metric("LOTE OTIMIZADO", f"{lotes_sugeridos}", f"Contratos ({ativo_referencia})", cor_sugestao, motivo_trava)
-
-                    st.markdown("---")
-
-                    # --- GRÁFICOS ---
-                    g1, g2 = st.columns([2, 1])
-                    with g1:
-                        view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
-                        if view_mode == "Sequência de Trades":
-                            df_filtered['trade_seq'] = range(1, len(df_filtered) + 1)
-                            x_axis = 'trade_seq'; x_title = "Quantidade de Trades"
-                        else:
-                            x_axis = 'data'; x_title = "Data"
-
-                        fig_eq = px.area(df_filtered, x=x_axis, y='equity', title="📈 Curva de Patrimônio", template="plotly_dark")
-                        fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
-                        fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
-                        fig_eq.update_layout(xaxis_title=x_title, yaxis_title="Patrimônio ($)")
-                        st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
-                        
-                    with g2:
-                        st.markdown("<br>", unsafe_allow_html=True) 
-                        ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
-                        fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-                        st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
-
-                    st.markdown("### 📅 Performance por Dia da Semana")
-                    df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
-                    dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
-                    df_filtered['dia_pt'] = df_filtered['dia_semana'].map(dias_pt)
-                    
-                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
-                    fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-                    fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
-                    st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
-
-            else: st.info("Sem operações registradas para este usuário.")
-        else: st.warning("Banco de dados vazio.")
         
     # ==============================================================================
     # 8. REGISTRAR TRADE
