@@ -18,13 +18,13 @@ try:
     key: str = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 except Exception as e:
-    st.error(f"Erro crítico de conexão: {e}")
+    st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v180", layout="wide", page_icon="💀")
+st.set_page_config(page_title="EvoTrade Terminal v156", layout="wide", page_icon="📈")
 
 # ==============================================================================
-# 2. ESTILOS CSS (ROBUSTO - MANTENDO O QUE VOCÊ GOSTA)
+# 2. ESTILOS CSS
 # ==============================================================================
 st.markdown("""
     <style>
@@ -90,7 +90,7 @@ st.markdown("""
         display: inline-flex; align-items: center; justify-content: center;
     }
 
-    /* Alerta de Perigo Imediato (v180) */
+    /* Alerta de Perigo Imediato (v152/155) */
     .piscante-erro { 
         padding: 20px; 
         border-radius: 8px; 
@@ -175,7 +175,7 @@ if check_password():
     ROLE = st.session_state.get("user_role", "user")
 
     # ==============================================================================
-    # 5. FUNÇÕES DE DADOS (DB)
+    # 5. FUNÇÕES DE DADOS (ATUALIZADAS v156)
     # ==============================================================================
     def load_trades_db():
         try:
@@ -203,6 +203,7 @@ if check_password():
         try:
             res = supabase.table("contas_config").select("*").eq("usuario", USER).execute()
             df = pd.DataFrame(res.data)
+            # Garantias v156
             if not df.empty:
                 if 'pico_previo' not in df.columns: df['pico_previo'] = df['saldo_inicial']
                 if 'fase_entrada' not in df.columns: df['fase_entrada'] = 'Fase 1'
@@ -254,10 +255,10 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v180 - MOTOR DE RISCO BROWNIAN MOTION + KELLY)
+    # 7. ABA: DASHBOARD (v165 - RISCO DE RUÍNA REAL / GAMBLER'S RUIN)
     # ==============================================================================
     if selected == "Dashboard":
-        st.title("📊 Central de Controle (v180)")
+        st.title("📊 Central de Controle (v165)")
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
@@ -328,16 +329,16 @@ if check_password():
                     max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
 
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO v180 (CORRIGIDO)
+                    # 🛡️ MOTOR DE CÁLCULO v165 - A FÓRMULA DA REALIDADE
                     # ==============================================================================
                     
+                    # 1. RISCO UNITÁRIO REAL (Baseado na dor média do histórico)
                     risco_comportamental = lote_medio_real * pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
                     if risco_comportamental == 0: risco_comportamental = 300.0
 
-                    # 2. BUFFER REAL DO GRUPO + STOP VARIABLE
+                    # 2. BUFFER REAL DO GRUPO (Oxigênio disponível até o Stop)
                     total_buffer_real = 0.0
                     contas_analisadas = 0
-                    soma_saldo_agora = 0.0 # FIX PARA O GRÁFICO
                     
                     if not df_contas.empty:
                         contas_alvo = df_contas if sel_grupo == "Todos" else df_contas[df_contas['grupo_nome'] == sel_grupo]
@@ -362,26 +363,25 @@ if check_password():
                                 if pico_real >= 155100.0: trailing_stop = 150100.0
                                 else: trailing_stop = pico_real - 5000.0
                                 
-                                soma_saldo_agora += saldo_agora
                                 total_buffer_real += max(0, saldo_agora - trailing_stop)
                                 contas_analisadas += 1
                     
                     if total_buffer_real == 0 and contas_analisadas == 0: total_buffer_real = 0.0
-                    
-                    stop_atual_val = soma_saldo_agora - total_buffer_real
 
                     # 3. VIDAS REAIS (U)
+                    # Quantas vezes eu posso errar antes de morrer?
                     fator_replicacao = contas_analisadas if contas_analisadas > 0 else 1
                     risco_grupo_total = risco_comportamental * fator_replicacao
+                    
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
-                    # 4. FÓRMULA DE RUÍNA (CORREÇÃO HÍBRIDA BROWNIAN MOTION v171)
-                    # Resolve o problema de Win Rate 50% + Payoff Alto
+                    # 4. FÓRMULA DE RUÍNA DO JOGADOR (Gambler's Ruin)
+                    # P = (q / p) ^ U
                     
-                    prob_ruina = 0.0
-                    msg_alerta = ""
                     p = win_rate_dec
                     q = 1 - p
+                    prob_ruina = 0.0
+                    msg_alerta = ""
                     
                     if total_trades < 5:
                         msg_alerta = "⚠️ Calibrando..."
@@ -391,43 +391,42 @@ if check_password():
                         prob_ruina = 100.0
                         msg_alerta = "LIQUIDAÇÃO IMINENTE"
                         color_r = "#FF0000"
-                    elif expectancy <= 0:
-                        # Se expectativa negativa, a ruína é certa matematicamente
+                    elif p <= q:
+                        # Se você perde mais do que ganha (ou igual), a ruína é 100% certa no longo prazo
                         prob_ruina = 100.0
-                        msg_alerta = "EDGE NEGATIVO"
+                        msg_alerta = "EDGE NEGATIVO (PARE)"
                         color_r = "#FF0000"
                     else:
-                        # Fórmula de Difusão (Brownian Motion)
-                        # Ideal para WR baixo mas Payoff alto
-                        # Var = p*(win-exp)^2 + q*(-loss-exp)^2
-                        variancia = (p * (avg_win - expectancy)**2) + (q * (-avg_loss - expectancy)**2)
-                        
-                        if variancia > 0:
-                            # Formula: P = exp(-2 * Mu * Buffer / Sigma^2)
-                            arg_exp = -2 * expectancy * total_buffer_real / variancia
-                            try:
-                                raw_ruin = math.exp(arg_exp)
-                            except:
-                                raw_ruin = 0.0
-                            prob_ruina = raw_ruin * 100
-                        else:
-                            prob_ruina = 0.0
-
+                        # Fórmula Discreta (A Verdade)
+                        raw_ruin = (q / p) ** vidas_u
+                        prob_ruina = raw_ruin * 100
                         prob_ruina = min(max(prob_ruina, 0.0), 100.0)
                         
-                        if prob_ruina < 1.0: color_r = "#00FF88"; msg_alerta = "Zona de Segurança"
-                        elif prob_ruina < 5.0: color_r = "#FFFF00"; msg_alerta = "Risco Moderado"
-                        else: color_r = "#FF4B4B"; msg_alerta = "RISCO CRÍTICO"
+                        if prob_ruina < 1.0: 
+                            color_r = "#00FF88" # Seguro
+                            msg_alerta = "Zona de Segurança"
+                        elif prob_ruina < 5.0: 
+                            color_r = "#FFFF00" # Atenção
+                            msg_alerta = "Risco Moderado"
+                        else: 
+                            color_r = "#FF4B4B" # Perigo
+                            msg_alerta = "RISCO CRÍTICO"
 
-                    if prob_ruina > 10.0 and total_trades >= 5 and expectancy > 0:
+                    # --- TRAVA DE SEGURANÇA VISUAL (ALERTA DE PÂNICO) ---
+                    # Se o risco real for maior que 10%, o sistema grita.
+                    if prob_ruina > 10.0 and total_trades >= 5:
                         st.markdown(f"""
                             <div class="piscante-erro">
                                 💀 ALERTA DE RUÍNA: {prob_ruina:.2f}% 💀<br>
-                                <span style="font-size:16px; font-weight:normal; text-transform:none;">REDUZA O LOTE AGORA.</span>
+                                <span style="font-size:16px; font-weight:normal; text-transform:none;">
+                                    Você tem apenas <b>{vidas_u:.1f} Vidas</b>. A estatística está contra você.<br>
+                                    A probabilidade de quebrar sua conta em breve é ALTÍSSIMA.<br>
+                                    <b>AÇÃO IMEDIATA: REDUZA O LOTE PELA METADE.</b>
+                                </span>
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # --- EXIBIÇÃO DE CARDS GERAIS ---
+                    # --- EXIBIÇÃO DE CARDS ---
                     st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "Soma total dos lucros e prejuízos no período.")
@@ -449,20 +448,27 @@ if check_password():
                     with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white", "Tamanho médio da mão utilizada.")
                     with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações.")
 
-                    # --- ANÁLISE DE SOBREVIVÊNCIA ---
+                    # --- CARD DO MOTOR v165 (NOVO) ---
                     st.markdown("---")
-                    st.subheader(f"🛡️ Análise de Sobrevivência (Brownian Motion) - {sel_grupo}")
+                    st.subheader(f"🛡️ Análise de Sobrevivência (Gambler's Ruin) - {sel_grupo}")
+                    
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
+
                     k1, k2, k3, k4 = st.columns(4)
                     with k1:
                         lbl_z = "EDGE POSITIVO" if z_edge > 0 else "EDGE NEGATIVO"
                         cor_z = "#00FF88" if z_edge > 0 else "#FF4B4B"
                         card_metric("Z-SCORE (EDGE)", f"{z_edge:.4f}", lbl_z, cor_z, "Força estatística da sua estratégia.")
+                    
                     with k2:
                         card_metric("BUFFER REAL (HOJE)", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Ativas", "#00FF88", "Oxigênio real: Distância do Saldo Atual para o Stop Apex.")
+
                     with k3:
+                        # Cores de Vidas baseadas na realidade discreta
                         cor_v = "#FF4B4B" if vidas_u < 6 else ("#FFFF00" if vidas_u < 10 else "#00FF88")
+                        lbl_v = "CRÍTICO" if vidas_u < 6 else "OK"
                         card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Base: ${risco_grupo_total:,.0f}", cor_v, "Quantos stops cheios você suporta AGORA.")
+
                     with k4:
                         st.markdown(f"""
                             <div style="background: #101010; border: 2px solid {color_r}; border-radius: 12px; padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
@@ -472,118 +478,22 @@ if check_password():
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # ==============================================================================
-                    # 🧠 MÓDULO KELLY v170 (INTEGRADO AO FULL)
-                    # ==============================================================================
                     st.markdown("---")
-                    st.subheader("🧠 Inteligência de Lote (Faixa de Operação)")
-                    
-                    if payoff > 0:
-                        kelly_full = win_rate_dec - ((1 - win_rate_dec) / payoff)
-                    else: kelly_full = -1.0
-                    
-                    kelly_half = max(0.0, kelly_full / 2)
 
-                    # Range Seguro
-                    VIDAS_IDEAL = 20.0
-                    VIDAS_MIN = 15.0
-                    
-                    if kelly_full > 0 and total_buffer_real > 0 and pts_loss_medio_real > 0:
-                        
-                        risco_teto_kelly = total_buffer_real * kelly_half
-                        risco_vidas_20 = total_buffer_real / VIDAS_IDEAL
-                        risco_vidas_15 = total_buffer_real / VIDAS_MIN
-                        
-                        risco_piso_final = min(risco_vidas_20, risco_teto_kelly)
-                        risco_teto_final = min(risco_vidas_15, risco_teto_kelly)
-                        
-                        risco_por_lote = pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
-                        
-                        if risco_por_lote > 0:
-                            lote_min = math.floor(risco_piso_final / risco_por_lote)
-                            lote_max = math.floor(risco_teto_final / risco_por_lote)
-                        else:
-                            lote_min = 0; lote_max = 0
-                        
-                        HARD_CAP = 40
-                        if lote_min > HARD_CAP: lote_min = HARD_CAP
-                        if lote_max > HARD_CAP: lote_max = HARD_CAP
-                        
-                        if lote_min == lote_max: txt_range = f"{lote_min}"
-                        else: txt_range = f"{lote_min} a {lote_max}"
-                            
-                        if lote_max < 1:
-                            cor_k = "#FF4B4B"; status_k = "AGUARDE (Gordura Baixa)"
-                        elif risco_teto_final < risco_vidas_15:
-                            cor_k = "#FFFF00"; status_k = "LIMITADO PELO EDGE"
-                        else:
-                            cor_k = "#00FF88"; status_k = "ZONA DE ACELERAÇÃO"
-
-                    else:
-                        kelly_half = 0.0; lote_min = 0; lote_max = 0
-                        txt_range = "0"; cor_k = "#888"; status_k = "Sem Dados/Edge"
-
-                    ka, kb, kc, kd = st.columns(4)
-                    with ka:
-                        card_metric("BUFFER DISPONÍVEL", f"${total_buffer_real:,.0f}", f"Stop: ${stop_atual_val:,.0f}", "#00FF88", "Gordura real disponível para queimar antes de perder a conta.")
-                    with kb:
-                        card_metric("HALF-KELLY (MATH)", f"{kelly_half*100:.1f}%", f"Teto Teórico", "#888", "Percentual matemático ideal de risco (usado apenas como teto limite).")
-                    with kc:
-                        r_min_show = lote_min * risco_por_lote
-                        r_max_show = lote_max * risco_por_lote
-                        card_metric("RISCO FINANCEIRO", f"${r_min_show:,.0f} - ${r_max_show:,.0f}", "Por Trade", cor_k, "Valor financeiro que você vai colocar na mesa.")
-                    with kd:
-                        st.markdown(f"""
-                            <div style="background: #101010; border: 2px solid {cor_k}; border-radius: 12px; padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
-                                <div style="color: #888; font-size: 11px; font-weight: bold; text-transform: uppercase;">SUGESTÃO DE LOTE</div>
-                                <div style="color: {cor_k}; font-size: 26px; font-weight: 900; margin: 5px 0;">{txt_range} <span style="font-size:14px">ctrs</span></div>
-                                <div style="font-size: 11px; color: #BBB; font-weight:bold;">{status_k}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-
-                    # --- GRÁFICOS (CORRIGIDOS v169 - SOMAM SALDO INICIAL) ---
-                    st.markdown("---")
-                    
+                    # --- GRÁFICOS ---
                     g1, g2 = st.columns([2, 1])
                     with g1:
                         view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
-                        
-                        # Cálculo Saldo Inicial Base para o gráfico
-                        if pd.isna(soma_saldo_agora) or soma_saldo_agora == 0:
-                            saldo_inicial_plot = 0.0
-                            if not df_contas.empty:
-                                if sel_grupo == "Todos":
-                                    saldo_inicial_plot = df_contas[df_contas['status_conta'] == 'Ativa']['saldo_inicial'].sum()
-                                else:
-                                    saldo_inicial_plot = df_contas[(df_contas['grupo_nome'] == sel_grupo) & (df_contas['status_conta'] == 'Ativa')]['saldo_inicial'].sum()
-                        else:
-                            saldo_inicial_plot = soma_saldo_agora - net_profit
-
                         if view_mode == "Sequência de Trades":
                             df_filtered['trade_seq'] = range(1, len(df_filtered) + 1)
-                            df_filtered['equity_real'] = df_filtered['resultado'].cumsum() + saldo_inicial_plot
                             x_axis = 'trade_seq'; x_title = "Quantidade de Trades"
                         else:
-                            df_filtered = df_filtered.sort_values('created_at')
-                            df_filtered['equity_real'] = df_filtered['resultado'].cumsum() + saldo_inicial_plot
                             x_axis = 'data'; x_title = "Data"
 
-                        fig_eq = px.area(df_filtered, x=x_axis, y='equity_real', title=f"📈 Curva de Patrimônio (Base: ${saldo_inicial_plot:,.0f})", template="plotly_dark")
+                        fig_eq = px.area(df_filtered, x=x_axis, y='equity', title="📈 Curva de Patrimônio", template="plotly_dark")
                         fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
-                        fig_eq.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="gray", annotation_text="Saldo Inicial")
-                        
-                        y_vals = df_filtered['equity_real']
-                        if not y_vals.empty:
-                            min_y = min(y_vals.min(), saldo_inicial_plot)
-                            max_y = max(y_vals.max(), saldo_inicial_plot)
-                            margem = (max_y - min_y) * 0.2 if max_y != min_y else 1000
-                            
-                            fig_eq.update_layout(
-                                xaxis_title=x_title, 
-                                yaxis_title="Saldo Total ($)",
-                                yaxis_range=[min_y - margem, max_y + margem] 
-                            )
-                        
+                        fig_eq.add_hline(y=0, line_dash="dash", line_color="gray")
+                        fig_eq.update_layout(xaxis_title=x_title, yaxis_title="Patrimônio ($)")
                         st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
                         
                     with g2:
@@ -606,7 +516,7 @@ if check_password():
         else: st.warning("Banco de dados vazio.")
         
     # ==============================================================================
-    # 8. REGISTRAR TRADE (COMPLETO)
+    # 8. REGISTRAR TRADE
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
@@ -705,7 +615,7 @@ if check_password():
                     time.sleep(2); st.rerun()
                 except Exception as e: st.error(f"Erro: {e}")
 
-    # ==============================================================================
+   # ==============================================================================
     # 9. ABA CONTAS (v157 FINAL - SEM ERROS DE INDENTAÇÃO + ZOOM + AUTO-FASE)
     # ==============================================================================
     elif selected == "Contas":
@@ -813,7 +723,9 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (v160 - TRAILING STOP CORRIGIDO) ---
+            # ==============================================================================
+            # ABA 4: MONITOR DE PERFORMANCE (v160 - TRAILING STOP CORRIGIDO)
+            # ==============================================================================
             with t4:
                 st.subheader("🚀 Monitor de Performance (Apex 150k)")
                 df_c = load_contas_config()
@@ -907,8 +819,8 @@ if check_password():
                                 fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)', name="Saldo")
                                 
                                 fig.add_scatter(x=df_plot[x_col], y=df_plot['stop_hist'], mode='lines', 
-                                                line=dict(color='#FF4B4B', width=2), name='Trailing Stop',
-                                                hovertemplate='Stop: $%{y:,.2f}<extra></extra>')
+                                              line=dict(color='#FF4B4B', width=2), name='Trailing Stop',
+                                              hovertemplate='Stop: $%{y:,.2f}<extra></extra>')
                                 
                                 fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
                                 fig.add_hline(y=161000, line_color="gold", line_width=1, opacity=0.3)
@@ -935,6 +847,7 @@ if check_password():
                             
                             falta_money = meta_dinamica - saldo_atual_base
                             
+                            # Cálculo EV e Trades Restantes
                             ev_por_trade = trades_g['resultado'].mean() if not trades_g.empty else 0.0
                             
                             if falta_money > 0:
