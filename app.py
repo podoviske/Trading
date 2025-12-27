@@ -633,13 +633,42 @@ if check_password():
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
+                    # ==========================================================
+                    # CORREÇÃO DEFINITIVA: GRÁFICO DIAS DA SEMANA (VIA NÚMERO)
+                    # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
-                    df_filtered['dia_semana'] = pd.to_datetime(df_filtered['data']).dt.day_name()
-                    dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
-                    df_filtered['dia_pt'] = df_filtered['dia_semana'].map(dias_pt)
-                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum().reindex(['Seg', 'Ter', 'Qua', 'Qui', 'Sex']).reset_index()
-                    fig_day = px.bar(day_perf, x='dia_pt', y='resultado', template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+                    
+                    # 1. Converte para DateTime com segurança
+                    df_filtered['data_dt'] = pd.to_datetime(df_filtered['data'])
+                    
+                    # 2. Extrai o NÚMERO do dia (0=Segunda, 6=Domingo)
+                    # Isso blinda o código contra servidores em Inglês ou Português
+                    df_filtered['dia_num'] = df_filtered['data_dt'].dt.dayofweek
+                    
+                    # 3. Mapa Numérico (0 -> Seg, 1 -> Ter...)
+                    mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
+                    df_filtered['dia_pt'] = df_filtered['dia_num'].map(mapa_dias)
+                    
+                    # 4. Agrupa somando os resultados
+                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum()
+                    
+                    # 5. Força a ordem correta (Seg -> Sex) e preenche vazios com 0.0
+                    ordem_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
+                    day_perf = day_perf.reindex(ordem_semana, fill_value=0.0).reset_index()
+                    
+                    # 6. Plota o Gráfico
+                    fig_day = px.bar(
+                        day_perf, 
+                        x='dia_pt', 
+                        y='resultado', 
+                        template="plotly_dark", 
+                        color='resultado', 
+                        color_continuous_scale=["#FF4B4B", "#00FF88"],
+                        text_auto='.2s' # Mostra o valor em cima da barra
+                    )
+                    
                     fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
+                    # Remove a barra de ferramentas para ficar limpo
                     st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
 
             else: st.info("Sem operações registradas para este usuário.")
