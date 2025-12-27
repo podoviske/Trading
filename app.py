@@ -582,6 +582,9 @@ if check_password():
                     else:
                         kelly_half = 0.0; lote_min = 0; lote_max = 0
                         txt_range = "0"; cor_k = "#888"; status_k = "Sem Dados/Edge"
+                        # --- CORREÇÃO: Definindo as variáveis para não quebrar o card abaixo ---
+                        r_min_show = 0.0
+                        r_max_show = 0.0
 
                     ka, kb, kc, kd = st.columns(4)
                     with ka:
