@@ -263,11 +263,13 @@ if check_password():
         lucro_acc = trades_df['resultado'].sum() if not trades_df.empty else 0.0
         saldo_atual = saldo_inicial + lucro_acc
         
+        # CORREÇÃO AQUI: Forçamos o sistema a olhar para o histórico REAL de trades
+        # em vez de confiar cegamente no valor salvo no banco (que pode estar errado)
         if not trades_df.empty:
             equity_curve = trades_df['resultado'].cumsum() + saldo_inicial
-            pico_real = max(pico_previo, equity_curve.max(), saldo_inicial)
+            pico_real = max(saldo_inicial, equity_curve.max()) 
         else:
-            pico_real = max(pico_previo, saldo_inicial)
+            pico_real = max(saldo_inicial, pico_previo)
         
         # 3. Lógica de Trava (Lock do Stop em BE + 100)
         stop_travado = saldo_inicial + 100.0
