@@ -634,37 +634,32 @@ if check_password():
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
                     # ==========================================================
-                    # CORREÇÃO MANUAL: EXTRAÇÃO DE DIA UNIVERSAL
+                    # GRÁFICO DIAS DA SEMANA - CORREÇÃO ATÔMICA
                     # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
-
-                    # 1. Função que extrai o dia (0=Seg, 6=Dom) independente do Pandas/Idioma
-                    def pegar_dia_pt(data_obj):
-                        if pd.isna(data_obj): return None
-                        # Tenta converter se for string, senão usa o próprio objeto
-                        try:
-                            d = pd.to_datetime(data_obj)
-                            # weekday(): 0=Monday, 6=Sunday
-                            mapa = {0:'Seg', 1:'Ter', 2:'Qua', 3:'Qui', 4:'Sex', 5:'Sab', 6:'Dom'}
-                            return mapa.get(d.weekday(), None)
-                        except:
-                            return None
-
-                    # 2. Aplica a função linha a linha (Mais lento, porém INFALÍVEL)
-                    df_filtered['dia_pt'] = df_filtered['data'].apply(pegar_dia_pt)
-
-                    # 3. Garante que resultado é número (float)
+                    
+                    # 1. 🔥 A VACINA (O QUE FALTAVA): Força 'resultado' ser Número
+                    # Sem isso, se vier texto do banco, a soma falha e o gráfico fica nulo
                     df_filtered['resultado'] = pd.to_numeric(df_filtered['resultado'], errors='coerce').fillna(0.0)
-
-                    # 4. Agrupa e Soma
+                    
+                    # 2. Converte para DateTime com segurança
+                    df_filtered['data_dt'] = pd.to_datetime(df_filtered['data'], errors='coerce')
+                    
+                    # 3. Extrai o NÚMERO do dia (0=Segunda, 6=Domingo)
+                    df_filtered['dia_num'] = df_filtered['data_dt'].dt.dayofweek
+                    
+                    # 4. Mapa Numérico (Universal)
+                    mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
+                    df_filtered['dia_pt'] = df_filtered['dia_num'].map(mapa_dias)
+                    
+                    # 5. Agrupa somando (Agora funciona pois garantimos que é número no passo 1)
                     day_perf = df_filtered.groupby('dia_pt')['resultado'].sum()
-
-                    # 5. Força a ordem da semana (Seg a Sex) e preenche vazios com 0
-                    ordem = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
-                    # fill_value=0 é CRÍTICO aqui. Sem ele, dias sem trade viram NaN e somem.
-                    day_perf = day_perf.reindex(ordem, fill_value=0.0).reset_index()
-
-                    # 6. Plota
+                    
+                    # 6. Força a ordem correta e preenche vazios com 0.0
+                    ordem_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
+                    day_perf = day_perf.reindex(ordem_semana, fill_value=0.0).reset_index()
+                    
+                    # 7. Plota o Gráfico
                     fig_day = px.bar(
                         day_perf, 
                         x='dia_pt', 
@@ -672,9 +667,10 @@ if check_password():
                         template="plotly_dark", 
                         color='resultado', 
                         color_continuous_scale=["#FF4B4B", "#00FF88"],
-                        text_auto='.2s'
+                        text_auto='.2s' 
                     )
-                    fig_day.update_layout(xaxis_title=None, yaxis_title="Resultado ($)")
+                    
+                    fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
                     st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
         else: st.warning("Banco de dados vazio.")
         
