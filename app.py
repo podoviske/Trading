@@ -591,11 +591,11 @@ if check_password():
                     
                     g1, g2 = st.columns([2, 1])
                     with g1:
-                        # 1. Cria o seletor
                         view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
                         
-                        # 2. Define o Saldo Inicial Base para o gráfico
+                        # Cálculo Saldo Inicial Base para o gráfico (Reverso)
                         if pd.isna(soma_saldo_agora) or soma_saldo_agora == 0:
+                            # Fallback se não calculou no loop
                             saldo_inicial_plot = 0.0
                             if not df_contas.empty:
                                 if sel_grupo == "Todos":
@@ -605,7 +605,6 @@ if check_password():
                         else:
                             saldo_inicial_plot = soma_saldo_agora - net_profit
 
-                        # 3. Prepara os dados (DENTRO do mesmo bloco, usando a variável que acabamos de criar)
                         if view_mode == "Sequência de Trades":
                             df_filtered['trade_seq'] = range(1, len(df_filtered) + 1)
                             df_filtered['equity_real'] = df_filtered['resultado'].cumsum() + saldo_inicial_plot
@@ -615,7 +614,6 @@ if check_password():
                             df_filtered['equity_real'] = df_filtered['resultado'].cumsum() + saldo_inicial_plot
                             x_axis = 'data'; x_title = "Data"
 
-                        # 4. Plota o Gráfico
                         fig_eq = px.area(df_filtered, x=x_axis, y='equity_real', title=f"📈 Curva de Patrimônio (Base: ${saldo_inicial_plot:,.0f})", template="plotly_dark")
                         fig_eq.update_traces(line_color='#B20000', fillcolor='rgba(178, 0, 0, 0.2)')
                         fig_eq.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="gray", annotation_text="Saldo Inicial")
