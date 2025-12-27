@@ -454,62 +454,71 @@ if check_password():
                         """, unsafe_allow_html=True)
 
                     # ==============================================================================
-                    # 🧠 MÓDULO KELLY v166 (NOVO)
+                    # 🧠 MÓDULO KELLY v167 (COM TRAVA DE SOBREVIVÊNCIA - 20 VIDAS)
                     # ==============================================================================
                     st.markdown("---")
-                    st.subheader("🧠 Recomendações de Kelly (Position Sizing)")
+                    st.subheader("🧠 Recomendações de Kelly (Ajustado por Sobrevivência)")
                     
-                    # Cálculo Kelly: W - [(1-W)/R]
+                    # 1. Cálculo Kelly Teórico (Full e Half)
                     if payoff > 0:
                         kelly_full = win_rate_dec - ((1 - win_rate_dec) / payoff)
-                    else:
-                        kelly_full = -1.0
+                    else: kelly_full = -1.0
                     
-                    # Só calcula se tiver Edge e Buffer
+                    kelly_half = max(0.0, kelly_full / 2)
+
+                    # 2. Definição do Nível de Conforto (Vidas)
+                    # Você disse: "10 é pouco, 20 é ideal, 15 aceitável"
+                    # Vamos configurar o sistema para mirar 20 VIDAS. 
+                    # Se o Kelly pedir mais risco que isso, o sistema BLOQUEIA.
+                    VIDAS_ALVO = 20.0
+                    
                     if kelly_full > 0 and total_buffer_real > 0 and pts_loss_medio_real > 0:
-                        # Half Kelly (Conservador)
-                        kelly_half = kelly_full / 2
                         
-                        # Risco Sugerido ($) = Buffer Real * Kelly Fraction
-                        # AVISO: Isso é o risco TOTAL da carteira (todas as contas juntas)
-                        risco_sugerido_half = total_buffer_real * kelly_half
+                        # Risco Máximo permitido pela matemática do Edge (Half Kelly)
+                        risco_teto_kelly = total_buffer_real * kelly_half
                         
-                        # Conversão para Lotes
-                        # Risco unitário por lote = pts_loss_medio * multiplier
+                        # Risco Máximo permitido pela sua Segurança (Manter 20 vidas)
+                        risco_teto_vidas = total_buffer_real / VIDAS_ALVO
+                        
+                        # O SISTEMA ESCOLHE O MENOR DOS DOIS (O mais seguro)
+                        risco_final_sugerido = min(risco_teto_kelly, risco_teto_vidas)
+                        
+                        # Cálculo de Lotes
                         risco_por_lote = pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
+                        lotes_sugeridos = math.floor(risco_final_sugerido / risco_por_lote) if risco_por_lote > 0 else 0
                         
-                        lotes_sugeridos_half = math.floor(risco_sugerido_half / risco_por_lote) if risco_por_lote > 0 else 0
-                        
-                        # Ajuste para número de contas (se for grupo com 5 contas, divide o lote sugerido por 5? 
-                        # Não, se o risco_sugerido é sobre o Buffer TOTAL, o lote sugerido é o TOTAL para distribuir).
-                        # Mas como o trader opera replicando, esse lote seria o 'Input' no replicador?
-                        # Vamos assumir que Lote Sugerido = Lote a ser boletado no replicador (Unitário * Contas) ou Lote por Conta?
-                        # Melhor: Lote Total do Grupo.
-                        
-                        color_k = "#00FF88"
-                        lbl_k = "APLICÁVEL"
-                        
-                        # Limite de segurança Apex (Ex: 20 contratos é max em algumas contas, mas aqui é sugestão matemática)
-                        if lotes_sugeridos_half > 40: lotes_sugeridos_half = 40; lbl_k = "MAX CAP"
+                        # Análise do gargalo: Quem está travando o lote?
+                        if risco_teto_vidas < risco_teto_kelly:
+                            motivo_trava = f"🛡️ Limitado por Segurança (Manter {int(VIDAS_ALVO)} vidas)"
+                            cor_sugestao = "#FFFF00" # Amarelo (Cautela)
+                        else:
+                            motivo_trava = "🚀 Liberado pelo Kelly (Edge Alto)"
+                            cor_sugestao = "#00FF88" # Verde (Aceleração)
 
+                        # Limite de segurança Apex Hard Cap (Ex: 40 contratos)
+                        if lotes_sugeridos > 40: lotes_sugeridos = 40; motivo_trava = "🔒 Max Cap da Mesa"
+                        
                     else:
-                        kelly_full = 0.0; kelly_half = 0.0
-                        risco_sugerido_half = 0.0; lotes_sugeridos_half = 0
-                        color_k = "#FF4B4B"
-                        lbl_k = "NÃO APLICAR (SEM EDGE)"
+                        risco_final_sugerido = 0.0; lotes_sugeridos = 0
+                        motivo_trava = "⛔ Sem Edge ou Sem Buffer"
+                        cor_sugestao = "#FF4B4B"
 
+                    # --- EXIBIÇÃO ---
                     ka, kb, kc, kd = st.columns(4)
                     with ka:
-                        card_metric("FRAÇÃO KELLY (FULL)", f"{kelly_full*100:.1f}%", "Agressivo (Não Use)", "#888", "Percentual teórico do Buffer para arriscar (Matematicamente Ótimo, mas volátil).")
+                        st.markdown(f"""
+                            <div style="border:1px solid #333; border-radius:10px; padding:10px; text-align:center;">
+                                <div style="color:#888; font-size:11px;">FILOSOFIA</div>
+                                <div style="color:white; font-size:18px; font-weight:bold;">{int(VIDAS_ALVO)} Vidas</div>
+                                <div style="color:#666; font-size:10px;">Buffer Alvo: {int(VIDAS_ALVO)}x o Risco</div>
+                            </div>
+                        """, unsafe_allow_html=True)
                     with kb:
-                        card_metric("HALF-KELLY (SUGERIDO)", f"{kelly_half*100:.1f}%", "Conservador", color_k, "Fração recomendada para crescimento sustentável.")
+                        card_metric("HALF-KELLY (TETO)", f"{kelly_half*100:.1f}%", f"Max Risk: ${total_buffer_real * kelly_half:,.0f}", "#888", "O máximo matemático que seu Edge permite (sem olhar sobrevivência).")
                     with kc:
-                        card_metric("RISCO SUGERIDO ($)", f"${risco_sugerido_half:,.2f}", f"Baseado no Buffer ${total_buffer_real/1000:.0f}k", color_k, "Quanto dinheiro arriscar na próxima operação (Stop Loss Financeiro).")
+                        card_metric("RISCO SUGERIDO ($)", f"${risco_final_sugerido:,.2f}", f"Vidas Resultantes: {total_buffer_real/risco_final_sugerido if risco_final_sugerido > 0 else 0:.1f}", cor_sugestao, "Quanto dinheiro arriscar respeitando Kelly E as 20 Vidas.")
                     with kd:
-                        card_metric("LOTE SUGERIDO (TOTAL)", f"{lotes_sugeridos_half}", f"Contratos ({ativo_referencia})", color_k, "Quantidade de contratos calculada baseada no seu Stop Médio histórico.")
-
-                    if kelly_full <= 0:
-                        st.caption("⚠️ O Critério de Kelly não sugere trades quando a Expectativa Matemática é negativa ou o Payoff é insuficiente.")
+                        card_metric("LOTE OTIMIZADO", f"{lotes_sugeridos}", f"Contratos ({ativo_referencia})", cor_sugestao, motivo_trava)
 
                     st.markdown("---")
 
