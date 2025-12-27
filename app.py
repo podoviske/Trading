@@ -21,7 +21,7 @@ except Exception as e:
     st.error(f"Erro crítico de conexão: {e}")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Empire v240", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="EvoTrade Empire v250", layout="wide", page_icon="🦅")
 
 # ==============================================================================
 # 2. ESTILOS CSS
@@ -169,7 +169,7 @@ def check_password():
         return False
     return True
 
-# >>> O CÓDIGO SÓ AVANÇA SE ESTIVER LOGADO (INDENTAÇÃO CRÍTICA AQUI) <<<
+# >>> O CÓDIGO SÓ AVANÇA AQUI SE O LOGIN FOR VERDADEIRO <<<
 if check_password():
     MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
     USER = st.session_state["logged_user"]
@@ -232,7 +232,7 @@ if check_password():
         """, unsafe_allow_html=True)
 
     # ==============================================================================
-    # 🔥 MOTOR DE FASES v240 (COMPLETO E CORRIGIDO)
+    # 🔥 MOTOR DE FASES v250 (COMPLETO E CORRIGIDO)
     # ==============================================================================
     def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
         """
@@ -304,7 +304,7 @@ if check_password():
         }
 
     # ==============================================================================
-    # 6. MENU LATERAL (AGORA DENTRO DO IF - CORREÇÃO CRÍTICA)
+    # 6. MENU LATERAL (AGORA DENTRO DO IF)
     # ==============================================================================
     with st.sidebar:
         st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
@@ -327,12 +327,17 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v240 - INDENTAÇÃO Z-EDGE CORRIGIDA)
+    # 7. ABA: DASHBOARD (v250 - BLINDAGEM DE ESCOPO)
     # ==============================================================================
     if selected == "Dashboard":
-        st.title("📊 Central de Controle (v240)")
+        st.title("📊 Central de Controle (v250)")
         df_raw = load_trades_db()
         df_contas = load_contas_config()
+        
+        # INICIALIZAÇÃO OBRIGATÓRIA DE VARIÁVEIS (PREVINE NAME ERROR)
+        win_rate_dec = 0.0
+        loss_rate_dec = 0.0
+        payoff = 0.0
         
         if not df_raw.empty:
             df = df_raw[df_raw['usuario'] == USER]
@@ -365,7 +370,7 @@ if check_password():
                 if df_filtered.empty:
                     st.warning("⚠️ Nenhum trade encontrado com os filtros.")
                 else:
-                    # Inicialização Segura de Variáveis
+                    # Inicialização Segura de Variáveis do Loop
                     total_buffer_real = 0.0
                     soma_saldo_agora = 0.0
                     contas_analisadas = 0
@@ -403,6 +408,7 @@ if check_password():
                     pf_str = f"{pf:.2f}" if gross_loss > 0 else "∞"
                     
                     win_rate_dec = len(wins) / total_trades
+                    loss_rate_dec = len(losses) / total_trades # Definido aqui
                     win_rate = win_rate_dec * 100
                     
                     avg_win = wins['resultado'].mean() if not wins.empty else 0
@@ -432,12 +438,11 @@ if check_password():
                     risco_grupo_total = risco_comportamental * fator_replicacao
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
-                    # Fórmula de Ruína (CORREÇÃO DE ESCOPO: Variáveis p e q agora são usadas dentro deste bloco else)
+                    # Fórmula de Ruína
                     p = win_rate_dec
                     q = 1 - p
                     prob_ruina = 0.0
                     msg_alerta = ""
-                    loss_rate_dec = len(losses) / total_trades
                     
                     if total_trades < 5:
                         msg_alerta = "⚠️ Calibrando..."
@@ -496,11 +501,11 @@ if check_password():
                     with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white", "Tamanho médio da mão utilizada.")
                     with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total de operações.")
 
-                    # --- ANÁLISE DE SOBREVIVÊNCIA (CORREÇÃO INDENTAÇÃO) ---
+                    # --- ANÁLISE DE SOBREVIVÊNCIA (CORREÇÃO DE ESCOPO) ---
                     st.markdown("---")
                     st.subheader(f"🛡️ Análise de Sobrevivência (Brownian Motion) - {sel_grupo}")
                     
-                    # CORREÇÃO DO NAME_ERROR (LOSS_RATE_DEC)
+                    # Usa variáveis inicializadas
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
                     
                     k1, k2, k3, k4 = st.columns(4)
@@ -585,6 +590,8 @@ if check_password():
                     st.markdown("---")
                     g1, g2 = st.columns([2, 1])
                     with g1:
+                        view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
+                        
                         # Cálculo Saldo Inicial Base para o gráfico (Reverso)
                         if pd.isna(soma_saldo_agora) or soma_saldo_agora == 0:
                             saldo_inicial_plot = 0.0
@@ -737,10 +744,10 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (v240 - INTEGRAÇÃO MOTOR DE FASES CORRIGIDA)
+    # 9. ABA CONTAS (v250 - INTEGRAÇÃO MOTOR DE FASES CORRIGIDA)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v240)")
+        st.title("💼 Gestão de Portfólio (v250)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
