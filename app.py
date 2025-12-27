@@ -250,7 +250,7 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (v170 - CORREÇÃO DE ERRO STOP VARIABLE)
+    # 7. ABA: DASHBOARD (v170 - CORREÇÃO DE ERRO STOP VARIABLE E RUÍNA)
     # ==============================================================================
     if selected == "Dashboard":
         st.title("📊 Central de Controle (v170)")
@@ -333,7 +333,7 @@ if check_password():
                     # 2. CÁLCULO DE BUFFER E STOP
                     total_buffer_real = 0.0
                     contas_analisadas = 0
-                    soma_saldo_agora = 0.0 # <--- (FIX) Acumulador de Saldo
+                    soma_saldo_agora = 0.0 # FIX: Acumulador declarado antes do loop
                     
                     if not df_contas.empty:
                         contas_alvo = df_contas if sel_grupo == "Todos" else df_contas[df_contas['grupo_nome'] == sel_grupo]
@@ -363,7 +363,7 @@ if check_password():
                     
                     if total_buffer_real == 0 and contas_analisadas == 0: total_buffer_real = 0.0
                     
-                    # (FIX) Cálculo do Stop Total Implícito
+                    # FIX: Definição do Stop Atual Fora do Loop
                     stop_atual_val = soma_saldo_agora - total_buffer_real
 
                     # 3. VIDAS REAIS (U)
@@ -384,20 +384,30 @@ if check_password():
                         prob_ruina = 100.0
                         msg_alerta = "LIQUIDAÇÃO IMINENTE"
                         color_r = "#FF0000"
-                    elif p <= q:
+                    elif expectancy <= 0: # FIX: Só acusa 100% se a Expectativa for Negativa (não apenas WR 50%)
                         prob_ruina = 100.0
-                        msg_alerta = "EDGE NEGATIVO (PARE)"
+                        msg_alerta = "EXPECTATIVA NEGATIVA"
                         color_r = "#FF0000"
+                    elif p <= 0.5 and expectancy > 0:
+                        # Se Win Rate <= 50% mas Payoff salva, Gambler's Ruin simples falha.
+                        # Mostramos um aviso de Win Rate Baixo em vez de 100% ruína.
+                        prob_ruina = 0.0 
+                        msg_alerta = "⚠️ WR BAIXO / PAYOFF ALTO"
+                        color_r = "#FFFF00"
                     else:
-                        raw_ruin = (q / p) ** vidas_u
-                        prob_ruina = raw_ruin * 100
-                        prob_ruina = min(max(prob_ruina, 0.0), 100.0)
+                        # Fórmula Padrão (só válida se P > 0.5, caso contrário explode > 100%)
+                        if p > 0.5:
+                            raw_ruin = (q / p) ** vidas_u
+                            prob_ruina = raw_ruin * 100
+                            prob_ruina = min(max(prob_ruina, 0.0), 100.0)
+                        else:
+                            prob_ruina = 99.9 # Segurança matemática
                         
                         if prob_ruina < 1.0: color_r = "#00FF88"; msg_alerta = "Zona de Segurança"
                         elif prob_ruina < 5.0: color_r = "#FFFF00"; msg_alerta = "Risco Moderado"
                         else: color_r = "#FF4B4B"; msg_alerta = "RISCO CRÍTICO"
 
-                    if prob_ruina > 10.0 and total_trades >= 5:
+                    if prob_ruina > 10.0 and total_trades >= 5 and expectancy > 0:
                         st.markdown(f"""
                             <div class="piscante-erro">
                                 💀 ALERTA DE RUÍNA: {prob_ruina:.2f}% 💀<br>
@@ -442,10 +452,11 @@ if check_password():
                         cor_v = "#FF4B4B" if vidas_u < 6 else ("#FFFF00" if vidas_u < 10 else "#00FF88")
                         card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Base: ${risco_grupo_total:,.0f}", cor_v, "Quantos stops cheios você suporta AGORA.")
                     with k4:
+                        str_ruina = "CALC" if prob_ruina == 0.0 and msg_alerta != "Zona de Segurança" else f"{prob_ruina:.2f}%"
                         st.markdown(f"""
                             <div style="background: #101010; border: 2px solid {color_r}; border-radius: 12px; padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 140px;">
                                 <div style="color: #888; font-size: 11px; font-weight: bold; text-transform: uppercase;">PROB. RUÍNA (REAL)</div>
-                                <div style="color: {color_r}; font-size: 28px; font-weight: 900; margin: 2px 0;">{prob_ruina:.2f}%</div>
+                                <div style="color: {color_r}; font-size: 28px; font-weight: 900; margin: 2px 0;">{str_ruina}</div>
                                 <div style="font-size: 11px; color: #BBB; margin-top:5px; font-weight:bold;">{msg_alerta}</div>
                             </div>
                         """, unsafe_allow_html=True)
@@ -518,7 +529,6 @@ if check_password():
                         
                         # 1. CÁLCULO DO SALDO INICIAL (BASE PARA O GRÁFICO)
                         if pd.isna(soma_saldo_agora) or soma_saldo_agora == 0:
-                            # Se não calculou no loop, tenta calcular agora
                             saldo_inicial_plot = 0.0
                             if not df_contas.empty:
                                 if sel_grupo == "Todos":
@@ -526,7 +536,6 @@ if check_password():
                                 else:
                                     saldo_inicial_plot = df_contas[(df_contas['grupo_nome'] == sel_grupo) & (df_contas['status_conta'] == 'Ativa')]['saldo_inicial'].sum()
                         else:
-                            # Se já temos o saldo agora (soma), o inicial é aproximado (para plotar a linha base)
                             saldo_inicial_plot = soma_saldo_agora - net_profit
 
                         if view_mode == "Sequência de Trades":
@@ -886,111 +895,6 @@ if check_password():
                                 else: st.write(f"Faltam: **${falta_money:,.2f}**")
                             else: st.success("Meta Batida! 🚀")
                     else: st.warning("Grupo vazio.")
-
-    # ==============================================================================
-    # 10. CONFIGURAR ATM
-    # ==============================================================================
-    elif selected == "Configurar ATM":
-        st.title("⚙️ Gerenciar ATMs")
-        if "atm_form_data" not in st.session_state: st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
-        def reset_atm_form(): st.session_state.atm_form_data = {"id": None, "nome": "", "lote": 1, "stop": 0.0, "parciais": [{"pts": 0.0, "qtd": 1}]}
-        res = supabase.table("atm_configs").select("*").order("nome").execute(); existing_atms = res.data
-        c_form, c_list = st.columns([1.5, 1])
-        with c_list:
-            st.subheader("📋 Estratégias Salvas")
-            if st.button("✨ Criar Nova (Limpar)", use_container_width=True): reset_atm_form(); st.rerun()
-            if existing_atms:
-                for item in existing_atms:
-                    with st.expander(f"📍 {item['nome']}", expanded=False):
-                        st.write(f"**Lote:** {item['lote']} | **Stop:** {item['stop']}")
-                        c_edit, c_del = st.columns(2)
-                        if c_edit.button("✏️ Editar", key=f"edit_{item['id']}"):
-                            p_data = item['parciais'] if isinstance(item['parciais'], list) else json.loads(item['parciais'])
-                            st.session_state.atm_form_data = {"id": item['id'], "nome": item['nome'], "lote": item['lote'], "stop": item['stop'], "parciais": p_data}; st.rerun()
-                        if c_del.button("🗑️ Excluir", key=f"del_{item['id']}"):
-                            supabase.table("atm_configs").delete().eq("id", item['id']).execute()
-                            if st.session_state.atm_form_data["id"] == item['id']: reset_atm_form()
-                            st.rerun()
-            else: st.info("Nenhuma estratégia salva.")
-        with c_form:
-            form_data = st.session_state.atm_form_data
-            titulo = f"✏️ Editando: {form_data['nome']}" if form_data["id"] else "✨ Nova Estratégia"
-            st.subheader(titulo)
-            new_nome = st.text_input("Nome da Estratégia", value=form_data["nome"])
-            c_l, c_s = st.columns(2)
-            new_lote = c_l.number_input("Lote Total", min_value=1, value=int(form_data["lote"]))
-            new_stop = c_s.number_input("Stop Padrão (Pts)", min_value=0.0, value=float(form_data["stop"]), step=0.25)
-            st.markdown("---"); st.write("🎯 Configuração de Alvos"); c_add, c_rem = st.columns([1, 4])
-            if c_add.button("➕ Adicionar Alvo"): st.session_state.atm_form_data["parciais"].append({"pts": 0.0, "qtd": 1}); st.rerun()
-            if c_rem.button("➖ Remover Último") and len(form_data["parciais"]) > 1: st.session_state.atm_form_data["parciais"].pop(); st.rerun()
-            updated_partials = []; total_aloc = 0
-            for i, p in enumerate(form_data["parciais"]):
-                c1, c2 = st.columns(2)
-                p_pts = c1.number_input(f"Alvo {i+1} (Pts)", value=float(p["pts"]), key=f"edm_pts_{i}", step=0.25)
-                p_qtd = c2.number_input(f"Qtd {i+1}", value=int(p["qtd"]), min_value=1, key=f"edm_qtd_{i}")
-                updated_partials.append({"pts": p_pts, "qtd": p_qtd}); total_aloc += p_qtd
-            if total_aloc != new_lote: st.warning(f"⚠️ Atenção: Soma das parciais ({total_aloc}) difere do Lote Total ({new_lote}).")
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("💾 SALVAR ESTRATÉGIA", use_container_width=True):
-                payload = {"nome": new_nome, "lote": new_lote, "stop": new_stop, "parciais": updated_partials}
-                if form_data["id"]: supabase.table("atm_configs").update(payload).eq("id", form_data["id"]).execute(); st.toast("Atualizado!", icon="✅")
-                else: supabase.table("atm_configs").insert(payload).execute(); st.toast("Criado!", icon="✨")
-                time.sleep(1); reset_atm_form(); st.rerun()
-
-    # ==============================================================================
-    # 11. HISTÓRICO
-    # ==============================================================================
-    elif selected == "Histórico":
-        st.title("📜 Galeria de Trades")
-        dfh = load_trades_db()
-        if not dfh.empty:
-            c1, c2, c3, c4 = st.columns(4)
-            fa = c1.multiselect("Ativo", ["NQ", "MNQ"])
-            fr = c2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
-            fc = c3.multiselect("Contexto", list(dfh['contexto'].unique()))
-            fg = c4.multiselect("Grupo", list(dfh['grupo_vinculo'].unique())) if ROLE in ["master", "admin"] else []
-            
-            if fa: dfh = dfh[dfh['ativo'].isin(fa)]
-            if fc: dfh = dfh[dfh['contexto'].isin(fc)]
-            if fg: dfh = dfh[dfh['grupo_vinculo'].isin(fg)]
-            if fr == "Wins": dfh = dfh[dfh['resultado'] > 0]
-            if fr == "Losses": dfh = dfh[dfh['resultado'] < 0]
-            dfh = dfh.sort_values('created_at', ascending=False)
-            
-            @st.dialog("Detalhes da Operação", width="large")
-            def show_trade_details(row):
-                if row.get('prints'): st.image(row['prints'], use_container_width=True)
-                else: st.info("Sem Print disponível.")
-                st.markdown("---")
-                c1, c2, c3 = st.columns(3)
-                c1.write(f"📅 **Data:** {row['data']}")
-                c1.write(f"📈 **Ativo:** {row['ativo']}")
-                c2.write(f"⚖️ **Lote:** {row['lote']}")
-                c2.write(f"🎯 **Médio:** {row['pts_medio']:.2f} pts")
-                c3.write(f"🔄 **Direção:** {row['direcao']}")
-                c3.write(f"🧠 **Contexto:** {row['contexto']}")
-                c3.write(f"🧠 **Estado:** {row.get('comportamento', '-')}")
-                if ROLE in ['master', 'admin']: st.write(f"📂 **Grupo:** {row['grupo_vinculo']}")
-                res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
-                st.markdown(f"<h1 style='color:{res_c}; text-align:center; font-size:40px;'>${row['resultado']:,.2f}</h1>", unsafe_allow_html=True)
-                if st.button("🗑️ DELETAR REGISTRO", type="primary", use_container_width=True):
-                    supabase.table("trades").delete().eq("id", row['id']).execute(); st.rerun()
-
-            cols = st.columns(4)
-            for i, (index, row) in enumerate(dfh.iterrows()):
-                with cols[i % 4]:
-                    res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
-                    res_fmt = f"${row['resultado']:,.2f}"
-                    img_html = f'<img src="{row["prints"]}" class="card-img">' if row.get('prints') else '<div style="width:100%; height:100%; background:#333; display:flex; align-items:center; justify-content:center; color:#555;">Sem Foto</div>'
-                    st.markdown(f"""
-                        <div class="trade-card">
-                            <div class="card-img-container">{img_html}</div>
-                            <div class="card-title">{row['ativo']} - {row['direcao']}</div>
-                            <div class="card-sub">{row['data']} • {row['grupo_vinculo']}</div>
-                            <div class="{res_class}">{res_fmt}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    if st.button("👁️ Ver", key=f"btn_{row['id']}", use_container_width=True): show_trade_details(row)
 
     # ==============================================================================
     # 12. ADMIN
