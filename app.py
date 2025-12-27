@@ -590,6 +590,7 @@ if check_password():
                     st.markdown("---")
                     g1, g2 = st.columns([2, 1])
                     with g1:
+                        # O PROBLEMA ESTÁ AQUI: A variável é criada APENAS aqui dentro
                         view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
                         
                         # Cálculo Saldo Inicial Base para o gráfico (Reverso)
