@@ -633,45 +633,97 @@ if check_password():
                         fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="📊 Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
-                    # ==========================================================
-                    # GRÁFICO DIAS DA SEMANA - CORREÇÃO ATÔMICA
-                    # ==========================================================
-                    st.markdown("### 📅 Performance por Dia da Semana")
-                    
-                    # 1. 🔥 A VACINA (O QUE FALTAVA): Força 'resultado' ser Número
-                    # Sem isso, se vier texto do banco, a soma falha e o gráfico fica nulo
-                    df_filtered['resultado'] = pd.to_numeric(df_filtered['resultado'], errors='coerce').fillna(0.0)
-                    
-                    # 2. Converte para DateTime com segurança
-                    df_filtered['data_dt'] = pd.to_datetime(df_filtered['data'], errors='coerce')
-                    
-                    # 3. Extrai o NÚMERO do dia (0=Segunda, 6=Domingo)
-                    df_filtered['dia_num'] = df_filtered['data_dt'].dt.dayofweek
-                    
-                    # 4. Mapa Numérico (Universal)
-                    mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
-                    df_filtered['dia_pt'] = df_filtered['dia_num'].map(mapa_dias)
-                    
-                    # 5. Agrupa somando (Agora funciona pois garantimos que é número no passo 1)
-                    day_perf = df_filtered.groupby('dia_pt')['resultado'].sum()
-                    
-                    # 6. Força a ordem correta e preenche vazios com 0.0
-                    ordem_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
-                    day_perf = day_perf.reindex(ordem_semana, fill_value=0.0).reset_index()
-                    
-                    # 7. Plota o Gráfico
-                    fig_day = px.bar(
-                        day_perf, 
-                        x='dia_pt', 
-                        y='resultado', 
-                        template="plotly_dark", 
-                        color='resultado', 
-                        color_continuous_scale=["#FF4B4B", "#00FF88"],
-                        text_auto='.2s' 
-                    )
-                    
-                    fig_day.update_layout(xaxis_title="Dia da Semana", yaxis_title="Resultado ($)")
-                    st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
+                   # ==========================================================
+# PERFORMANCE POR DIA DA SEMANA
+# ==========================================================
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+st.markdown("### 📅 Performance por Dia da Semana")
+
+# 🔒 1. Garantia de cópia segura
+df_work = df_filtered.copy()
+
+# 🔢 2. Força 'resultado' como número (evita gráfico vazio)
+df_work['resultado'] = pd.to_numeric(
+    df_work['resultado'],
+    errors='coerce'
+).fillna(0.0)
+
+# 📆 3. Conversão ROBUSTA de data (funciona com BR, timestamp, string)
+df_work['data_dt'] = pd.to_datetime(
+    df_work['data'].astype(str),
+    dayfirst=True,
+    errors='coerce',
+    infer_datetime_format=True
+)
+
+# 🧹 4. Remove linhas sem data válida
+df_work = df_work.dropna(subset=['data_dt'])
+
+# 🛑 5. Validação de segurança
+if df_work.empty:
+    st.warning("Sem datas válidas para gerar o gráfico de performance semanal.")
+else:
+    # 📊 6. Extrai dia da semana numérico (0=Seg ... 6=Dom)
+    df_work['dia_num'] = df_work['data_dt'].dt.dayofweek
+
+    # 🇧🇷 7. Mapeamento PT-BR
+    mapa_dias = {
+        0: 'Seg',
+        1: 'Ter',
+        2: 'Qua',
+        3: 'Qui',
+        4: 'Sex',
+        5: 'Sab',
+        6: 'Dom'
+    }
+    df_work['dia_pt'] = df_work['dia_num'].map(mapa_dias)
+
+    # 📈 8. Agrupamento com ordenação segura
+    day_perf = (
+        df_work
+        .groupby(['dia_num', 'dia_pt'], as_index=False)['resultado']
+        .sum()
+        .sort_values('dia_num')
+    )
+
+    # 🗓️ 9. Mantém apenas dias operacionais
+    ordem_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
+    day_perf = day_perf[day_perf['dia_pt'].isin(ordem_semana)]
+
+    # 🧩 10. Garante todos os dias mesmo sem trade
+    day_perf = (
+        day_perf
+        .set_index('dia_pt')
+        .reindex(ordem_semana, fill_value=0.0)
+        .reset_index()
+    )
+
+    # 📊 11. Plot
+    fig_day = px.bar(
+        day_perf,
+        x='dia_pt',
+        y='resultado',
+        template="plotly_dark",
+        color='resultado',
+        color_continuous_scale=["#FF4B4B", "#00FF88"],
+        text_auto='.2f'
+    )
+
+    fig_day.update_layout(
+        xaxis_title=None,
+        yaxis_title="Resultado ($)",
+        coloraxis_showscale=False
+    )
+
+    st.plotly_chart(
+        fig_day,
+        use_container_width=True,
+        config={'displayModeBar': False}
+    )
         else: st.warning("Banco de dados vazio.")
         
     # ==============================================================================
