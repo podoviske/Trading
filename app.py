@@ -18,13 +18,13 @@ try:
     key: str = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 except Exception as e:
-    st.error(f"Erro crítico de conexão: {e}")
+    st.error("Erro crítico: Chaves do Supabase não encontradas nos Secrets.")
     st.stop()
 
-st.set_page_config(page_title="EvoTrade Terminal v185", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="EvoTrade Terminal v195", layout="wide", page_icon="💀")
 
 # ==============================================================================
-# 2. ESTILOS CSS (DO SEU BACKUP - ROBUSTO)
+# 2. ESTILOS CSS
 # ==============================================================================
 st.markdown("""
     <style>
@@ -90,7 +90,7 @@ st.markdown("""
         display: inline-flex; align-items: center; justify-content: center;
     }
 
-    /* Alerta de Perigo Imediato */
+    /* Alerta de Perigo Imediato (v152/155) */
     .piscante-erro { 
         padding: 20px; 
         border-radius: 8px; 
@@ -170,12 +170,12 @@ def check_password():
     return True
 
 if check_password():
-    MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
+    MULTIPLIERS = {"NQ": 20, "MNQ": 2}
     USER = st.session_state["logged_user"]
     ROLE = st.session_state.get("user_role", "user")
 
     # ==============================================================================
-    # 5. FUNÇÕES DE DADOS
+    # 5. FUNÇÕES DE DADOS (DB)
     # ==============================================================================
     def load_trades_db():
         try:
@@ -203,6 +203,7 @@ if check_password():
         try:
             res = supabase.table("contas_config").select("*").eq("usuario", USER).execute()
             df = pd.DataFrame(res.data)
+            # Garantias
             if not df.empty:
                 if 'pico_previo' not in df.columns: df['pico_previo'] = df['saldo_inicial']
                 if 'fase_entrada' not in df.columns: df['fase_entrada'] = 'Fase 1'
@@ -231,6 +232,57 @@ if check_password():
         """, unsafe_allow_html=True)
 
     # ==============================================================================
+    # 🔥 NOVO: MOTOR DE FASES CENTRALIZADO (v195)
+    # ==============================================================================
+    def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
+        """
+        Calcula a saúde da conta baseado nas regras da Apex.
+        Retorna dicionário com Saldo, Stop Atual, Buffer e HWM.
+        """
+        # 1. Determinar Regras pelo Tamanho da Conta (Heurística Segura)
+        if saldo_inicial >= 250000:   # 300k
+            dd_max = 7500.0; meta = 20000.0
+        elif saldo_inicial >= 100000: # 150k/100k
+            dd_max = 5000.0; meta = 9000.0
+        elif saldo_inicial >= 50000:  # 50k
+            dd_max = 2500.0; meta = 3000.0
+        else:                         # 25k ou menor
+            dd_max = 1500.0; meta = 1500.0
+            
+        # 2. Calcular Saldo Atual e Equity Curve
+        lucro_acc = trades_df['resultado'].sum() if not trades_df.empty else 0.0
+        saldo_atual = saldo_inicial + lucro_acc
+        
+        if not trades_df.empty:
+            equity_curve = trades_df['resultado'].cumsum() + saldo_inicial
+            pico_real = max(pico_previo, equity_curve.max(), saldo_inicial)
+        else:
+            pico_real = max(pico_previo, saldo_inicial)
+        
+        # 3. Lógica de Trava (Lock)
+        # O Stop sobe até (Saldo Inicial + 100) e trava lá
+        lock_threshold = saldo_inicial + dd_max + 100.0
+        stop_travado = saldo_inicial + 100.0
+        
+        if pico_real >= lock_threshold:
+            stop_atual = stop_travado
+        else:
+            stop_atual = pico_real - dd_max
+            
+        buffer = max(0.0, saldo_atual - stop_atual)
+        
+        return {
+            "saldo_atual": saldo_atual,
+            "stop_atual": stop_atual,
+            "buffer": buffer,
+            "hwm": pico_real,
+            "meta_global": saldo_inicial + meta,
+            "dd_max": dd_max,
+            "lock_threshold": lock_threshold,
+            "stop_travado": stop_travado
+        }
+
+    # ==============================================================================
     # 6. MENU LATERAL
     # ==============================================================================
     with st.sidebar:
@@ -254,10 +306,10 @@ if check_password():
             st.rerun()
 
     # ==============================================================================
-    # 7. ABA: DASHBOARD (MOTOR v182 - BROWNIAN MOTION + TRAILING DINÂMICO)
+    # 7. ABA: DASHBOARD (COM MOTOR INTEGRADO)
     # ==============================================================================
     if selected == "Dashboard":
-        st.title("📊 Central de Controle (v185)")
+        st.title("📊 Central de Controle (v195)")
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
@@ -328,59 +380,32 @@ if check_password():
                     max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
 
                     # ==============================================================================
-                    # 🛡️ MOTOR DE CÁLCULO v182 (CORRIGIDO)
+                    # 🛡️ MOTOR DE CÁLCULO v195 - VIA FUNÇÃO CENTRALIZADA
                     # ==============================================================================
                     
                     risco_comportamental = lote_medio_real * pts_loss_medio_real * MULTIPLIERS[ativo_referencia]
                     if risco_comportamental == 0: risco_comportamental = 300.0
 
-                    # 2. CÁLCULO GLOBAL DE BUFFER (DINÂMICO)
+                    # 2. BUFFER REAL DO GRUPO (CALCULADO PELO MOTOR)
                     total_buffer_real = 0.0
                     contas_analisadas = 0
-                    soma_saldo_agora = 0.0 # Acumulador de saldo total
+                    soma_saldo_agora = 0.0 # Para o gráfico
                     
                     if not df_contas.empty:
                         contas_alvo = df_contas if sel_grupo == "Todos" else df_contas[df_contas['grupo_nome'] == sel_grupo]
                         for _, row in contas_alvo.iterrows():
                             if row.get('status_conta', 'Ativa') == 'Ativa':
-                                saldo_entrada = float(row['saldo_inicial'])
-                                pico_previo = float(row.get('pico_previo', saldo_entrada))
-                                
-                                # Trades desta conta/grupo específico
+                                # Busca trades desta conta
                                 trades_deste_grupo = df[df['grupo_vinculo'] == row['grupo_nome']].sort_values('created_at')
                                 
-                                if not trades_deste_grupo.empty:
-                                    lucro_atual = trades_deste_grupo['resultado'].sum()
-                                    saldo_agora = saldo_entrada + lucro_atual
-                                    # HWM
-                                    equity_curve = trades_deste_grupo['resultado'].cumsum() + saldo_entrada
-                                    pico_real = max(pico_previo, equity_curve.max(), saldo_entrada)
-                                else:
-                                    saldo_agora = saldo_entrada
-                                    pico_real = pico_previo
+                                # CHAMA O MOTOR DE FASES
+                                saude = calcular_saude_apex(float(row['saldo_inicial']), float(row.get('pico_previo', row['saldo_inicial'])), trades_deste_grupo)
                                 
-                                # --- REGRA DINÂMICA (A CORREÇÃO QUE VOCÊ PEDIU) ---
-                                if saldo_entrada >= 250000: drawdown_limite = 7500.0
-                                elif saldo_entrada >= 100000: drawdown_limite = 5000.0
-                                elif saldo_entrada >= 50000: drawdown_limite = 2500.0
-                                else: drawdown_limite = 1500.0
-                                
-                                lock_threshold = saldo_entrada + drawdown_limite + 100.0
-                                locked_stop_value = saldo_entrada + 100.0
-                                
-                                if pico_real >= lock_threshold:
-                                    trailing_stop = locked_stop_value
-                                else:
-                                    trailing_stop = pico_real - drawdown_limite
-                                
-                                # Acumula
-                                soma_saldo_agora += saldo_agora
-                                total_buffer_real += max(0, saldo_agora - trailing_stop)
+                                total_buffer_real += saude['buffer']
+                                soma_saldo_agora += saude['saldo_atual']
                                 contas_analisadas += 1
                     
-                    if total_buffer_real == 0 and contas_analisadas == 0: total_buffer_real = 0.0
-                    
-                    # Stop Implícito para exibição
+                    # Stop Global Implícito (para exibição)
                     stop_atual_val = soma_saldo_agora - total_buffer_real
 
                     # 3. VIDAS REAIS (U)
@@ -388,7 +413,7 @@ if check_password():
                     risco_grupo_total = risco_comportamental * fator_replicacao
                     vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
 
-                    # 4. FÓRMULA DE RUÍNA BROWNIAN MOTION (CORREÇÃO ERRO 100%)
+                    # 4. FÓRMULA DE RUÍNA (BROWNIAN MOTION)
                     p = win_rate_dec
                     q = 1 - p
                     prob_ruina = 0.0
@@ -396,6 +421,7 @@ if check_password():
                     
                     if total_trades < 5:
                         msg_alerta = "⚠️ Calibrando..."
+                        prob_ruina = 0.0
                         color_r = "gray"
                     elif vidas_u <= 0.5:
                         prob_ruina = 100.0
@@ -406,9 +432,8 @@ if check_password():
                         msg_alerta = "EDGE NEGATIVO"
                         color_r = "#FF0000"
                     else:
-                        # Fórmula de Difusão (Brownian Motion)
+                        # Fórmula Brownian Motion
                         variancia = (p * (avg_win - expectancy)**2) + (q * (-avg_loss - expectancy)**2)
-                        
                         if variancia > 0:
                             arg_exp = -2 * expectancy * total_buffer_real / variancia
                             try: raw_ruin = math.exp(arg_exp)
@@ -416,7 +441,7 @@ if check_password():
                             prob_ruina = raw_ruin * 100
                         else:
                             prob_ruina = 0.0
-
+                        
                         prob_ruina = min(max(prob_ruina, 0.0), 100.0)
                         
                         if prob_ruina < 1.0: color_r = "#00FF88"; msg_alerta = "Zona de Segurança"
@@ -477,7 +502,7 @@ if check_password():
                         """, unsafe_allow_html=True)
 
                     # ==============================================================================
-                    # 🧠 MÓDULO KELLY v170 (INTEGRADO AO FULL)
+                    # 🧠 MÓDULO KELLY (INTEGRADO AO MOTOR)
                     # ==============================================================================
                     st.markdown("---")
                     st.subheader("🧠 Inteligência de Lote (Faixa de Operação)")
@@ -488,12 +513,9 @@ if check_password():
                     
                     kelly_half = max(0.0, kelly_full / 2)
 
-                    # Range Seguro
-                    VIDAS_IDEAL = 20.0
-                    VIDAS_MIN = 15.0
+                    VIDAS_IDEAL = 20.0; VIDAS_MIN = 15.0
                     
                     if kelly_full > 0 and total_buffer_real > 0 and pts_loss_medio_real > 0:
-                        
                         risco_teto_kelly = total_buffer_real * kelly_half
                         risco_vidas_20 = total_buffer_real / VIDAS_IDEAL
                         risco_vidas_15 = total_buffer_real / VIDAS_MIN
@@ -516,13 +538,9 @@ if check_password():
                         if lote_min == lote_max: txt_range = f"{lote_min}"
                         else: txt_range = f"{lote_min} a {lote_max}"
                             
-                        if lote_max < 1:
-                            cor_k = "#FF4B4B"; status_k = "AGUARDE (Gordura Baixa)"
-                        elif risco_teto_final < risco_vidas_15:
-                            cor_k = "#FFFF00"; status_k = "LIMITADO PELO EDGE"
-                        else:
-                            cor_k = "#00FF88"; status_k = "ZONA DE ACELERAÇÃO"
-
+                        if lote_max < 1: cor_k = "#FF4B4B"; status_k = "AGUARDE (Gordura Baixa)"
+                        elif risco_teto_final < risco_vidas_15: cor_k = "#FFFF00"; status_k = "LIMITADO PELO EDGE"
+                        else: cor_k = "#00FF88"; status_k = "ZONA DE ACELERAÇÃO"
                     else:
                         kelly_half = 0.0; lote_min = 0; lote_max = 0
                         txt_range = "0"; cor_k = "#888"; status_k = "Sem Dados/Edge"
@@ -545,21 +563,16 @@ if check_password():
                             </div>
                         """, unsafe_allow_html=True)
 
-                    # --- GRÁFICOS (CORRIGIDOS v169 - SOMAM SALDO INICIAL) ---
+                    # --- GRÁFICOS ---
                     st.markdown("---")
                     
                     g1, g2 = st.columns([2, 1])
                     with g1:
                         view_mode = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
                         
-                        # Cálculo Saldo Inicial Base para o gráfico
+                        # Cálculo Saldo Inicial Base (Soma do motor)
                         if pd.isna(soma_saldo_agora) or soma_saldo_agora == 0:
                             saldo_inicial_plot = 0.0
-                            if not df_contas.empty:
-                                if sel_grupo == "Todos":
-                                    saldo_inicial_plot = df_contas[df_contas['status_conta'] == 'Ativa']['saldo_inicial'].sum()
-                                else:
-                                    saldo_inicial_plot = df_contas[(df_contas['grupo_nome'] == sel_grupo) & (df_contas['status_conta'] == 'Ativa')]['saldo_inicial'].sum()
                         else:
                             saldo_inicial_plot = soma_saldo_agora - net_profit
 
@@ -581,12 +594,7 @@ if check_password():
                             min_y = min(y_vals.min(), saldo_inicial_plot)
                             max_y = max(y_vals.max(), saldo_inicial_plot)
                             margem = (max_y - min_y) * 0.2 if max_y != min_y else 1000
-                            
-                            fig_eq.update_layout(
-                                xaxis_title=x_title, 
-                                yaxis_title="Saldo Total ($)",
-                                yaxis_range=[min_y - margem, max_y + margem] 
-                            )
+                            fig_eq.update_layout(xaxis_title=x_title, yaxis_title="Saldo Total ($)", yaxis_range=[min_y - margem, max_y + margem])
                         
                         st.plotly_chart(fig_eq, use_container_width=True, config={'displayModeBar': False})
                         
@@ -699,10 +707,9 @@ if check_password():
 
                     supabase.table("trades").insert({
                         "id": trade_id, "data": str(dt), "ativo": atv, "contexto": ctx,
-                        "direcao": dr, "lote": lt, "resultado": fin_total,
-                        "pts_medio": pt_med, "grupo_vinculo": grupo_sel_trade,
-                        "contexto": ctx, "comportamento": psi, "prints": img_url,
-                        "risco_fin": stp * MULTIPLIERS[atv] * lt
+                        "direcao": dr, "lote": lt, "resultado": res_fin, "pts_medio": pt_med,
+                        "prints": img_url, "usuario": USER, "grupo_vinculo": grupo_sel_trade,
+                        "comportamento": psi, "risco_fin": (stp * MULTIPLIERS[atv] * lt)
                     }).execute()
 
                     st.balloons() 
@@ -711,10 +718,10 @@ if check_password():
                 except Exception as e: st.error(f"Erro: {e}")
 
     # ==============================================================================
-    # 9. ABA CONTAS (v157 FINAL - SEM ERROS DE INDENTAÇÃO + ZOOM + AUTO-FASE)
+    # 9. ABA CONTAS (v195 - INTEGRAÇÃO MOTOR DE FASES)
     # ==============================================================================
     elif selected == "Contas":
-        st.title("💼 Gestão de Portfólio (v159)")
+        st.title("💼 Gestão de Portfólio (v195)")
         
         if ROLE not in ['master', 'admin']:
             st.error("Acesso restrito.")
@@ -818,9 +825,9 @@ if check_password():
                                     supabase.table("contas_config").delete().eq("id", row['id']).execute(); st.rerun()
                 else: st.info("Nenhuma conta configurada.")
 
-            # --- ABA 4: MONITOR DE PERFORMANCE (v185 - TRAILING DINÂMICO REAL) ---
+            # --- ABA 4: MONITOR DE PERFORMANCE ---
             with t4:
-                st.subheader("🚀 Monitor de Performance (Multisize Apex)")
+                st.subheader("🚀 Monitor de Performance (Apex Engine Integrado)")
                 df_c = load_contas_config()
                 df_t = load_trades_db()
                 if not df_t.empty: df_t = df_t[df_t['usuario'] == USER]
@@ -836,90 +843,51 @@ if check_password():
                     trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
                     
                     if not contas_g.empty:
-                        # 1. SETUP DE DADOS - RESPEITO AO BANCO
+                        # 1. SETUP DE DADOS VIA MOTOR
+                        # Pega a primeira conta como referência de saldo inicial e pico
                         conta_ref = contas_g.iloc[0]
-                        saldo_inicial_base = float(conta_ref['saldo_inicial'])
-                        pico_manual = float(conta_ref.get('pico_previo', saldo_inicial_base))
-                        fase_str_db = str(conta_ref.get('fase_entrada', 'Fase 1'))
                         
-                        # --- DETECÇÃO DO TAMANHO DA CONTA (O FIX) ---
-                        if saldo_inicial_base >= 250000: # 300k
-                            drawdown_max = 7500.0
-                            goal_padding = 20000.0 # Heurística de meta
-                        elif saldo_inicial_base >= 100000: # 150k ou 100k
-                            drawdown_max = 5000.0
-                            goal_padding = 9000.0
-                        elif saldo_inicial_base >= 50000: # 50k
-                            drawdown_max = 2500.0
-                            goal_padding = 3000.0
-                        else: # 25k
-                            drawdown_max = 1500.0
-                            goal_padding = 1500.0
+                        # CHAMA O MOTOR DE FASES
+                        saude = calcular_saude_apex(float(conta_ref['saldo_inicial']), float(conta_ref.get('pico_previo', conta_ref['saldo_inicial'])), trades_g)
                         
-                        lucro_total_grupo = trades_g['resultado'].sum() if not trades_g.empty else 0.0
-                        saldo_atual_base = saldo_inicial_base + lucro_total_grupo
-                        
-                        # Metas Baseadas no Saldo
-                        meta_dinamica = saldo_inicial_base + goal_padding
+                        # Labels
+                        status_lbl = "Em Progresso"
+                        if saude['saldo_atual'] >= saude['meta_global']: status_lbl = "META BATIDA 🚀"
 
-                        # 2. CÁLCULO DE STOP E HWM ATUAL (COM A REGRA DE TRAVA)
-                        if not trades_g.empty:
-                            temp = trades_g.sort_values('created_at').copy()
-                            temp['equity'] = temp['resultado'].cumsum() + saldo_inicial_base
-                            max_equity = temp['equity'].max()
-                        else: max_equity = saldo_inicial_base
-                        
-                        hwm_real_atual = max(pico_manual, max_equity, saldo_inicial_base)
-                        
-                        # Lógica da Trava (Lock)
-                        lock_threshold = saldo_inicial_base + drawdown_max + 100.0
-                        locked_stop_value = saldo_inicial_base + 100.0
-                        
-                        if hwm_real_atual >= lock_threshold:
-                            stop_atual_val = locked_stop_value
-                        else:
-                            stop_atual_val = hwm_real_atual - drawdown_max
-
-                        # 3. CARDS DE INFORMAÇÃO
+                        # 2. CARDS DE INFORMAÇÃO
                         k1, k2, k3, k4 = st.columns(4)
-                        k1.metric("Saldo Atual", f"${saldo_atual_base:,.2f}", f"Lucro: ${lucro_total_grupo:+,.2f}")
-                        k2.metric("HWM (Topo)", f"${hwm_real_atual:,.2f}")
+                        k1.metric("Saldo Atual", f"${saude['saldo_atual']:,.2f}", f"Lucro: ${saude['saldo_atual'] - float(conta_ref['saldo_inicial']):+,.2f}")
+                        k2.metric("HWM (Topo)", f"${saude['hwm']:,.2f}")
                         
-                        dist_stop = saldo_atual_base - stop_atual_val
-                        k3.metric("Dist. Stop", f"${dist_stop:,.2f}", f"Stop: ${stop_atual_val:,.0f}", delta_color="inverse" if dist_stop < 1500 else "normal")
-                        k4.metric("Alvo (Fase)", f"${meta_dinamica:,.0f}")
+                        dist_stop = saude['buffer']
+                        k3.metric("Dist. Stop", f"${dist_stop:,.2f}", f"Stop: ${saude['stop_atual']:,.0f}", delta_color="inverse" if dist_stop < 1500 else "normal")
+                        k4.metric("Alvo (Fase)", f"${saude['meta_global']:,.0f}", status_lbl)
 
                         cg, cp = st.columns([2, 1])
 
-                        # 4. GRÁFICO (LINHA SÓLIDA)
+                        # 3. GRÁFICO (LINHA SÓLIDA)
                         with cg:
                             st.markdown("##### 🌊 Curva do Grupo")
                             if not trades_g.empty:
                                 if vis_mode == "Diário":
                                     trades_g['data'] = pd.to_datetime(trades_g['data'])
                                     df_plot = trades_g.groupby('data')['resultado'].sum().reset_index()
-                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + float(conta_ref['saldo_inicial'])
                                     df_plot.rename(columns={'data': 'eixo_x'}, inplace=True)
                                     start_x = df_plot['eixo_x'].min() - timedelta(days=1)
-                                    df_plot = pd.concat([pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': saldo_inicial_base}]), df_plot], ignore_index=True)
+                                    df_plot = pd.concat([pd.DataFrame([{'eixo_x': start_x, 'saldo_acc': float(conta_ref['saldo_inicial'])}]), df_plot], ignore_index=True)
                                     x_col = 'eixo_x'
                                 else:
                                     df_sorted = trades_g.sort_values('created_at').copy()
                                     df_sorted['seq'] = range(1, len(df_sorted)+1)
                                     df_plot = df_sorted
-                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_base
+                                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + float(conta_ref['saldo_inicial'])
                                     df_plot.rename(columns={'seq': 'eixo_x'}, inplace=True)
                                     x_col = 'eixo_x'
 
-                                hwm_start = max(saldo_inicial_base, pico_manual)
-                                df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax().clip(lower=hwm_start)
-                                
-                                # Aplica a regra de trava no histórico do gráfico
-                                def calc_trailing_hist(hwm_val):
-                                    if hwm_val >= lock_threshold: return locked_stop_value
-                                    else: return hwm_val - drawdown_max
-                                    
-                                df_plot['stop_hist'] = df_plot['hwm_hist'].apply(calc_trailing_hist)
+                                # Recalcula Trailing para o Gráfico usando a lógica do motor
+                                df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax()
+                                df_plot['stop_hist'] = df_plot['hwm_hist'].apply(lambda x: saude['stop_travado'] if x >= saude['lock_threshold'] else x - saude['dd_max'])
 
                                 fig = px.line(df_plot, x=x_col, y='saldo_acc', template="plotly_dark")
                                 fig.update_traces(line_color='#2E93fA', fill='tozeroy', fillcolor='rgba(46, 147, 250, 0.1)', name="Saldo")
@@ -928,26 +896,27 @@ if check_password():
                                                 line=dict(color='#FF4B4B', width=2), name='Trailing Stop',
                                                 hovertemplate='Stop: $%{y:,.2f}<extra></extra>')
                                 
-                                fig.add_hline(y=meta_dinamica, line_dash="dot", line_color="#00FF88", annotation_text="Meta")
+                                fig.add_hline(y=saude['meta_global'], line_dash="dot", line_color="#00FF88", annotation_text="Meta")
                                 
                                 y_min = min(df_plot['stop_hist'].min(), df_plot['saldo_acc'].min()) - 1000
-                                y_max = max(df_plot['saldo_acc'].max(), meta_dinamica) + 1000
+                                y_max = max(df_plot['saldo_acc'].max(), saude['meta_global']) + 1000
                                 fig.update_layout(yaxis_range=[y_min, y_max], showlegend=True, legend=dict(orientation="h", y=1.1))
                                 st.plotly_chart(fig, use_container_width=True)
                             else: st.info("Sem trades registrados.")
 
-                        # 5. PROGRESSO DA FASE + EV
+                        # 4. PROGRESSO DA FASE + EV
                         with cp:
                             st.markdown("##### 🎯 Progresso da Fase")
                             
-                            total_fase = meta_dinamica - saldo_inicial_base
-                            ganho_real = saldo_atual_base - saldo_inicial_base
+                            total_fase = saude['meta_global'] - float(conta_ref['saldo_inicial'])
+                            ganho_real = saude['saldo_atual'] - float(conta_ref['saldo_inicial'])
                             
                             percent = min(1.0, max(0.0, ganho_real / total_fase)) if total_fase > 0 else 1.0
                             st.write(f"Conclusão: {percent*100:.1f}%")
                             st.progress(percent)
                             
-                            falta_money = meta_dinamica - saldo_atual_base
+                            falta_money = saude['distancia_meta']
+                            
                             ev_por_trade = trades_g['resultado'].mean() if not trades_g.empty else 0.0
                             
                             if falta_money > 0:
