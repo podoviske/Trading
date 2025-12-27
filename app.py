@@ -652,57 +652,58 @@ if check_password():
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
                   # ==========================================================
-                    # NOVO GRÁFICO: PERFORMANCE SEMANAL (LIMPO E REFEITO)
+                    # GRÁFICO DIAS DA SEMANA (VERSÃO BLINDADA v2)
                     # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
                     
-                    # 1. Limpeza Profunda de Dados (O Segredo)
-                    # Garante que a data é data e o dinheiro é número. Se falhar, ignora a linha.
+                    # 1. Cria uma cópia isolada para não quebrar o resto
                     df_clean = df_filtered.copy()
+                    
+                    # 2. Converte Data e Dinheiro (Força Bruta)
                     df_clean['data_dt'] = pd.to_datetime(df_clean['data'], errors='coerce')
-                    df_clean['resultado_num'] = pd.to_numeric(df_clean['resultado'], errors='coerce').fillna(0.0)
-                    df_clean = df_clean.dropna(subset=['data_dt']) # Remove datas inválidas
+                    df_clean['res_num'] = pd.to_numeric(df_clean['resultado'], errors='coerce').fillna(0.0)
+                    
+                    # 3. Remove datas inválidas
+                    df_clean = df_clean.dropna(subset=['data_dt'])
 
                     if not df_clean.empty:
-                        # 2. Criação do Mapa de Dias (0 = Seg, 4 = Sex)
-                        # Usamos números para não depender do idioma do servidor
+                        # 4. Extrai dia numérico (0=Segunda)
                         df_clean['dia_idx'] = df_clean['data_dt'].dt.dayofweek
+                        
+                        # 5. Mapeia para Nome
                         mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
-                        df_clean['dia_pt'] = df_clean['dia_idx'].map(mapa_dias)
-
-                        # 3. Agrupamento e Soma
-                        # Somamos apenas a coluna limpa 'resultado_num'
-                        df_agrupado = df_clean.groupby('dia_pt')['resultado_num'].sum()
-
-                        # 4. Ordenação Forçada (Segunda a Sexta)
-                        # O reindex(..., fill_value=0.0) garante que dias sem trade fiquem com 0 no gráfico
+                        df_clean['dia_nome'] = df_clean['dia_idx'].map(mapa_dias)
+                        
+                        # 6. Agrupa e Soma (Usando a coluna numérica criada)
+                        df_agrupado = df_clean.groupby('dia_nome')['res_num'].sum()
+                        
+                        # 7. Força a ordem da semana
                         dias_ordem = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
+                        # O reindex garante que dias sem trade apareçam como 0 no gráfico
                         df_final = df_agrupado.reindex(dias_ordem, fill_value=0.0).reset_index()
-                        df_final.columns = ['Dia', 'Resultado ($)'] # Renomeia bonito para o gráfico
-
-                        # 5. Plotagem Limpa
+                        
+                        # 8. Plota
                         fig_day = px.bar(
                             df_final, 
-                            x='Dia', 
-                            y='Resultado ($)',
-                            text_auto='.2s', # Formata o valor na barra (ex: 1.5k)
+                            x='dia_nome', 
+                            y='res_num',
+                            text_auto='.2s',
                             template="plotly_dark",
-                            color='Resultado ($)',
-                            color_continuous_scale=["#FF4B4B", "#00FF88"] # Gradiente Vermelho -> Verde
+                            color='res_num',
+                            # Gradiente Vermelho para Verde
+                            color_continuous_scale=["#FF4B4B", "#00FF88"] 
                         )
                         
-                        # Ajustes visuais finais
                         fig_day.update_layout(
                             xaxis_title=None, 
                             yaxis_title="Resultado ($)",
                             showlegend=False,
-                            coloraxis_showscale=False # Remove a barra de cores lateral para limpar
+                            coloraxis_showscale=False # Limpa a barra lateral
                         )
                         
                         st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
-                    
                     else:
-                        st.info("Aguardando dados para gerar o gráfico semanal.")
+                        st.info("Sem dados válidos para o gráfico semanal.")
         
     # ==============================================================================
     # 8. REGISTRAR TRADE (CORRIGIDO: USUÁRIO + MULTI-UPLOAD)
