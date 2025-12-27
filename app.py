@@ -634,32 +634,32 @@ if check_password():
                         st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
 
                     # ==========================================================
-                    # CORREÇÃO BLINDADA: TIPAGEM DE DADOS + DIAS
+                    # CORREÇÃO DEFINITIVA: FORÇA NÚMERO + DIAS NUMÉRICOS
                     # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
                     
-                    # 1. CRÍTICO: Força a coluna 'resultado' para Números (Float)
-                    # Se houver algum erro ou texto, ele transforma em 0.0 para não quebrar
+                    # 1. [CRÍTICO] Força a coluna 'resultado' para Números (Float)
+                    # Sem isso, se o banco mandar texto, a soma falha e o gráfico fica vazio
                     df_filtered['resultado'] = pd.to_numeric(df_filtered['resultado'], errors='coerce').fillna(0.0)
                     
                     # 2. Converte para DateTime com segurança
                     df_filtered['data_dt'] = pd.to_datetime(df_filtered['data'], errors='coerce')
                     
-                    # 3. Remove linhas que por ventura tenham ficado com data inválida (NaT)
+                    # 3. Limpa dados sem data
                     df_clean = df_filtered.dropna(subset=['data_dt']).copy()
                     
                     if not df_clean.empty:
-                        # 4. Extrai o NÚMERO do dia (0=Segunda, 6=Domingo)
+                        # 4. Extrai o NÚMERO do dia (0=Segunda ... 6=Domingo)
                         df_clean['dia_num'] = df_clean['data_dt'].dt.dayofweek
                         
                         # 5. Mapa Numérico
                         mapa_dias = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sab', 6: 'Dom'}
                         df_clean['dia_pt'] = df_clean['dia_num'].map(mapa_dias)
                         
-                        # 6. Agrupa SOMANDO os valores (agora garantidamente numéricos)
+                        # 6. Agrupa somando (Agora garantido que é número)
                         day_perf = df_clean.groupby('dia_pt')['resultado'].sum()
                         
-                        # 7. Força a ordem correta e preenche dias vazios com 0.0
+                        # 7. Força a ordem da semana e preenche dias sem trade com 0
                         ordem_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex']
                         day_perf = day_perf.reindex(ordem_semana, fill_value=0.0).reset_index()
                         
@@ -677,7 +677,7 @@ if check_password():
                         fig_day.update_layout(xaxis_title=None, yaxis_title="Resultado ($)")
                         st.plotly_chart(fig_day, use_container_width=True, config={'displayModeBar': False})
                     else:
-                        st.caption("Sem dados de data válidos para exibir este gráfico.")
+                        st.info("Sem dados de data válidos para gerar este gráfico.")
         else: st.warning("Banco de dados vazio.")
         
     # ==============================================================================
