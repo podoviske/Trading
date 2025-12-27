@@ -687,7 +687,7 @@ if check_password():
                         st.info("Aguardando dados para gerar o gráfico semanal.")
         
     # ==============================================================================
-    # 8. REGISTRAR TRADE (COMPLETO)
+    # 8. REGISTRAR TRADE (CORRIGIDO: USUÁRIO + MULTI-UPLOAD)
     # ==============================================================================
     elif selected == "Registrar Trade":
         st.title("Registro de Operação")
@@ -727,7 +727,9 @@ if check_password():
             if stp > 0:
                 risco_calc = stp * MULTIPLIERS.get(atv, 2) * lt
                 st.markdown(f'<div class="risco-alert">📉 Risco Estimado: ${risco_calc:,.2f}</div>', unsafe_allow_html=True)
-            up = st.file_uploader("📸 Anexar Print", type=['png', 'jpg', 'jpeg'])
+            
+            # CORREÇÃO 1: Habilita múltiplos arquivos
+            up = st.file_uploader("📸 Anexar Prints (O primeiro será a capa)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
 
         with f3:
             st.write("**Saídas (Alocação)**")
@@ -765,32 +767,32 @@ if check_password():
         if btn_registrar:
             with st.spinner("Salvando..."):
                 try:
-                    # 1. Calcula o Resultado Financeiro (Nome correto: res_fin)
                     res_fin = sum([s["pts"] * MULTIPLIERS.get(atv, 2) * s["qtd"] for s in saidas])
-                    
-                    # 2. Calcula Pontos Médios
                     pt_med = sum([s["pts"] * s["qtd"] for s in saidas]) / lt
                     
                     trade_id = str(uuid.uuid4())
                     img_url = ""
                     
-                    # 3. Upload da Imagem
+                    # Lógica de Upload (Pega o primeiro da lista se houver múltiplos)
                     if up:
+                        # Se for lista (multiplos), pega o primeiro. Se for unico, usa ele.
+                        arquivo_final = up[0] if isinstance(up, list) else up
                         file_path = f"{trade_id}.png"
-                        supabase.storage.from_("prints").upload(file_path, up.getvalue())
+                        supabase.storage.from_("prints").upload(file_path, arquivo_final.getvalue())
                         img_url = supabase.storage.from_("prints").get_public_url(file_path)
 
-                    # 4. Salva no Banco (Com os nomes de variáveis CORRIGIDOS)
+                    # CORREÇÃO 2: Adicionado campo 'usuario' e corrigido nomes das variáveis
                     supabase.table("trades").insert({
                         "id": trade_id, 
+                        "usuario": USER,              # <--- O QUE FALTAVA PARA O DASHBOARD
                         "data": str(dt), 
                         "ativo": atv, 
                         "contexto": ctx,
                         "direcao": dr, 
                         "lote": lt, 
-                        "resultado": res_fin,         # <--- CORRIGIDO (Era 'fin')
+                        "resultado": res_fin,         # Corrigido (era 'fin')
                         "pts_medio": pt_med,
-                        "grupo_vinculo": grupo_sel_trade, # <--- CORRIGIDO (Era 'grp_sel')
+                        "grupo_vinculo": grupo_sel_trade, 
                         "comportamento": psi,
                         "prints": img_url, 
                         "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
