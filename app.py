@@ -316,21 +316,22 @@ if check_password():
     # ==============================================================================
     # 6. MENU LATERAL
     # ==============================================================================
-    with st.sidebar:
-        st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
-        
+with st.sidebar:
+    st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
+    
+    # Observe o espaço antes dessas linhas (4 espaços ou 1 TAB)
     menu = ["Dashboard", "Registrar Trade", "Configurar ATM", "Histórico", "Plano de Trading"]
     icons = ["grid", "currency-dollar", "gear", "clock", "file-earmark-text"]
+    
+    if ROLE in ['master', 'admin']:
+        menu.insert(2, "Contas")
+        icons.insert(2, "briefcase")
         
-        if ROLE in ['master', 'admin']:
-            menu.insert(2, "Contas")
-            icons.insert(2, "briefcase")
-            
-        if ROLE == 'admin':
-            menu.append("Gerenciar Usuários")
-            icons.append("people")
-            
-        selected = option_menu(None, menu, icons=icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
+    if ROLE == 'admin':
+        menu.append("Gerenciar Usuários")
+        icons.append("people")
+        
+    selected = option_menu(None, menu, icons=icons, styles={"nav-link-selected": {"background-color": "#B20000"}})
         
         if st.button("Sair / Logout"): 
             st.session_state.clear()
