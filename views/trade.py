@@ -80,7 +80,7 @@ def show(user, role):
         # Linha 2
         c_atv, c_ctx = st.columns(2)
         atv = c_atv.selectbox("Ativo", ["MNQ", "NQ", "ES", "MES"])
-        ctx = c_ctx.selectbox("Contexto", ["Tendência", "Lateral", "Rompimento", "Contra-Tendência", "News"])
+        ctx = c_ctx.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
         
         # Linha 3
         psi = st.selectbox("Psicológico", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Neutro"])
