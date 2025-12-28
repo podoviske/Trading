@@ -201,15 +201,23 @@ def show(user, role):
     with c3: card("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
     with c4: card("Expectativa Mat.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy>0 else "#FF4B4B")
 
-    # 2. MÉDIAS E TÉCNICA
-    st.markdown("### 💲 Médias & Técnica")
+    # 2. MÉDIAS FINANCEIRAS
+    st.markdown("### 💲 Médias Financeiras")
     m1, m2, m3, m4 = st.columns(4)
     with m1: card("Média Gain ($)", f"${avg_win:,.2f}", "", "#00FF88")
     with m2: card("Média Loss ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B")
     with m3: card("Risco : Retorno", f"1 : {payoff:.2f}", "Payoff Real", "white")
     with m4: card("Drawdown Máximo", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B")
+    
+    # 3. PERFORMANCE TÉCNICA (Recuperada)
+    st.markdown("### 🎯 Performance Técnica")
+    t1, t2, t3, t4 = st.columns(4)
+    with t1: card("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
+    with t2: card("Stop Médio (Loss)", f"{avg_pts_loss:.2f} pts", "Base do Risco", "#FF4B4B")
+    with t3: card("Lote Médio", f"{lote_medio:.1f}", "Contratos", "white")
+    with t4: card("Total Trades", f"{total_trades}", "Executados", "white")
 
-    # 3. ANÁLISE DE SOBREVIVÊNCIA
+    # 4. ANÁLISE DE SOBREVIVÊNCIA
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
     with k1:
@@ -222,9 +230,24 @@ def show(user, role):
         cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
         card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco Impacto: ${risco_impacto_grupo:,.0f}", cor_v)
     with k4:
+        cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
+        card("Prob. Ruína (Real)", f"{prob_ruina:.2f}%", "Risco Moderado", cor_r, border_color=cor_r)
+
+    # 5. INTELIGÊNCIA DE LOTE (Recuperada)
+    st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
+    l1, l2, l3, l4 = st.columns(4)
+    with l1:
+        card("Buffer Disponível", f"${total_buffer:,.0f}", "Capital de Risco", "#00FF88" if total_buffer > 0 else "#FF4B4B")
+    with l2:
+        card("Half-Kelly (Math)", f"{kelly_pct*100:.1f}%", "Teto Teórico", "#888")
+    with l3:
+        # Mostra quanto do capital está em jogo
+        alloc_dolar = total_buffer * kelly_pct
+        card("Risco Financeiro", f"${alloc_dolar:,.0f}", "Alocação Global", "#00FF88")
+    with l4:
         card("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA DE ACELERAÇÃO", "#00FF88", border_color="#00FF88")
 
-    # --- 6. GRÁFICOS (RESTAURADOS E MELHORADOS) ---
+    # --- 6. GRÁFICOS ---
     st.markdown("---")
     st.markdown("### 📈 Evolução Financeira")
     
