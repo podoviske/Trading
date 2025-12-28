@@ -1,6 +1,6 @@
 import streamlit as st
 
-# --- 1. FUNÇÃO DE ESTILO (Copie e cole isso no topo do arquivo) ---
+# --- 1. FUNÇÃO DE ESTILO ---
 def card(label, value, sub_text, color="white", border_color="#333333"):
     st.markdown(
         f"""
@@ -24,8 +24,9 @@ def card(label, value, sub_text, color="white", border_color="#333333"):
         unsafe_allow_html=True
     )
 
-# --- 2. O LAYOUT DO DASHBOARD (Substitua o render atual por isso) ---
-def show_dashboard(): # Provavelmente você tem uma função assim ou roda direto
+# --- 2. O LAYOUT DO DASHBOARD ---
+# AQUI ESTAVA O ERRO: Renomeado para 'show' e adicionado args user/role
+def show(user, role): 
     
     st.markdown("### 🏁 Desempenho Geral")
     c1, c2, c3, c4 = st.columns(4)
@@ -69,7 +70,6 @@ def show_dashboard(): # Provavelmente você tem uma função assim ou roda diret
     with c3:
         card("Vidas Reais (U)", "11.1", "Risco Base: $450", color="#00FF00")
     with c4:
-        # Borda Amarela aqui
         card("Prob. Ruína (Real)", "1.55%", "Risco Moderado", color="#FFD700", border_color="#FFD700")
 
     st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
@@ -81,8 +81,4 @@ def show_dashboard(): # Provavelmente você tem uma função assim ou roda diret
     with c3:
         card("Risco Financeiro", "$240 - $330", "Por Trade", color="#00FF00")
     with c4:
-        # Borda Verde aqui
         card("Sugestão de Lote", "8 a 11 ctrs", "ZONA DE ACELERAÇÃO", color="#00FF00", border_color="#00FF00")
-
-# Se o seu arquivo views/dashboard.py roda direto sem função, 
-# apenas tire a linha "def show_dashboard():" e a indentação.
