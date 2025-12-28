@@ -389,16 +389,16 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # ==========================================================================
-    # 7. ABA: DASHBOARD (MÉTRICAS + GRÁFICOS)
-    # ==========================================================================
-    if selected == "Dashboard":
+    # ==============================================================================
+    # 7. ABA: DASHBOARD (v201 - COMPLETO COM TODAS AS MÉTRICAS RESTAURADAS)
+    # ==============================================================================
+    elif selected == "Dashboard":
         st.title(f"📊 Central de Controle ({USER})")
         
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
-        # Inicialização de Variáveis de Segurança (Evita NameError)
+        # INICIALIZAÇÃO DE VARIÁVEIS DE SEGURANÇA (Para não quebrar se não tiver dados)
         win_rate_dec = 0.0; loss_rate_dec = 0.0; payoff = 0.0; total_trades = 0
         r_min_show = 0.0; r_max_show = 0.0
         
@@ -458,7 +458,7 @@ if check_password():
                     
                     stop_atual_val = soma_saldo_agora - total_buffer_real if contas_analisadas > 0 else 0.0
 
-                    # --- KPIs FINANCEIROS ---
+                    # --- KPIs FINANCEIROS E ESTATÍSTICOS ---
                     total_trades = len(df_filtered)
                     wins = df_filtered[df_filtered['resultado'] > 0]
                     losses = df_filtered[df_filtered['resultado'] < 0]
@@ -485,7 +485,7 @@ if check_password():
                     
                     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0
                     
-                    # Ordenação para Gráfico de Equity
+                    # Ordenação para Gráfico de Equity e Drawdown
                     df_filtered = df_filtered.sort_values('created_at')
                     df_filtered['equity'] = df_filtered['resultado'].cumsum()
                     max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
@@ -530,7 +530,9 @@ if check_password():
                     if prob_ruina > 10.0 and total_trades >= 5 and expectancy > 0:
                         st.markdown(f"""<div class="piscante-erro">💀 ALERTA DE RUÍNA: {prob_ruina:.2f}% 💀<br><span style="font-size:16px;">REDUZA O LOTE AGORA.</span></div>""", unsafe_allow_html=True)
 
-                    # --- EXIBIÇÃO CARDS ---
+                    # --- EXIBIÇÃO CARDS (AGORA COMPLETO) ---
+                    
+                    # LINHA 1: GERAL
                     st.markdown("##### 🏁 Desempenho Geral")
                     c1, c2, c3, c4 = st.columns(4)
                     with c1: card_metric("RESULTADO LÍQUIDO", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit >= 0 else "#FF4B4B", "Dinheiro no bolso.")
@@ -538,12 +540,30 @@ if check_password():
                     with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white", "Taxa de acerto.")
                     with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B", "Edge estatístico.")
                     
-                    st.markdown("##### 🛡️ Sobrevivência e Risco")
+                    # LINHA 2: MÉDIAS FINANCEIRAS (RESTAURADA)
+                    st.markdown("##### 💲 Médias Financeiras")
+                    c5, c6, c7, c8 = st.columns(4)
+                    with c5: card_metric("MÉDIA GAIN ($)", f"${avg_win:,.2f}", "", "#00FF88", "Média de lucro nos gains.")
+                    with c6: card_metric("MÉDIA LOSS ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B", "Média de prejuízo nos stops.")
+                    with c7: card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real", "white", "Quanto ganha para cada 1 que perde.")
+                    with c8: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B", "Maior queda a partir do topo.")
+
+                    # LINHA 3: PERFORMANCE TÉCNICA (RESTAURADA)
+                    st.markdown("##### 🎯 Performance Técnica")
+                    c9, c10, c11, c12 = st.columns(4)
+                    with c9: card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88", "Média de pontos nos gains.")
+                    with c10: card_metric("STOP MÉDIO (LOSS)", f"{pts_loss_medio_real:.2f} pts", "Base do Risco", "#FF4B4B", "Tamanho médio do stop em pontos.")
+                    with c11: card_metric("LOTE MÉDIO", f"{lote_medio_real:.1f}", "Contratos", "white", "Tamanho da mão média.")
+                    with c12: card_metric("TOTAL TRADES", str(total_trades), "Executados", "white", "Volume total.")
+
+                    # LINHA 4: SOBREVIVÊNCIA E RISCO
+                    st.markdown("---")
+                    st.subheader(f"🛡️ Análise de Sobrevivência (Brownian Motion) - {sel_grupo}")
                     k1, k2, k3, k4 = st.columns(4)
                     z_edge = (win_rate_dec * payoff) - loss_rate_dec
-                    with k1: card_metric("Z-SCORE (EDGE)", f"{z_edge:.4f}", "Força do Edge", "#00FF88" if z_edge > 0 else "#FF4B4B", "Confiabilidade.")
-                    with k2: card_metric("BUFFER REAL", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas", "#00FF88", "Oxigênio disponível.")
-                    with k3: card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Base: ${risco_grupo_total:,.0f}", "#FF4B4B" if vidas_u < 6 else "#00FF88", "Quantos stops você aguenta.")
+                    with k1: card_metric("Z-SCORE (EDGE)", f"{z_edge:.4f}", "Força do Edge", "#00FF88" if z_edge > 0 else "#FF4B4B", "Confiabilidade estatística.")
+                    with k2: card_metric("BUFFER REAL", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas", "#00FF88", "Oxigênio (Distância pro Stop da Mesa).")
+                    with k3: card_metric("VIDAS REAIS (U)", f"{vidas_u:.1f}", f"Risco Base: ${risco_grupo_total:,.0f}", "#FF4B4B" if vidas_u < 6 else "#00FF88", "Quantos stops cheios suporta.")
                     with k4: 
                         st.markdown(f"""<div style="background: #161616; border: 2px solid {color_r}; border-radius: 12px; padding: 10px; text-align: center; height: 150px; display:flex; flex-direction:column; justify-content:center;">
                             <div style="color:#888; font-size:11px; font-weight:bold;">PROB. RUÍNA</div>
@@ -575,13 +595,13 @@ if check_password():
                         if lote_sug > HARD_CAP: lote_sug = HARD_CAP
                         
                         r_min_show = lote_sug * risco_por_lote
-                        r_max_show = r_min_show # Simplificado para piso seguro
+                        r_max_show = r_min_show # Simplificado
                         
                         cor_k = "#00FF88" if lote_sug > 0 else "#FF4B4B"
                         status_k = "ZONA DE ACELERAÇÃO" if lote_sug > 0 else "SEM GORDURA"
                     else:
                         lote_sug = 0; kelly_half = 0.0
-                        # --- CORREÇÃO DO ERRO 'NameError' ---
+                        # CORREÇÃO: Definindo variaveis para não quebrar
                         r_min_show = 0.0; r_max_show = 0.0
                         cor_k = "#888"; status_k = "DADOS INSUFICIENTES"
 
@@ -626,7 +646,7 @@ if check_password():
                         st.plotly_chart(fig_bar, use_container_width=True)
 
                     # ==========================================================
-                    # GRÁFICO DIAS DA SEMANA (VERSÃO ATÔMICA v200 - CORRIGIDA)
+                    # GRÁFICO DIAS DA SEMANA (VERSÃO ATÔMICA v201 - CORRIGIDA)
                     # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
                     
