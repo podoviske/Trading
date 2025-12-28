@@ -26,7 +26,6 @@ def load_trades(user):
             df['lote'] = pd.to_numeric(df['lote'], errors='coerce').fillna(0)
             if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
             if 'comportamento' not in df.columns: df['comportamento'] = 'Normal'
-            # Filtra pelo usuário aqui para segurança
             return df[df['usuario'] == user].copy()
         return pd.DataFrame()
     except: return pd.DataFrame()
@@ -52,3 +51,13 @@ def load_atms():
         res = supabase.table("atm_configs").select("*").execute()
         return {item['nome']: item for item in res.data}
     except: return {}
+
+# --- NOVO: PERSISTÊNCIA DE HWM ---
+def update_hwm(conta_id, novo_pico):
+    """Atualiza o Pico Histórico no Banco para garantir o Trailing Stop"""
+    try:
+        supabase.table("contas_config").update({"pico_previo": novo_pico}).eq("id", conta_id).execute()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar HWM: {e}")
+        return False
