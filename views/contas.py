@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px  # <--- FALTAVA ISSO AQUI
+import plotly.express as px
 from datetime import datetime, timedelta
 from supabase import create_client
 import time
@@ -211,79 +211,128 @@ def show(user, role):
         if not df_c.empty:
             grps = sorted(df_c['grupo_nome'].unique())
             
-            c_sel, c_view = st.columns([1, 2])
-            sel_g = c_sel.selectbox("Monitorar Grupo", grps)
+            # --- SELETORES HIERÁRQUICOS ---
+            c_sel_grp, c_sel_acc = st.columns(2)
             
+            sel_g = c_sel_grp.selectbox("1. Selecionar Grupo", grps)
+            
+            # Filtra contas e trades do grupo
             contas_g = df_c[df_c['grupo_nome'] == sel_g]
             trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
             
             if not contas_g.empty:
-                conta_ref = contas_g.iloc[0]
+                # Opções: Média ou Conta Específica
+                opcoes_acc = ["Média do Grupo"] + sorted(list(contas_g['conta_identificador'].unique()))
+                sel_acc = c_sel_acc.selectbox("2. Visualizar Detalhe", opcoes_acc)
                 
-                # --- PREPARAÇÃO DOS DADOS DO GRÁFICO ---
-                if not trades_g.empty:
-                    trades_g['data_hora'] = pd.to_datetime(trades_g['created_at'])
-                    trades_plot = trades_g.sort_values('data_hora').copy()
-                    trades_plot['seq'] = range(1, len(trades_plot) + 1)
-                    lucro_acumulado = trades_plot['resultado'].cumsum()
-                    base_inicial = float(conta_ref['saldo_inicial']) 
-                    trades_plot['saldo_curve'] = base_inicial + lucro_acumulado
-                    trades_plot['hwm_hist'] = trades_plot['saldo_curve'].cummax()
+                # --- LÓGICA DE DADOS (INDIVIDUAL vs GRUPO) ---
+                if sel_acc == "Média do Grupo":
+                    # Usa a primeira conta apenas como referência de Saldo Inicial Base (150k)
+                    # Mas o saldo real é a média
+                    conta_base_ref = contas_g.iloc[0]
+                    saldo_inicial_calc = float(conta_base_ref['saldo_inicial']) # Assume 150k padrão
+                    hwm_calc = float(conta_base_ref.get('pico_previo', saldo_inicial_calc)) # HWM aproximado
                     
-                    def get_stop_historico(row):
-                        LOCK_LEVEL = 155100.0
-                        LOCKED_STOP = 150100.0
-                        MAX_DD = 5000.0
-                        if row['hwm_hist'] >= LOCK_LEVEL: return LOCKED_STOP
-                        else: return row['hwm_hist'] - MAX_DD
-
-                    trades_plot['trailing_hist'] = trades_plot.apply(get_stop_historico, axis=1)
+                    lucro_total = trades_g['resultado'].sum() if not trades_g.empty else 0.0
+                    lucro_aplicado = lucro_total / len(contas_g) # Rateio
+                    
+                    titulo_vis = f"Média ({len(contas_g)} contas)"
                 else:
-                    trades_plot = pd.DataFrame()
+                    # Pega dados REAIS da conta selecionada
+                    conta_alvo = contas_g[contas_g['conta_identificador'] == sel_acc].iloc[0]
+                    saldo_inicial_calc = float(conta_alvo['saldo_inicial'])
+                    hwm_calc = float(conta_alvo.get('pico_previo', saldo_inicial_calc))
+                    
+                    # Assume Copy Trading: A conta recebe a média do resultado do grupo
+                    # Se você tiver trades com 'conta_id' no futuro, mude aqui para filtrar trades_g
+                    lucro_total = trades_g['resultado'].sum() if not trades_g.empty else 0.0
+                    lucro_aplicado = lucro_total / len(contas_g)
+                    
+                    titulo_vis = f"Conta {sel_acc}"
 
-                # --- DADOS ATUAIS (CARD) ---
-                lucro_total = trades_g['resultado'].sum() if not trades_g.empty else 0.0
-                lucro_por_conta = lucro_total / len(contas_g)
-                saldo_atual_ref = float(conta_ref['saldo_inicial']) + lucro_por_conta
-                hwm_ref = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
+                saldo_atual_calc = saldo_inicial_calc + lucro_aplicado
                 
-                saude = ApexEngine.calculate_health(saldo_atual_ref, hwm_ref)
+                # --- CHAMA O MOTOR APEX ---
+                saude = ApexEngine.calculate_health(saldo_atual_calc, hwm_calc)
                 
+                # --- CARDS DO TOPO ---
+                st.caption(f"Visualizando: **{titulo_vis}**")
                 k1, k2, k3, k4 = st.columns(4)
-                with k1: card("Saldo Unitário", f"${saude['saldo']:,.2f}", f"Lucro: ${saude['saldo'] - 150000:+,.2f}", "#00FF88")
+                with k1: card("Saldo Atual", f"${saude['saldo']:,.2f}", f"Lucro: ${saude['saldo'] - saldo_inicial_calc:+,.2f}", "#00FF88")
                 with k2: card("HWM (Topo)", f"${saude['hwm']:,.2f}", saude['status_trailing'], "white")
                 with k3:
                     cor_buf = "#00FF88" if saude['buffer'] > 2000 else "#FF4B4B"
-                    card("Buffer Unitário", f"${saude['buffer']:,.2f}", f"Stop: ${saude['stop_atual']:,.0f}", cor_buf)
+                    card("Buffer (Oxigênio)", f"${saude['buffer']:,.2f}", f"Stop: ${saude['stop_atual']:,.0f}", cor_buf)
                 with k4: card("Status / Fase", saude['fase'], f"Falta: ${saude['falta_para_trava']:,.0f}", "#00FF88")
                 
-                # --- GRÁFICO (LINHA + STOP) ---
+                # --- GRÁFICO (LINHAS DINÂMICAS) ---
                 c_graph, c_prog = st.columns([2.5, 1])
                 
                 with c_graph:
                     st.markdown("##### 🌊 Curva de Patrimônio vs Trailing Stop")
-                    if not trades_plot.empty:
+                    if not trades_g.empty:
+                        trades_g['data_hora'] = pd.to_datetime(trades_g['created_at'])
+                        trades_plot = trades_g.sort_values('data_hora').copy()
+                        trades_plot['seq'] = range(1, len(trades_plot) + 1)
+                        
+                        # Reconstrói a curva baseada no Saldo Inicial da conta selecionada
+                        trades_plot['saldo_curve'] = saldo_inicial_calc + (trades_plot['resultado'].cumsum() / len(contas_g))
+                        trades_plot['hwm_hist'] = trades_plot['saldo_curve'].cummax()
+                        
+                        def get_stop_historico(row):
+                            if row['hwm_hist'] >= 155100.0: return 150100.0
+                            else: return row['hwm_hist'] - 5000.0
+
+                        trades_plot['trailing_hist'] = trades_plot.apply(get_stop_historico, axis=1)
+                        
                         fig = px.line(trades_plot, x='seq', y='saldo_curve', template="plotly_dark")
                         fig.update_traces(line_color='#2E93fA', name="Saldo", line=dict(width=3))
                         fig.add_scatter(x=trades_plot['seq'], y=trades_plot['trailing_hist'], mode='lines', line=dict(color='#FF4B4B', width=2), name='Trailing Stop')
-                        fig.add_hline(y=155100, line_dash="dot", line_color="#00FF88", annotation_text="Trava do Stop")
                         
+                        # --- LINHAS DE REFERÊNCIA (CINZA E VERDE DINÂMICA) ---
+                        # Linha de Trava do Stop (Cinza - Neutro)
+                        fig.add_hline(y=150100, line_dash="dot", line_color="#666666", annotation_text="Lock Level (Stop Travado)")
+                        
+                        # Linha de Meta (Verde - Dinâmica pela Fase)
+                        # Se estiver na Fase 2 (<155k), meta é 155.100. Se passar, meta vira 161k.
+                        meta_alvo_grafico = 155100.0 if saude['saldo'] < 155100 else 161000.0
+                        label_meta = "Meta: Trava" if saude['saldo'] < 155100 else "Meta: Fase 3"
+                        
+                        fig.add_hline(y=meta_alvo_grafico, line_dash="dash", line_color="#00FF88", annotation_text=label_meta)
+                        
+                        # Zoom Inteligente
                         min_y = min(trades_plot['trailing_hist'].min(), trades_plot['saldo_curve'].min()) - 500
-                        max_y = max(trades_plot['saldo_curve'].max(), 155500) + 500
-                        fig.update_layout(yaxis_range=[min_y, max_y], xaxis_title="Sequência de Trades", yaxis_title="Capital ($)", margin=dict(l=0, r=0, t=10, b=0), height=350, legend=dict(orientation="h", y=1.1))
+                        max_y = max(trades_plot['saldo_curve'].max(), meta_alvo_grafico) + 500
+                        
+                        fig.update_layout(
+                            yaxis_range=[min_y, max_y], 
+                            xaxis_title="Sequência de Trades",
+                            yaxis_title="Capital ($)",
+                            margin=dict(l=0, r=0, t=10, b=0),
+                            height=350,
+                            legend=dict(orientation="h", y=1.1)
+                        )
                         st.plotly_chart(fig, use_container_width=True)
                     else: st.info("Registre trades para ver a curva.")
 
                 # --- PROGRESSO E META (CÁLCULO OTIMISTA) ---
                 with c_prog:
                     st.markdown("##### 🎯 Progresso da Fase")
-                    meta_total = 5100.0 
-                    lucro_atual = saude['saldo'] - 150000
-                    progresso = max(0.0, min(1.0, lucro_atual / meta_total))
+                    
+                    # Define meta total baseada na fase atual para a barra de progresso
+                    if saude['saldo'] < 155100:
+                        meta_total_fase = 5100.0 # De 150k a 155.1k
+                        lucro_na_fase = max(0.0, saude['saldo'] - 150000)
+                    else:
+                        meta_total_fase = 6000.0 # De 155k a 161k (aprox)
+                        lucro_na_fase = max(0.0, saude['saldo'] - 155100)
+
+                    progresso = max(0.0, min(1.0, lucro_na_fase / meta_total_fase))
                     st.progress(progresso)
                     st.caption(f"{progresso*100:.1f}% Concluído")
                     
-                    falta_dinheiro = saude['falta_para_trava']
+                    falta_dinheiro = saude['falta_para_trava'] if saude['saldo'] < 155100 else (161000 - saude['saldo'])
+                    label_falta = "Falta p/ Trava" if saude['saldo'] < 155100 else "Falta p/ Saque"
                     
                     if not trades_g.empty:
                         gains = trades_g[trades_g['resultado'] > 0]
@@ -305,13 +354,13 @@ def show(user, role):
                             <div style="background-color: #111; border: 1px solid #333; padding: 15px; border-radius: 10px; text-align: center;">
                                 <div style="color: #888; font-size: 12px; margin-bottom: 5px;">ESTIMATIVA OTIMISTA (Só Gains)</div>
                                 <div style="font-size: 24px; font-weight: bold; color: #2E93fA;">~{trades_restantes} Trades</div>
-                                <div style="color: #666; font-size: 11px; margin-top: 5px;">Baseado na {label_base}</div>
+                                <div style="color: #666; font-size: 11px; margin-top: 5px;">{label_falta}: ${falta_dinheiro:,.0f}</div>
                             </div>
                         """, unsafe_allow_html=True)
-                    elif falta_dinheiro <= 0:
-                        st.success("🎉 META BATIDA! STOP TRAVADO.")
+                    elif falta_dinheiro <= 0 and saude['saldo'] >= 155100:
+                        st.success("🎉 STOP TRAVADO! Rumo aos 161k.")
                     else:
-                        st.warning("Faça o primeiro gain para calcular.")
+                        st.warning("Aguardando dados...")
 
             else: st.warning("Grupo vazio ou sem contas.")
         else: st.info("Cadastre contas para monitorar.")
