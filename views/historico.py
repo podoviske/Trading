@@ -28,7 +28,7 @@ def load_trades_db():
         return df
     except: return pd.DataFrame()
 
-# --- 2. CSS FORÇADO PARA ALINHAMENTO PERFEITO ---
+# --- 2. CSS FORÇADO PARA ALINHAMENTO PERFEITO (SEM BORDAS CINZAS) ---
 st.markdown("""
     <style>
     .trade-card {
@@ -38,7 +38,7 @@ st.markdown("""
         margin-bottom: 15px;
         border: 1px solid #333;
         transition: transform 0.2s, border-color 0.2s;
-        height: 100%; /* Tenta ocupar altura total da coluna */
+        height: 100%;
     }
     .trade-card:hover {
         transform: translateY(-3px);
@@ -46,23 +46,25 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
     
-    /* --- O SEGREDO DO ALINHAMENTO ESTÁ AQUI --- */
+    /* --- CORREÇÃO DO CONTAINER DE IMAGEM --- */
     .card-img-container {
         width: 100%; 
-        height: 160px; /* Altura FIXA obrigatória */
-        background-color: #222;
+        height: 160px; /* Altura Fixa */
+        background-color: transparent; /* REMOVIDO O CINZA #222 DAQUI */
         border-radius: 5px; 
-        overflow: hidden; /* Corta o que sobrar */
+        overflow: hidden;
         display: flex;
         align-items: center; 
         justify-content: center; 
         margin-bottom: 10px;
+        position: relative;
     }
     .card-img { 
         width: 100%; 
         height: 100%; 
-        object-fit: cover; /* Preenche tudo e corta excessos (Zoom/Crop) */
-        object-position: center; /* Centraliza a imagem antes de cortar */
+        object-fit: cover; /* Zoom para preencher */
+        object-position: center;
+        display: block; /* Remove espaços fantasmas */
     }
     /* ------------------------------------------ */
 
@@ -79,7 +81,6 @@ st.markdown("""
 def show_trade_details(row, user, role):
     if row.get('prints'):
         st.markdown("### 📸 Evidência (Full Screen)")
-        # A imagem aqui aparece inteira e ajustável
         st.image(row['prints'], use_container_width=True)
     else:
         st.info("Sem Print disponível.")
@@ -155,11 +156,13 @@ def show(user, role):
                 res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
                 res_fmt = f"${row['resultado']:,.2f}"
                 
-                # HTML da Imagem Forçada
+                # HTML da Imagem
                 if row.get('prints'):
+                    # Imagem pura preenchendo o container transparente
                     img_html = f'<img src="{row["prints"]}" class="card-img">' 
                 else:
-                    img_html = '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
+                    # SÓ AQUI aplicamos o fundo cinza, pois não tem foto
+                    img_html = '<div style="width:100%; height:100%; background-color:#222; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
                 
                 st.markdown(f"""
                     <div class="trade-card">
