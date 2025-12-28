@@ -1,10 +1,15 @@
 [server]
-runOnSave = true
 headless = true
-
-[client]
-showErrorDetails = false
-toolbarMode = "minimal"
+enableCORS = false
+enableXsrfProtection = false
+runOnSave = true
+fileWatcherType = "auto"
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#ff4b4b"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#262730"
