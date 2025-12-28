@@ -216,7 +216,7 @@ def show(user, role):
         else:
             st.info("Nenhuma conta cadastrada.")
 
-    # --- ABA 4: MONITOR DE PERFORMANCE (Engine Integrada) ---
+    # --- ABA 4: MONITOR DE PERFORMANCE (Engine Integrada + Gráfico Apex) ---
     with t4:
         st.subheader("🚀 Monitor de Grupo (Apex Engine)")
         
@@ -234,19 +234,61 @@ def show(user, role):
             trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
             
             if not contas_g.empty:
-                # Pega a primeira conta como referência de Saldo Inicial (Já que todas são 150k)
+                # Pega a primeira conta como referência (Regra 150k)
                 conta_ref = contas_g.iloc[0]
                 
-                # Calcula Lucro Total do Grupo no DB
+                # --- PREPARAÇÃO DOS DADOS DO GRÁFICO ---
+                # Precisamos reconstruir a história para desenhar a linha vermelha
+                if not trades_g.empty:
+                    # Ordena por data/hora
+                    trades_g['data_hora'] = pd.to_datetime(trades_g['created_at'])
+                    trades_plot = trades_g.sort_values('data_hora').copy()
+                    
+                    # Cria sequência para eixo X
+                    trades_plot['seq'] = range(1, len(trades_plot) + 1)
+                    
+                    # Saldo Acumulado do Grupo (Simulado sobre a base 150k)
+                    # Nota: O gráfico mostra a evolução "como se fosse" uma conta única do grupo
+                    lucro_acumulado = trades_plot['resultado'].cumsum()
+                    
+                    # Como o saldo inicial é fixo (150k), somamos o lucro a ele
+                    base_inicial = float(conta_ref['saldo_inicial']) 
+                    # Se o saldo inicial atual já mudou (ex: reset), isso pode dar um salto, 
+                    # mas para monitoramento contínuo assume-se a base + histórico.
+                    
+                    # Ajuste fino: Se o usuário já tem lucro acumulado anterior ao registro, 
+                    # o gráfico parte do saldo inicial cadastrado.
+                    trades_plot['saldo_curve'] = base_inicial + lucro_acumulado
+                    
+                    # --- CÁLCULO HISTÓRICO DO TRAILING STOP ---
+                    # O Stop na Apex sobe com o HWM (Saldo Máximo atingido)
+                    trades_plot['hwm_hist'] = trades_plot['saldo_curve'].cummax()
+                    
+                    # Função interna para calcular onde estava o stop naquele momento
+                    def get_stop_historico(row):
+                        # Regras Apex 150k Hardcoded para o gráfico
+                        LOCK_LEVEL = 155100.0
+                        LOCKED_STOP = 150100.0
+                        MAX_DD = 5000.0
+                        
+                        if row['hwm_hist'] >= LOCK_LEVEL:
+                            return LOCKED_STOP
+                        else:
+                            return row['hwm_hist'] - MAX_DD
+
+                    trades_plot['trailing_hist'] = trades_plot.apply(get_stop_historico, axis=1)
+                else:
+                    trades_plot = pd.DataFrame()
+
+                # --- DADOS ATUAIS (CARD) ---
+                # Calcula onde estamos HOJE
                 lucro_total = trades_g['resultado'].sum() if not trades_g.empty else 0.0
-                # Lucro por conta (Rateio)
+                # Rateio por conta (para mostrar dados unitários)
                 lucro_por_conta = lucro_total / len(contas_g)
-                
                 saldo_atual_ref = float(conta_ref['saldo_inicial']) + lucro_por_conta
                 hwm_ref = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
                 
-                # --- CHAMA O MOTOR DE LÓGICA (ApexEngine) ---
-                # Isso substitui aquele bloco gigante de IFs da v201
+                # Motor Apex Atual
                 saude = ApexEngine.calculate_health(saldo_atual_ref, hwm_ref)
                 
                 # Exibe Cards v300
@@ -261,14 +303,86 @@ def show(user, role):
                 with k4:
                     card("Status / Fase", saude['fase'], f"Falta: ${saude['falta_para_trava']:,.0f}", "#00FF88")
                 
-                # Barra de Progresso da Fase
-                st.write("")
-                meta_total = 5100.0 # Meta para travar o stop (aprox 155.100)
-                progresso = max(0.0, min(1.0, (saude['saldo'] - 150000) / meta_total))
-                st.progress(progresso)
-                st.caption(f"Progresso para Trava do Stop ({progresso*100:.1f}%)")
+                # --- GRÁFICO (LINHA + STOP) ---
+                c_graph, c_prog = st.columns([2.5, 1])
+                
+                with c_graph:
+                    st.markdown("##### 🌊 Curva de Patrimônio vs Trailing Stop")
+                    if not trades_plot.empty:
+                        fig = px.line(trades_plot, x='seq', y='saldo_curve', template="plotly_dark")
+                        
+                        # Linha de Saldo (Azul Apex)
+                        fig.update_traces(line_color='#2E93fA', name="Saldo", line=dict(width=3))
+                        
+                        # Linha de Trailing Stop (Vermelha)
+                        fig.add_scatter(x=trades_plot['seq'], y=trades_plot['trailing_hist'], mode='lines', 
+                                        line=dict(color='#FF4B4B', width=2), name='Trailing Stop')
+                        
+                        # Linha de Trava (Meta)
+                        fig.add_hline(y=155100, line_dash="dot", line_color="#00FF88", annotation_text="Trava do Stop")
+                        
+                        # Ajuste de Zoom para focar na ação
+                        min_y = min(trades_plot['trailing_hist'].min(), trades_plot['saldo_curve'].min()) - 500
+                        max_y = max(trades_plot['saldo_curve'].max(), 155500) + 500
+                        
+                        fig.update_layout(
+                            yaxis_range=[min_y, max_y], 
+                            xaxis_title="Sequência de Trades",
+                            yaxis_title="Capital ($)",
+                            margin=dict(l=0, r=0, t=10, b=0),
+                            height=350,
+                            legend=dict(orientation="h", y=1.1)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("Registre trades para ver a curva.")
+
+                # --- PROGRESSO E META (CÁLCULO OTIMISTA) ---
+                with c_prog:
+                    st.markdown("##### 🎯 Progresso da Fase")
+                    
+                    # Meta Fixa da Fase 2 (Colchão)
+                    meta_total = 5100.0 # De 150k até 155.1k
+                    lucro_atual = saude['saldo'] - 150000
+                    
+                    # Barra de Progresso
+                    progresso = max(0.0, min(1.0, lucro_atual / meta_total))
+                    st.progress(progresso)
+                    st.caption(f"{progresso*100:.1f}% Concluído")
+                    
+                    # Cálculo de Trades Restantes (Lógica Otimista / Ansiedade)
+                    falta_dinheiro = saude['falta_para_trava']
+                    
+                    if not trades_g.empty:
+                        # Filtra apenas os gains para pegar a "Média de Gain"
+                        gains = trades_g[trades_g['resultado'] > 0]
+                        if not gains.empty:
+                            media_gain = gains['resultado'].mean()
+                            label_base = f"Média Gain: ${media_gain:,.2f}"
+                        else:
+                            media_gain = 0
+                            label_base = "Sem Gains ainda"
+                    else:
+                        media_gain = 0
+                        label_base = "Sem dados"
+
+                    st.markdown("---")
+                    
+                    if falta_dinheiro > 0 and media_gain > 0:
+                        trades_restantes = math.ceil(falta_dinheiro / media_gain)
+                        st.markdown(f"""
+                            <div style="background-color: #111; border: 1px solid #333; padding: 15px; border-radius: 10px; text-align: center;">
+                                <div style="color: #888; font-size: 12px; margin-bottom: 5px;">ESTIMATIVA OTIMISTA (Só Gains)</div>
+                                <div style="font-size: 24px; font-weight: bold; color: #2E93fA;">~{trades_restantes} Trades</div>
+                                <div style="color: #666; font-size: 11px; margin-top: 5px;">Baseado na {label_base}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    elif falta_dinheiro <= 0:
+                        st.success("🎉 META BATIDA! STOP TRAVADO.")
+                    else:
+                        st.warning("Faça o primeiro gain para calcular.")
 
             else:
-                st.warning("Grupo vazio.")
+                st.warning("Grupo vazio ou sem contas.")
         else:
             st.info("Cadastre contas para monitorar.")
