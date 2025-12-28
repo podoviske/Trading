@@ -138,28 +138,20 @@ def show(user, role):
     contas_ativas = 0
     
     if not contas_alvo.empty:
-        # Se for visão geral, precisamos estimar o lucro por conta para saber o saldo atual
         lucro_total_periodo = trades_filtered['resultado'].sum() if not trades_filtered.empty else 0.0
         num_contas_no_filtro = len(contas_alvo) if len(contas_alvo) > 0 else 1
-        
-        # Assume distribuição igualitária (CopyTrading) para cálculo de risco macro
         lucro_por_conta_est = lucro_total_periodo / num_contas_no_filtro
 
         for _, conta in contas_alvo.iterrows():
             if conta['status_conta'] == 'Ativa':
                 saldo_ini = float(conta['saldo_inicial'])
                 hwm_prev = float(conta['pico_previo'])
-                
-                # Saldo estimado atual = Inicial + (Lucro Total / N Contas)
                 saldo_atual_est = saldo_ini + lucro_por_conta_est
-                
-                # CHAMA O MOTOR APEX
                 saude = ApexEngine.calculate_health(saldo_atual_est, hwm_prev)
-                
                 total_buffer += saude['buffer']
                 contas_ativas += 1
 
-    # --- CÁLCULOS ESTATÍSTICOS (Todos os KPI do v250) ---
+    # --- CÁLCULOS ESTATÍSTICOS ---
     wins = trades_filtered[trades_filtered['resultado'] > 0]
     losses = trades_filtered[trades_filtered['resultado'] < 0]
     
@@ -174,46 +166,31 @@ def show(user, role):
     avg_win = wins['resultado'].mean() if not wins.empty else 0.0
     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0.0
     payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
-    
-    # Expectativa
     expectancy = ( (win_rate/100) * avg_win ) - ( (1 - (win_rate/100)) * avg_loss )
     
-    # Médias Técnicas
     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0
     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
-    
-    # Risco Comportamental (Stop Médio em Pontos)
-    pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0 # fallback
-    
+    pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0 
     lote_medio = trades_filtered['lote'].mean() if not trades_filtered.empty else 0.0
     ativo_ref = trades_filtered['ativo'].iloc[-1] if not trades_filtered.empty else "MNQ"
     
-    # Drawdown Máximo (do Período Visualizado)
     max_dd = 0.0
     if not trades_filtered.empty:
         df_sorted = trades_filtered.sort_values('created_at')
         equity = df_sorted['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
 
-    # --- CÁLCULOS DOS MOTORES (Risco e Lote) ---
+    # --- CÁLCULOS DOS MOTORES ---
     custo_stop_padrao = pts_loss_medio_real * MULTIPLIERS.get(ativo_ref, 2)
     risco_impacto_grupo = custo_stop_padrao * (contas_ativas if contas_ativas > 0 else 1)
-    
-    # Vidas
     vidas_u = total_buffer / risco_impacto_grupo if risco_impacto_grupo > 0 else 0.0
-    
-    # Ruína
     prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer)
-    
-    # Edge (Z-Score Simplificado v250)
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
-    
-    # Lote Sugerido
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, risco_impacto_grupo)
 
     # ==============================================================================
-    # RENDERIZAÇÃO VISUAL (RESTAURANDO O LAYOUT COMPLETO)
+    # RENDERIZAÇÃO VISUAL
     # ==============================================================================
 
     # 1. DESEMPENHO GERAL
@@ -224,25 +201,15 @@ def show(user, role):
     with c3: card("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
     with c4: card("Expectativa Mat.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy>0 else "#FF4B4B")
 
-    # 2. MÉDIAS FINANCEIRAS (RESTAURADO)
-    st.markdown("### 💲 Médias Financeiras")
+    # 2. MÉDIAS E TÉCNICA
+    st.markdown("### 💲 Médias & Técnica")
     m1, m2, m3, m4 = st.columns(4)
     with m1: card("Média Gain ($)", f"${avg_win:,.2f}", "", "#00FF88")
     with m2: card("Média Loss ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B")
     with m3: card("Risco : Retorno", f"1 : {payoff:.2f}", "Payoff Real", "white")
     with m4: card("Drawdown Máximo", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B")
 
-    # 3. PERFORMANCE TÉCNICA (RESTAURADO)
-    st.markdown("### 🎯 Performance Técnica")
-    t1, t2, t3, t4 = st.columns(4)
-    with t1: card("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
-    with t2: card("Stop Médio (Loss)", f"{avg_pts_loss:.2f} pts", "Base do Risco", "#FF4B4B")
-    with t3: card("Lote Médio", f"{lote_medio:.1f}", "Contratos", "white")
-    with t4: card("Total Trades", f"{total_trades}", "Executados", "white")
-
-    st.markdown("---")
-
-    # 4. ANÁLISE DE SOBREVIVÊNCIA
+    # 3. ANÁLISE DE SOBREVIVÊNCIA
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
     with k1:
@@ -255,24 +222,10 @@ def show(user, role):
         cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
         card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco Impacto: ${risco_impacto_grupo:,.0f}", cor_v)
     with k4:
-        cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
-        card("Prob. Ruína (Real)", f"{prob_ruina:.2f}%", "Risco Moderado", cor_r, border_color=cor_r)
-
-    # 5. INTELIGÊNCIA DE LOTE (SEPARADO COMO NO ORIGINAL)
-    st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
-    l1, l2, l3, l4 = st.columns(4)
-    with l1:
-        card("Buffer Disponível", f"${total_buffer:,.0f}", "Capital de Risco", "#00FF88")
-    with l2:
-        card("Half-Kelly (Math)", f"{kelly_pct*100:.1f}%", "Teto Teórico", "#888")
-    with l3:
-        r_fin_min = lote_min * (custo_stop_padrao/contas_ativas) # Aproximação unitária para exibição
-        r_fin_max = lote_max * (custo_stop_padrao/contas_ativas)
-        card("Risco Financeiro", f"${total_buffer * kelly_pct:,.0f}", "Alocação Global", "#00FF88")
-    with l4:
         card("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA DE ACELERAÇÃO", "#00FF88", border_color="#00FF88")
 
-    # 6. GRÁFICOS
+    # --- 6. GRÁFICOS (RESTAURADOS E MELHORADOS) ---
+    st.markdown("---")
     st.markdown("### 📈 Evolução Financeira")
     
     g1, g2 = st.columns([2.5, 1])
@@ -280,19 +233,24 @@ def show(user, role):
     with g1:
         if not trades_filtered.empty:
             trades_plot = trades_filtered.sort_values('created_at').copy()
-            
-            # Ajuste do Eixo Y (Saldo Base)
-            # Se for Geral: Soma dos Saldos Iniciais
-            # Se for Individual: Saldo Inicial da conta
             saldo_inicial_base = contas_alvo['saldo_inicial'].sum() if not contas_alvo.empty else 0.0
-            
             trades_plot['saldo_acumulado'] = trades_plot['resultado'].cumsum() + saldo_inicial_base
             
-            fig = px.area(trades_plot, x='created_at', y='saldo_acumulado', title=f"Curva de Patrimônio ({view_mode})", template="plotly_dark")
-            fig.update_traces(line_color='#00FF88', fillcolor='rgba(0, 255, 136, 0.1)')
+            # --- TOGGLE: VISUALIZAR POR ---
+            view_type = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
             
-            # Linha de Referência (Saldo Inicial)
+            if view_type == "Sequência de Trades":
+                trades_plot['seq'] = range(1, len(trades_plot) + 1)
+                x_axis = 'seq'
+                x_title = "Quantidade de Trades"
+            else:
+                x_axis = 'created_at'
+                x_title = "Data / Hora"
+
+            fig = px.area(trades_plot, x=x_axis, y='saldo_acumulado', title=f"Curva de Patrimônio", template="plotly_dark")
+            fig.update_traces(line_color='#00FF88', fillcolor='rgba(0, 255, 136, 0.1)')
             fig.add_hline(y=saldo_inicial_base, line_dash="dash", line_color="gray", annotation_text="Capital Inicial")
+            fig.update_layout(xaxis_title=x_title, yaxis_title="Patrimônio ($)")
             
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -300,6 +258,38 @@ def show(user, role):
             
     with g2:
         if not trades_filtered.empty:
+            st.write("") # Espaçamento para alinhar com o radio button
+            st.write("") 
             ctx_perf = trades_filtered.groupby('contexto')['resultado'].sum().reset_index()
             fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+            fig_bar.update_layout(showlegend=False)
             st.plotly_chart(fig_bar, use_container_width=True)
+
+    # --- GRÁFICOS TEMPORAIS (DIÁRIO E SEMANAL) ---
+    st.markdown("### 📅 Performance Temporal")
+    
+    if not trades_filtered.empty:
+        t1, t2 = st.columns(2)
+        
+        # 1. Resultado por DIA (Timeline)
+        with t1:
+            # Agrupa por data pura
+            daily_perf = trades_filtered.groupby('data')['resultado'].sum().reset_index()
+            fig_daily = px.bar(daily_perf, x='data', y='resultado', title="Resultado Diário (Timeline)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+            fig_daily.update_layout(showlegend=False, xaxis_title="Data", yaxis_title="Resultado ($)")
+            st.plotly_chart(fig_daily, use_container_width=True)
+            
+        # 2. Resultado por Dia da SEMANA (Seg, Ter, Qua...)
+        with t2:
+            trades_filtered['dia_semana'] = pd.to_datetime(trades_filtered['data']).dt.day_name()
+            dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
+            trades_filtered['dia_pt'] = trades_filtered['dia_semana'].map(dias_pt)
+            
+            # Ordem correta da semana
+            week_order = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']
+            
+            week_perf = trades_filtered.groupby('dia_pt')['resultado'].sum().reindex(week_order).reset_index()
+            
+            fig_week = px.bar(week_perf, x='dia_pt', y='resultado', title="Dia da Semana (Estatístico)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
+            fig_week.update_layout(showlegend=False, xaxis_title="Dia", yaxis_title="Resultado ($)")
+            st.plotly_chart(fig_week, use_container_width=True)
