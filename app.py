@@ -274,7 +274,7 @@ if check_password():
     # ==========================================================================
     def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
         """
-        Motor Apex v200: Calcula Trailing Stop, HWM e Fases.
+        Motor Apex v201: Calcula Trailing Stop, HWM e Fases.
         BLINDAGEM: Respeita o maior valor entre Saldo, Pico Histórico e Gráfico Atual.
         """
         # 0. Tratamento de Tipos
@@ -389,10 +389,10 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # ==============================================================================
-    # 7. ABA: DASHBOARD (v201 - VISUAL RESTAURADO + CORREÇÕES)
-    # ==============================================================================
-    elif selected == "Dashboard":
+    # ==========================================================================
+    # 7. ABA: DASHBOARD (MÉTRICAS + GRÁFICOS)
+    # ==========================================================================
+    if selected == "Dashboard":
         st.title(f"📊 Central de Controle ({USER})")
         
         df_raw = load_trades_db()
@@ -530,7 +530,7 @@ if check_password():
                     if prob_ruina > 10.0 and total_trades >= 5 and expectancy > 0:
                         st.markdown(f"""<div class="piscante-erro">💀 ALERTA DE RUÍNA: {prob_ruina:.2f}% 💀<br><span style="font-size:16px;">REDUZA O LOTE AGORA.</span></div>""", unsafe_allow_html=True)
 
-                    # --- EXIBIÇÃO CARDS (AGORA COMPLETO IGUAL AO PRINT) ---
+                    # --- EXIBIÇÃO CARDS (RESTAURADOS) ---
                     
                     # LINHA 1: GERAL
                     st.markdown("##### 🏁 Desempenho Geral")
@@ -540,7 +540,7 @@ if check_password():
                     with c3: card_metric("WIN RATE", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white", "Taxa de acerto.")
                     with c4: card_metric("EXPECTATIVA MAT.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy > 0 else "#FF4B4B", "Edge estatístico.")
                     
-                    # LINHA 2: MÉDIAS FINANCEIRAS (RESTAURADA)
+                    # LINHA 2: MÉDIAS FINANCEIRAS
                     st.markdown("##### 💲 Médias Financeiras")
                     c5, c6, c7, c8 = st.columns(4)
                     with c5: card_metric("MÉDIA GAIN ($)", f"${avg_win:,.2f}", "", "#00FF88", "Média de lucro nos gains.")
@@ -548,7 +548,7 @@ if check_password():
                     with c7: card_metric("RISCO : RETORNO", f"1 : {payoff:.2f}", "Payoff Real", "white", "Quanto ganha para cada 1 que perde.")
                     with c8: card_metric("DRAWDOWN MÁXIMO", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B", "Maior queda a partir do topo.")
 
-                    # LINHA 3: PERFORMANCE TÉCNICA (RESTAURADA)
+                    # LINHA 3: PERFORMANCE TÉCNICA
                     st.markdown("##### 🎯 Performance Técnica")
                     c9, c10, c11, c12 = st.columns(4)
                     with c9: card_metric("PTS MÉDIOS (GAIN)", f"{avg_pts_gain:.2f} pts", "", "#00FF88", "Média de pontos nos gains.")
@@ -605,7 +605,7 @@ if check_password():
                         r_min_show = 0.0; r_max_show = 0.0
                         cor_k = "#888"; status_k = "DADOS INSUFICIENTES"
 
-                    ka, kb, kc, kd = st.columns(4) # AJUSTADO PARA 4 COLUNAS IGUAL PRINT
+                    ka, kb, kc, kd = st.columns(4) # Ajustado para 4 colunas
                     with ka: card_metric("BUFFER DISPONÍVEL", f"${total_buffer_real:,.0f}", f"Stop: ${stop_atual_val:,.0f}", "#00FF88")
                     with kb: card_metric("HALF-KELLY", f"{kelly_half*100:.1f}%", "Teto Matemático", "#888")
                     with kc: card_metric("RISCO FINANCEIRO", f"${r_min_show:,.0f}", "Sugerido", cor_k)
@@ -647,7 +647,7 @@ if check_password():
                         st.plotly_chart(fig_bar, use_container_width=True)
 
                     # ==========================================================
-                    # GRÁFICO DIAS DA SEMANA (VERSÃO ATÔMICA v201 - CORRIGIDA)
+                    # GRÁFICO DIAS DA SEMANA (VERSÃO BLINDADA E CORRIGIDA)
                     # ==========================================================
                     st.markdown("### 📅 Performance por Dia da Semana")
                     
@@ -819,7 +819,7 @@ if check_password():
     # 9. ABA: CONTAS (GESTAO DE PORTFOLIO)
     # ==========================================================================
     elif selected == "Contas" and ROLE in ['master', 'admin']:
-        st.title("💼 Gestão de Portfólio (v200)")
+        st.title("💼 Gestão de Portfólio (v201)")
         t1, t2, t3, t4 = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📋 Visão Geral", "🚀 Monitor"])
         
         with t1:
