@@ -3,7 +3,7 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 runOnSave = true
-fileWatcherType = "auto"
+fileWatcherType = "poll"  # <--- MUDANÇA AQUI: Garante o reload em Dev Containers
 
 [browser]
 gatherUsageStats = false
