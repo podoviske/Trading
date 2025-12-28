@@ -14,7 +14,7 @@ from supabase import create_client, Client
 # 1. INFRAESTRUTURA E CONEXÃO (BLINDADA)
 # ==============================================================================
 st.set_page_config(
-    page_title="EvoTrade Empire v200", 
+    page_title="EvoTrade Empire v201", 
     layout="wide", 
     page_icon="🦅",
     initial_sidebar_state="expanded"
@@ -389,16 +389,16 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # ==============================================================================
-    # 7. ABA: DASHBOARD (v201 - COMPLETO COM TODAS AS MÉTRICAS RESTAURADAS)
-    # ==============================================================================
-    elif selected == "Dashboard":
+    # ==========================================================================
+    # 7. ABA: DASHBOARD (MÉTRICAS + GRÁFICOS)
+    # ==========================================================================
+    if selected == "Dashboard":
         st.title(f"📊 Central de Controle ({USER})")
         
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
-        # INICIALIZAÇÃO DE VARIÁVEIS DE SEGURANÇA (Para não quebrar se não tiver dados)
+        # Inicialização de Variáveis de Segurança (Evita NameError)
         win_rate_dec = 0.0; loss_rate_dec = 0.0; payoff = 0.0; total_trades = 0
         r_min_show = 0.0; r_max_show = 0.0
         
