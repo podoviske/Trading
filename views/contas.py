@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from supabase import create_client
 import time
+import math  # Importante para arredondar os trades para cima
 
 # Importa o Cérebro
 from modules.logic import ApexEngine
@@ -316,7 +317,7 @@ def show(user, role):
             
             cg, cp = st.columns([2.5, 1])
 
-            # --- GRÁFICO (CORES AJUSTADAS) ---
+            # --- GRÁFICO (CORES DEFINITIVAS) ---
             with cg:
                 st.markdown(f"**🌊 {titulo_grafico}**")
                 if not trades_g.empty:
@@ -338,7 +339,7 @@ def show(user, role):
                     df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax()
                     df_plot['stop_hist'] = df_plot['hwm_hist'].apply(calc_trail_hist)
                     
-                    # Definição da Linha de Meta Dinâmica
+                    # Meta Dinâmica para o gráfico
                     meta_plot_val = 155100.0 * n_contas_calc
                     if saude_final['saldo'] >= meta_plot_val:
                         meta_plot_val = 161000.0 * n_contas_calc
@@ -365,14 +366,13 @@ def show(user, role):
                     fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="#444", annotation_text="Inicial")
 
                     # 4. Linha de Meta (VERDE NEON)
-                    fig.add_hline(y=meta_plot_val, line_dash="dash", line_color="#00FF88", annotation_text="Meta Fase")
+                    fig.add_hline(y=meta_plot_val, line_dash="dash", line_color="#00FF88", annotation_text="Meta")
                     
-                    # --- ZOOM INTELIGENTE ---
+                    # --- ZOOM ---
                     y_values = pd.concat([df_plot['saldo_acc'], df_plot['stop_hist']])
                     min_y = y_values.min()
                     max_y = y_values.max()
                     
-                    # Inclui as linhas de referência no range
                     min_y = min(min_y, saldo_inicial_plot)
                     max_y = max(max_y, meta_plot_val)
                     
@@ -411,10 +411,21 @@ def show(user, role):
                 st.caption(f"Meta Próxima: ${meta_visual:,.0f}")
                 
                 falta_meta = meta_visual - saude_final['saldo']
+                
                 if progresso >= 1.0:
                     st.success("META ATINGIDA! 🚀")
                 else:
                     st.write(f"Faltam: **${falta_meta:,.2f}**")
+                    
+                    # --- NOVO: ESTIMATIVA DE TRADES FALTANTES ---
+                    wins = trades_g[trades_g['resultado'] > 0]
+                    avg_win = wins['resultado'].mean() if not wins.empty else 0.0
+                    
+                    if avg_win > 0 and falta_meta > 0:
+                        trades_left = math.ceil(falta_meta / avg_win)
+                        st.caption(f"🎯 Aprox. **{trades_left} trades** (média ${avg_win:,.0f})")
+                    else:
+                        st.caption("Faça gains para estimar trades.")
 
         else:
             st.info("Crie um Grupo e Contas primeiro.")
