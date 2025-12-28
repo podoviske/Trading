@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px  # <--- FALTAVA ISSO AQUI
 from datetime import datetime, timedelta
 from supabase import create_client
 import time
@@ -64,14 +65,12 @@ def card(label, value, sub_text, color="white", border_color="#333333"):
 def show(user, role):
     st.title("💼 Gestão de Portfólio")
     
-    # Validação de Permissão (Mantida da v201)
     if role not in ['master', 'admin']:
         st.error("🔒 Acesso restrito a gestores.")
         return
 
     sb = get_supabase()
     
-    # Abas Iguais à v201
     t1, t2, t3, t4 = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📋 Visão Geral", "🚀 Monitor Performance"])
 
     # --- ABA 1: CRIAR GRUPO ---
@@ -151,27 +150,19 @@ def show(user, role):
             
             for grp in grupos_unicos:
                 with st.expander(f"📂 {grp}", expanded=True):
-                    # Filtra contas deste grupo
                     contas_deste_grupo = df_c[df_c['grupo_nome'] == grp]
-                    
-                    # Calcula lucro estimado do grupo (simplificado para exibição rápida)
                     trades_grp = df_t[df_t['grupo_vinculo'] == grp] if not df_t.empty else pd.DataFrame()
                     lucro_total_grp = trades_grp['resultado'].sum() if not trades_grp.empty else 0.0
-                    
-                    # Assume distribuição igualitária (Copy)
                     qtd_contas = len(contas_deste_grupo)
                     lucro_por_conta = lucro_total_grp / qtd_contas if qtd_contas > 0 else 0
                     
                     for _, conta in contas_deste_grupo.iterrows():
-                        # Lógica Visual
                         status_icon = "🟢" if conta['status_conta'] == "Ativa" else "🔴"
                         cor_border = "#00FF88" if conta['status_conta'] == "Ativa" else "#FF4B4B"
-                        
                         saldo_estimado = float(conta['saldo_inicial']) + lucro_por_conta
                         delta = saldo_estimado - float(conta['saldo_inicial'])
                         cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
                         
-                        # Layout da Linha da Conta
                         col_info, col_edit, col_del = st.columns([3, 0.5, 0.5])
                         
                         col_info.markdown(f"""
@@ -187,18 +178,13 @@ def show(user, role):
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        # Botão Editar (Popover)
                         with col_edit.popover("⚙️"):
                             st.markdown(f"**Editar {conta['conta_identificador']}**")
-                            
-                            # Opções de Edição
                             idx_grp = lista_grupos.index(conta['grupo_nome']) if conta['grupo_nome'] in lista_grupos else 0
                             novo_grp = st.selectbox("Mover Grupo", lista_grupos, index=idx_grp, key=f"g_{conta['id']}")
-                            
                             status_ops = ["Ativa", "Pausada", "Quebrada"]
                             idx_st = status_ops.index(conta['status_conta']) if conta['status_conta'] in status_ops else 0
                             novo_st = st.selectbox("Status", status_ops, index=idx_st, key=f"s_{conta['id']}")
-                            
                             novo_saldo = st.number_input("Corrigir Inicial", value=float(conta['saldo_inicial']), key=f"si_{conta['id']}")
                             
                             if st.button("Salvar Alterações", key=f"btn_{conta['id']}"):
@@ -209,7 +195,6 @@ def show(user, role):
                                 }).eq("id", conta['id']).execute()
                                 st.rerun()
                         
-                        # Botão Excluir
                         if col_del.button("🗑️", key=f"del_{conta['id']}"):
                             sb.table("contas_config").delete().eq("id", conta['id']).execute()
                             st.rerun()
@@ -229,79 +214,48 @@ def show(user, role):
             c_sel, c_view = st.columns([1, 2])
             sel_g = c_sel.selectbox("Monitorar Grupo", grps)
             
-            # Filtra dados para o motor
             contas_g = df_c[df_c['grupo_nome'] == sel_g]
             trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
             
             if not contas_g.empty:
-                # Pega a primeira conta como referência (Regra 150k)
                 conta_ref = contas_g.iloc[0]
                 
                 # --- PREPARAÇÃO DOS DADOS DO GRÁFICO ---
-                # Precisamos reconstruir a história para desenhar a linha vermelha
                 if not trades_g.empty:
-                    # Ordena por data/hora
                     trades_g['data_hora'] = pd.to_datetime(trades_g['created_at'])
                     trades_plot = trades_g.sort_values('data_hora').copy()
-                    
-                    # Cria sequência para eixo X
                     trades_plot['seq'] = range(1, len(trades_plot) + 1)
-                    
-                    # Saldo Acumulado do Grupo (Simulado sobre a base 150k)
-                    # Nota: O gráfico mostra a evolução "como se fosse" uma conta única do grupo
                     lucro_acumulado = trades_plot['resultado'].cumsum()
-                    
-                    # Como o saldo inicial é fixo (150k), somamos o lucro a ele
                     base_inicial = float(conta_ref['saldo_inicial']) 
-                    # Se o saldo inicial atual já mudou (ex: reset), isso pode dar um salto, 
-                    # mas para monitoramento contínuo assume-se a base + histórico.
-                    
-                    # Ajuste fino: Se o usuário já tem lucro acumulado anterior ao registro, 
-                    # o gráfico parte do saldo inicial cadastrado.
                     trades_plot['saldo_curve'] = base_inicial + lucro_acumulado
-                    
-                    # --- CÁLCULO HISTÓRICO DO TRAILING STOP ---
-                    # O Stop na Apex sobe com o HWM (Saldo Máximo atingido)
                     trades_plot['hwm_hist'] = trades_plot['saldo_curve'].cummax()
                     
-                    # Função interna para calcular onde estava o stop naquele momento
                     def get_stop_historico(row):
-                        # Regras Apex 150k Hardcoded para o gráfico
                         LOCK_LEVEL = 155100.0
                         LOCKED_STOP = 150100.0
                         MAX_DD = 5000.0
-                        
-                        if row['hwm_hist'] >= LOCK_LEVEL:
-                            return LOCKED_STOP
-                        else:
-                            return row['hwm_hist'] - MAX_DD
+                        if row['hwm_hist'] >= LOCK_LEVEL: return LOCKED_STOP
+                        else: return row['hwm_hist'] - MAX_DD
 
                     trades_plot['trailing_hist'] = trades_plot.apply(get_stop_historico, axis=1)
                 else:
                     trades_plot = pd.DataFrame()
 
                 # --- DADOS ATUAIS (CARD) ---
-                # Calcula onde estamos HOJE
                 lucro_total = trades_g['resultado'].sum() if not trades_g.empty else 0.0
-                # Rateio por conta (para mostrar dados unitários)
                 lucro_por_conta = lucro_total / len(contas_g)
                 saldo_atual_ref = float(conta_ref['saldo_inicial']) + lucro_por_conta
                 hwm_ref = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
                 
-                # Motor Apex Atual
                 saude = ApexEngine.calculate_health(saldo_atual_ref, hwm_ref)
                 
-                # Exibe Cards v300
                 k1, k2, k3, k4 = st.columns(4)
-                with k1:
-                    card("Saldo Unitário", f"${saude['saldo']:,.2f}", f"Lucro: ${saude['saldo'] - 150000:+,.2f}", "#00FF88")
-                with k2:
-                    card("HWM (Topo)", f"${saude['hwm']:,.2f}", saude['status_trailing'], "white")
+                with k1: card("Saldo Unitário", f"${saude['saldo']:,.2f}", f"Lucro: ${saude['saldo'] - 150000:+,.2f}", "#00FF88")
+                with k2: card("HWM (Topo)", f"${saude['hwm']:,.2f}", saude['status_trailing'], "white")
                 with k3:
                     cor_buf = "#00FF88" if saude['buffer'] > 2000 else "#FF4B4B"
                     card("Buffer Unitário", f"${saude['buffer']:,.2f}", f"Stop: ${saude['stop_atual']:,.0f}", cor_buf)
-                with k4:
-                    card("Status / Fase", saude['fase'], f"Falta: ${saude['falta_para_trava']:,.0f}", "#00FF88")
+                with k4: card("Status / Fase", saude['fase'], f"Falta: ${saude['falta_para_trava']:,.0f}", "#00FF88")
                 
                 # --- GRÁFICO (LINHA + STOP) ---
                 c_graph, c_prog = st.columns([2.5, 1])
@@ -310,51 +264,28 @@ def show(user, role):
                     st.markdown("##### 🌊 Curva de Patrimônio vs Trailing Stop")
                     if not trades_plot.empty:
                         fig = px.line(trades_plot, x='seq', y='saldo_curve', template="plotly_dark")
-                        
-                        # Linha de Saldo (Azul Apex)
                         fig.update_traces(line_color='#2E93fA', name="Saldo", line=dict(width=3))
-                        
-                        # Linha de Trailing Stop (Vermelha)
-                        fig.add_scatter(x=trades_plot['seq'], y=trades_plot['trailing_hist'], mode='lines', 
-                                        line=dict(color='#FF4B4B', width=2), name='Trailing Stop')
-                        
-                        # Linha de Trava (Meta)
+                        fig.add_scatter(x=trades_plot['seq'], y=trades_plot['trailing_hist'], mode='lines', line=dict(color='#FF4B4B', width=2), name='Trailing Stop')
                         fig.add_hline(y=155100, line_dash="dot", line_color="#00FF88", annotation_text="Trava do Stop")
                         
-                        # Ajuste de Zoom para focar na ação
                         min_y = min(trades_plot['trailing_hist'].min(), trades_plot['saldo_curve'].min()) - 500
                         max_y = max(trades_plot['saldo_curve'].max(), 155500) + 500
-                        
-                        fig.update_layout(
-                            yaxis_range=[min_y, max_y], 
-                            xaxis_title="Sequência de Trades",
-                            yaxis_title="Capital ($)",
-                            margin=dict(l=0, r=0, t=10, b=0),
-                            height=350,
-                            legend=dict(orientation="h", y=1.1)
-                        )
+                        fig.update_layout(yaxis_range=[min_y, max_y], xaxis_title="Sequência de Trades", yaxis_title="Capital ($)", margin=dict(l=0, r=0, t=10, b=0), height=350, legend=dict(orientation="h", y=1.1))
                         st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("Registre trades para ver a curva.")
+                    else: st.info("Registre trades para ver a curva.")
 
                 # --- PROGRESSO E META (CÁLCULO OTIMISTA) ---
                 with c_prog:
                     st.markdown("##### 🎯 Progresso da Fase")
-                    
-                    # Meta Fixa da Fase 2 (Colchão)
-                    meta_total = 5100.0 # De 150k até 155.1k
+                    meta_total = 5100.0 
                     lucro_atual = saude['saldo'] - 150000
-                    
-                    # Barra de Progresso
                     progresso = max(0.0, min(1.0, lucro_atual / meta_total))
                     st.progress(progresso)
                     st.caption(f"{progresso*100:.1f}% Concluído")
                     
-                    # Cálculo de Trades Restantes (Lógica Otimista / Ansiedade)
                     falta_dinheiro = saude['falta_para_trava']
                     
                     if not trades_g.empty:
-                        # Filtra apenas os gains para pegar a "Média de Gain"
                         gains = trades_g[trades_g['resultado'] > 0]
                         if not gains.empty:
                             media_gain = gains['resultado'].mean()
@@ -382,7 +313,5 @@ def show(user, role):
                     else:
                         st.warning("Faça o primeiro gain para calcular.")
 
-            else:
-                st.warning("Grupo vazio ou sem contas.")
-        else:
-            st.info("Cadastre contas para monitorar.")
+            else: st.warning("Grupo vazio ou sem contas.")
+        else: st.info("Cadastre contas para monitorar.")
