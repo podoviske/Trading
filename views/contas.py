@@ -313,7 +313,7 @@ def show(user, role):
             
             cg, cp = st.columns([2.5, 1])
 
-            # --- GRÁFICO (ZOOM CORRIGIDO) ---
+            # --- GRÁFICO (CORES CORRIGIDAS) ---
             with cg:
                 st.markdown(f"**🌊 {titulo_grafico}**")
                 if not trades_g.empty:
@@ -339,37 +339,31 @@ def show(user, role):
                     # === PLOTLY ===
                     fig = go.Figure()
                     
-                    # 1. Saldo (Verde)
+                    # 1. Saldo (AZUL)
                     fig.add_trace(go.Scatter(
                         x=df_plot['seq'], y=df_plot['saldo_acc'],
                         mode='lines', name='Patrimônio',
-                        line=dict(color='#00FF88', width=2),
-                        fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
+                        line=dict(color='#2962FF', width=2),
+                        fill='tozeroy', fillcolor='rgba(41, 98, 255, 0.1)'
                     ))
                     
-                    # 2. Stop (Vermelho)
+                    # 2. Stop (VERMELHO)
                     fig.add_trace(go.Scatter(
                         x=df_plot['seq'], y=df_plot['stop_hist'],
                         mode='lines', name='Trailing Stop',
                         line=dict(color='#FF4B4B', width=2, dash='solid')
                     ))
 
-                    # 3. Linha Inicial
-                    fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="gray", annotation_text="Inicial")
+                    # 3. Linha Inicial (VERDE TRACEJADO)
+                    fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="#00FF88", annotation_text="Inicial")
                     
-                    # --- ZOOM INTELIGENTE (CORREÇÃO DE ESCALA) ---
-                    # Pega todos os valores relevantes para o eixo Y
+                    # --- ZOOM INTELIGENTE ---
                     y_values = pd.concat([df_plot['saldo_acc'], df_plot['stop_hist']])
                     min_y = y_values.min()
                     max_y = y_values.max()
-                    
-                    # Garante que o saldo inicial esteja no range visual
                     min_y = min(min_y, saldo_inicial_plot)
                     max_y = max(max_y, saldo_inicial_plot)
                     
-                    # Adiciona margem de respiro (Padding)
-                    # Ex: Se a conta varia entre 148k e 152k, range de 4k. Padding de 400.
-                    # Mínimo de 1000 de padding para não ficar colado.
                     diff = max_y - min_y
                     padding = max(1500.0, diff * 0.15)
                     
@@ -380,7 +374,7 @@ def show(user, role):
                         height=350,
                         margin=dict(l=10, r=10, t=30, b=10),
                         legend=dict(orientation="h", y=1.1),
-                        yaxis=dict(range=[min_y - padding, max_y + padding]) # <--- AQUI A MÁGICA
+                        yaxis=dict(range=[min_y - padding, max_y + padding])
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 else:
