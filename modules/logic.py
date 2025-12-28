@@ -1,90 +1,137 @@
-import pandas as pd
 import math
 
-def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
+# ==============================================================================
+# 1. MOTOR APEX (Regra Fixa 150k)
+# ==============================================================================
+class ApexEngine:
     """
-    Motor Apex v300 (Turbo): Calcula HWM, Trailing Stop, Fases Empire e Metas.
+    Motor especialista na regra de 150k da Apex.
+    Centraliza toda a lógica de Trailing Stop e Fases.
     """
-    try:
-        s_ini = float(saldo_inicial)
-        # Se pico_previo for None ou 0, assume s_ini
-        p_prev = float(pico_previo) if pico_previo and float(pico_previo) > 0 else s_ini
-    except:
-        s_ini = 150000.0; p_prev = 150000.0
+    STARTING_BALANCE = 150000.0
+    MAX_DRAWDOWN = 5000.0
+    # O Trailing Stop sobe até o saldo atingir (150k + 5k + 100).
+    # Nesse ponto, o stop trava em (150k + 100).
+    LOCK_THRESHOLD = 155100.0  
+    LOCKED_STOP_VALUE = 150100.0
 
-    # 1. Regras por Tamanho de Conta (Dinâmico)
-    if s_ini >= 250000:   # 300k
-        dd_max = 7500.0; meta_trava = s_ini + dd_max + 100.0; meta_f3 = s_ini + 15000.0
-    elif s_ini >= 100000: # 150k
-        dd_max = 5000.0; meta_trava = 155100.0; meta_f3 = 161000.0
-    elif s_ini >= 50000:  # 50k
-        dd_max = 2500.0; meta_trava = 52600.0; meta_f3 = 56000.0
-    else:                 # 25k
-        dd_max = 1500.0; meta_trava = 26600.0; meta_f3 = 28000.0
+    @staticmethod
+    def calculate_health(saldo_atual, hwm_previo):
+        """
+        Calcula a saúde (Buffer e Stop) dado o saldo atual e o HWM (Pico Histórico).
+        """
+        # Garante que o HWM nunca é menor que o saldo atual
+        hwm_real = max(saldo_atual, hwm_previo)
         
-    # 2. Calcular Saldo e Curva Real
-    lucro_acc = trades_df['resultado'].sum() if not trades_df.empty else 0.0
-    saldo_atual = s_ini + lucro_acc
-    
-    # --- LÓGICA DO PICO (HWM) ---
-    candidatos_pico = [s_ini, p_prev]
-    
-    if not trades_df.empty:
-        trades_sorted = trades_df.sort_values('created_at')
-        equity_curve = trades_sorted['resultado'].cumsum() + s_ini
-        pico_grafico = equity_curve.max()
-        candidatos_pico.append(pico_grafico)
-        
-    pico_real = max(candidatos_pico)
-
-    # 3. Lógica Trailing (Lock/Trava)
-    stop_travado = s_ini + 100.0
-    
-    if pico_real >= meta_trava:
-        stop_atual = stop_travado
-        status_stop = "TRAVADO (LOCK)"
-    else:
-        stop_atual = pico_real - dd_max
-        status_stop = "MÓVEL (TRAILING)"
-        
-    buffer = max(0.0, saldo_atual - stop_atual)
-    
-    # 4. Fases Empire Builder
-    if stop_atual == stop_travado:
-        if saldo_atual < meta_f3:
-            fase_nome = "Fase 3 (Blindagem)"; status_fase = "Rumo aos 161k"
-            meta_global = meta_f3; distancia_meta = meta_f3 - saldo_atual
+        # --- Lógica do Trailing Stop Apex ---
+        # Se o HWM já tocou a zona de trava ($155.100+), o stop morre em $150.100
+        if hwm_real >= ApexEngine.LOCK_THRESHOLD:
+            stop_atual = ApexEngine.LOCKED_STOP_VALUE
+            status_trailing = "TRAVADO (Fixo)"
         else:
-            fase_nome = "Fase 4 (Império)"; status_fase = "Liberado Saque"
-            meta_global = 999999.0; distancia_meta = 0.0
-    else:
-        fase_nome = "Fase 2 (Colchão)"; status_fase = "Buscando Trava Stop"
-        meta_global = meta_trava; distancia_meta = meta_trava - saldo_atual
-    
-    return {
-        "saldo_atual": saldo_atual, "stop_atual": stop_atual, "buffer": buffer,
-        "hwm": pico_real, "meta_global": meta_global, "distancia_meta": distancia_meta, 
-        "dd_max": dd_max, "lock_threshold": meta_trava, "stop_travado": stop_travado,
-        "fase_nome": fase_nome, "status_fase": status_fase, "status_stop": status_stop
-    }
+            # Caso contrário, o stop vem arrastando (HWM - 5k)
+            stop_atual = hwm_real - ApexEngine.MAX_DRAWDOWN
+            status_trailing = "MÓVEL (Trailing)"
+            
+        # Buffer: Quanto dinheiro real temos até quebrar
+        buffer = max(0.0, saldo_atual - stop_atual)
+        
+        # Definição de Fases para o Dashboard
+        if saldo_atual < ApexEngine.LOCK_THRESHOLD:
+            fase = "Fase 2 (Colchão)"
+            meta_prox = ApexEngine.LOCK_THRESHOLD
+            falta = meta_prox - saldo_atual
+        else:
+            fase = "Fase 3 (Blindagem)"
+            meta_prox = 160000.0 # Próxima meta simbólica (10k lucro)
+            falta = 0.0 # Já travou o stop, "game over" do risco inicial
+            
+        return {
+            "saldo": saldo_atual,
+            "hwm": hwm_real,
+            "stop_atual": stop_atual,
+            "buffer": buffer,
+            "fase": fase,
+            "status_trailing": status_trailing,
+            "falta_para_trava": max(0.0, falta)
+        }
 
-def calcular_risco_ruina(win_rate, avg_win, avg_loss, buffer_total, expectancy):
-    """Calcula probabilidade de ruína (Movimento Browniano)"""
-    if buffer_total <= 0: return 100.0, "QUEBRADO"
-    if expectancy <= 0: return 100.0, "EDGE NEGATIVO"
-    
-    p = win_rate
-    q = 1 - p
-    
-    # Variância do sistema
-    variancia = (p * (avg_win - expectancy)**2) + (q * (-avg_loss - expectancy)**2)
-    
-    if variancia > 0:
-        arg_exp = -2 * expectancy * buffer_total / variancia
-        try: 
-            prob = math.exp(arg_exp) * 100
-            prob = min(max(prob, 0.0), 100.0)
-            status = "Zona de Segurança" if prob < 1 else ("Risco Moderado" if prob < 5 else "CRÍTICO")
-            return prob, status
-        except: return 0.0, "Erro Cálculo"
-    return 0.0, "Sem Variância"
+# ==============================================================================
+# 2. MOTOR DE RISCO (Probabilidade de Ruína)
+# ==============================================================================
+class RiskEngine:
+    @staticmethod
+    def calculate_ruin(win_rate_percent, avg_win, avg_loss, total_buffer):
+        """
+        Calcula a chance matemática de perder TODO o Buffer disponível.
+        Baseado na fórmula de Ruína com Drift (Random Walk).
+        """
+        # Se não tem buffer, já quebrou
+        if total_buffer <= 0: return 100.0
+        if avg_loss == 0: return 0.0 # Se não perde nunca, ruína é 0
+        
+        p = win_rate_percent / 100.0
+        q = 1.0 - p
+        
+        # Expectativa Matemática por Trade (EV)
+        ev = (p * avg_win) - (q * avg_loss)
+        
+        # Se o sistema tem expectativa negativa, a ruína é 100% no longo prazo
+        if ev <= 0: return 100.0
+        
+        # Variância dos retornos
+        s2 = (p * (avg_win - ev)**2) + (q * (-avg_loss - ev)**2)
+        if s2 == 0: return 0.0
+        
+        # Fórmula: Ruína = e^(-2 * EV * Banca / Variância)
+        try:
+            arg = -2 * ev * total_buffer / s2
+            ruin = math.exp(arg) * 100.0
+        except OverflowError:
+            ruin = 0.0 # Matematicamente tende a zero se o argumento for muito negativo
+            
+        return min(100.0, max(0.0, ruin))
+
+# ==============================================================================
+# 3. MOTOR KELLY (Dimensionamento de Posição)
+# ==============================================================================
+class PositionSizing:
+    @staticmethod
+    def calculate_limits(win_rate_percent, payoff, total_buffer, risk_unit_dollars):
+        """
+        Retorna (Lote Min, Lote Max, % Kelly).
+        Usa Half-Kelly para ser conservador.
+        """
+        if payoff <= 0 or total_buffer <= 0:
+            return 0, 0, 0.0
+            
+        wr = win_rate_percent / 100.0
+        
+        # Fórmula de Kelly: W - ((1-W)/R)
+        kelly_full = wr - ((1 - wr) / payoff)
+        
+        # Usamos Half-Kelly (metade do risco ideal) para evitar volatilidade extrema
+        kelly_half = max(0.0, kelly_full / 2)
+        
+        if kelly_half <= 0:
+            return 0, 0, 0.0
+            
+        # Quanto $ podemos arriscar neste trade?
+        risk_budget = total_buffer * kelly_half
+        
+        # Traduz $ em Contratos (Lotes)
+        # Ex: Risco Unitário de 1 Lote = $300 (Stop Médio)
+        if risk_unit_dollars > 0:
+            contracts_max = int(risk_budget / risk_unit_dollars)
+            # Define um range (70% a 100% da sugestão)
+            contracts_min = int(contracts_max * 0.7)
+        else:
+            contracts_max = 0
+            contracts_min = 0
+            
+        # Hard Cap de Segurança (Ninguém deve operar 500 lotes do nada)
+        HARD_CAP = 100
+        contracts_max = min(contracts_max, HARD_CAP)
+        contracts_min = min(contracts_min, HARD_CAP)
+            
+        return contracts_min, contracts_max, kelly_half
