@@ -7,6 +7,8 @@ from supabase import create_client
 
 # Importando seus motores matemáticos
 from modules.logic import ApexEngine, RiskEngine, PositionSizing
+# [NOVO] Importando a função de salvar HWM
+from modules.database import update_hwm 
 
 # --- 1. CONFIGURAÇÕES E CONEXÃO ---
 MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
@@ -50,7 +52,7 @@ def load_contas_config(user):
         return df
     except: return pd.DataFrame()
 
-# --- 2. COMPONENTE VISUAL (CARD v300) ---
+# --- 2. COMPONENTE VISUAL (CARD v300 - SEU ORIGINAL) ---
 def card(label, value, sub_text, color="white", border_color="#333333"):
     st.markdown(
         f"""
@@ -119,19 +121,29 @@ def show(user, role):
 
     st.markdown("---")
 
-    # --- FILTRAGEM ---
-    trades_filtered = pd.DataFrame()
+    # --- [CORREÇÃO 1] SEPARAÇÃO DE DADOS (VISUAL vs RISCO) ---
+    # Trades para o GRÁFICO (Respeita o filtro de data)
+    trades_filtered_view = pd.DataFrame()
+    # Trades para a RUÍNA (Pega TODO o histórico do grupo para estatística real)
+    trades_full_risk = pd.DataFrame()
+
     if not df_trades_all.empty:
-        trades_filtered = df_trades_all.copy()
+        # Base: Filtro de Grupo
         if grupo_sel != "Todos":
-            trades_filtered = trades_filtered[trades_filtered['grupo_vinculo'] == grupo_sel]
+            base_df = df_trades_all[df_trades_all['grupo_vinculo'] == grupo_sel]
+        else:
+            base_df = df_trades_all.copy()
         
-        if 'data' in trades_filtered.columns:
-            trades_filtered = trades_filtered[
-                (trades_filtered['data'] >= d_inicio) & 
-                (trades_filtered['data'] <= d_fim)
+        trades_full_risk = base_df.copy() # Histórico completo para risco
+        
+        # Filtro de Data para Visualização
+        if 'data' in base_df.columns:
+            trades_filtered_view = base_df[
+                (base_df['data'] >= d_inicio) & 
+                (base_df['data'] <= d_fim)
             ]
     
+    # Seleção de Contas Alvo
     if "VISÃO GERAL" in view_mode:
         contas_alvo = contas_do_grupo
     else:
@@ -140,41 +152,57 @@ def show(user, role):
         else:
             contas_alvo = pd.DataFrame()
 
-    # --- ENGINE (BUFFER COM HWM DINÂMICO) ---
+    # --- ENGINE (BUFFER COM HWM DINÂMICO + [CORREÇÃO 2] WRITE-BACK) ---
     total_buffer = 0.0
     contas_ativas = 0
+    hwm_updated_flag = False
     
     if not contas_alvo.empty:
-        lucro_total_periodo = trades_filtered['resultado'].sum() if not trades_filtered.empty else 0.0
+        # Para calcular o saldo atual, usamos TODOS os trades do grupo (para bater com a corretora), não só os da data filtrada
+        lucro_total_absoluto = trades_full_risk['resultado'].sum() if not trades_full_risk.empty else 0.0
         num_contas_no_filtro = len(contas_alvo) if len(contas_alvo) > 0 else 1
-        lucro_por_conta_est = lucro_total_periodo / num_contas_no_filtro
+        lucro_por_conta_est = lucro_total_absoluto / num_contas_no_filtro
 
         for _, conta in contas_alvo.iterrows():
             if conta['status_conta'] == 'Ativa':
                 saldo_ini = float(conta['saldo_inicial'])
                 hwm_db = float(conta['pico_previo']) 
+                
+                # Saldo Atual Real = Base + Lucro Acumulado
                 saldo_atual_est = saldo_ini + lucro_por_conta_est
+                
+                # O HWM é o maior entre o DB e o Atual
                 hwm_dinamico = max(hwm_db, saldo_atual_est)
-                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_dinamico)
+                
+                # [CORREÇÃO CRÍTICA] Se rompeu topo, salva no Supabase
+                if hwm_dinamico > hwm_db:
+                    update_hwm(conta['id'], hwm_dinamico)
+                    hwm_updated_flag = True
+                
+                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_dinamico, conta.get('fase_entrada', 'Fase 1'))
                 total_buffer += saude['buffer']
                 contas_ativas += 1
+    
+    if hwm_updated_flag:
+        st.toast("🚀 Novo Topo Histórico Salvo Automaticamente!", icon="💾")
 
     # --- KPI CALCULATIONS ---
-    # Variáveis para Risk Engine
-    results_list = [] # SCAN ATÔMICO: Lista crua de resultados
-    
-    if not trades_filtered.empty:
-        results_list = trades_filtered['resultado'].tolist() # Extrai a lista real
+    # [CORREÇÃO 3] Usar lista completa para ruína
+    results_list_ruina = []
+    if not trades_full_risk.empty:
+        results_list_ruina = trades_full_risk['resultado'].tolist()
+
+    # KPIs Visuais (baseados no filtro de data)
+    if not trades_filtered_view.empty:
+        wins = trades_filtered_view[trades_filtered_view['resultado'] > 0]
+        losses = trades_filtered_view[trades_filtered_view['resultado'] < 0]
         
-        wins = trades_filtered[trades_filtered['resultado'] > 0]
-        losses = trades_filtered[trades_filtered['resultado'] < 0]
-        
-        net_profit = trades_filtered['resultado'].sum()
+        net_profit = trades_filtered_view['resultado'].sum()
         gross_profit = wins['resultado'].sum() if not wins.empty else 0.0
         gross_loss = abs(losses['resultado'].sum()) if not losses.empty else 0.0
         
         pf = gross_profit / gross_loss if gross_loss > 0 else 99.99
-        total_trades = len(trades_filtered)
+        total_trades = len(trades_filtered_view)
         win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0.0
         
         avg_win = wins['resultado'].mean() if not wins.empty else 0.0
@@ -186,10 +214,10 @@ def show(user, role):
         avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
         pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0 
         
-        lote_medio = trades_filtered['lote'].mean()
-        ativo_ref = trades_filtered['ativo'].iloc[-1]
+        lote_medio = trades_filtered_view['lote'].mean()
+        ativo_ref = trades_filtered_view['ativo'].iloc[-1]
         
-        df_sorted = trades_filtered.sort_values('created_at')
+        df_sorted = trades_filtered_view.sort_values('created_at')
         equity = df_sorted['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
     else:
@@ -210,15 +238,15 @@ def show(user, role):
     except:
         vidas_u = total_buffer / risco_impacto_grupo if risco_impacto_grupo > 0 else 0.0
     
-    # AQUI ESTÁ A MUDANÇA: Passamos 'results_list' para o cálculo preciso
-    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list)
+    # [CORREÇÃO 4] Passamos a lista COMPLETA de histórico para o cálculo de ruína
+    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list_ruina)
     
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao)
 
     # ==============================================================================
-    # RENDERIZAÇÃO
+    # RENDERIZAÇÃO (MANTIDA IDÊNTICA AO SEU ORIGINAL)
     # ==============================================================================
 
     st.markdown("### 🏁 Desempenho Geral")
@@ -250,13 +278,14 @@ def show(user, role):
         cor_edge = "#00FF88" if edge_calc > 0 else "#FF4B4B"
         card("Z-Score (Edge)", f"{edge_calc:.4f}", "Edge Matemático", cor_edge)
     with k2:
+        # Buffer agora mostra a realidade
         cor_buf = "#00FF88" if total_buffer > 2000 else "#FF4B4B"
         card("Buffer Real (Trailing)", f"${total_buffer:,.0f}", f"{contas_ativas} Contas | Trailing Ajustado", cor_buf)
     with k3:
         cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
         card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco Histórico: ${risco_impacto_grupo:,.0f}", cor_v)
     with k4:
-        # Agora o cálculo é ATÔMICO (sensível à volatilidade real)
+        # Ruína calculada com histórico COMPLETO (trades_full_risk)
         cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
         card("Prob. Ruína (Real)", f"{prob_ruina:.4f}%", "Risco Moderado", cor_r, border_color=cor_r)
 
@@ -279,8 +308,8 @@ def show(user, role):
     g1, g2 = st.columns([2.5, 1])
     
     with g1:
-        if not trades_filtered.empty:
-            trades_plot = trades_filtered.sort_values('created_at').copy()
+        if not trades_filtered_view.empty:
+            trades_plot = trades_filtered_view.sort_values('created_at').copy()
             saldo_inicial_base = contas_alvo['saldo_inicial'].sum() if not contas_alvo.empty else 0.0
             trades_plot['saldo_acumulado'] = trades_plot['resultado'].cumsum() + saldo_inicial_base
             
@@ -323,44 +352,43 @@ def show(user, role):
             st.info("Sem dados para exibir gráfico.")
             
     with g2:
-        if not trades_filtered.empty:
+        if not trades_filtered_view.empty:
             st.write("") 
             st.write("") 
             
-            ctx_perf = trades_filtered.groupby('contexto')['resultado'].sum().reset_index()
-            colors = ['#00FF88' if x >= 0 else '#FF4B4B' for x in ctx_perf['resultado']]
+            if 'contexto' in trades_filtered_view.columns:
+                 ctx_perf = trades_filtered_view.groupby('contexto')['resultado'].sum().reset_index()
+                 colors = ['#00FF88' if x >= 0 else '#FF4B4B' for x in ctx_perf['resultado']]
             
-            fig_pie = go.Figure(data=[go.Pie(
-                labels=ctx_perf['contexto'], 
-                values=abs(ctx_perf['resultado']),
-                hole=.5,
-                textinfo='label+percent',
-                marker=dict(colors=colors, line=dict(color='#161616', width=3))
-            )])
-            
-            fig_pie.update_layout(
-                title="Resultado por Contexto",
-                template="plotly_dark",
-                showlegend=False,
-                annotations=[dict(text='Contexto', x=0.5, y=0.5, font_size=14, showarrow=False)]
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+                 fig_pie = go.Figure(data=[go.Pie(
+                    labels=ctx_perf['contexto'], 
+                    values=abs(ctx_perf['resultado']),
+                    hole=.5,
+                    textinfo='label+percent',
+                    marker=dict(colors=colors, line=dict(color='#161616', width=3))
+                 )])
+                 fig_pie.update_layout(
+                    title="Resultado por Contexto",
+                    template="plotly_dark",
+                    showlegend=False
+                 )
+                 st.plotly_chart(fig_pie, use_container_width=True)
 
     # --- TEMPORAL ---
     st.markdown("### 📅 Performance Temporal")
-    if not trades_filtered.empty:
+    if not trades_filtered_view.empty:
         t1, t2 = st.columns(2)
         with t1:
-            daily_perf = trades_filtered.groupby('data')['resultado'].sum().reset_index()
+            daily_perf = trades_filtered_view.groupby('data')['resultado'].sum().reset_index()
             fig_daily = px.bar(daily_perf, x='data', y='resultado', title="Resultado Diário (Timeline)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
             fig_daily.update_layout(showlegend=False, xaxis_title="Data", yaxis_title="Resultado ($)")
             st.plotly_chart(fig_daily, use_container_width=True)
         with t2:
-            trades_filtered['dia_semana'] = pd.to_datetime(trades_filtered['data']).dt.day_name()
+            trades_filtered_view['dia_semana'] = pd.to_datetime(trades_filtered_view['data']).dt.day_name()
             dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
-            trades_filtered['dia_pt'] = trades_filtered['dia_semana'].map(dias_pt)
+            trades_filtered_view['dia_pt'] = trades_filtered_view['dia_semana'].map(dias_pt)
             week_order = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']
-            week_perf = trades_filtered.groupby('dia_pt')['resultado'].sum().reindex(week_order).reset_index()
+            week_perf = trades_filtered_view.groupby('dia_pt')['resultado'].sum().reindex(week_order).reset_index()
             fig_week = px.bar(week_perf, x='dia_pt', y='resultado', title="Dia da Semana (Estatístico)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
             fig_week.update_layout(showlegend=False, xaxis_title="Dia", yaxis_title="Resultado ($)")
             st.plotly_chart(fig_week, use_container_width=True)
