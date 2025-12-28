@@ -1,131 +1,149 @@
 import math
+import numpy as np
+import pandas as pd
 
-# ==============================================================================
-# 1. MOTOR APEX (Regra Fixa 150k)
-# ==============================================================================
 class ApexEngine:
-    """
-    Motor especialista na regra de 150k da Apex.
-    """
-    STARTING_BALANCE = 150000.0
-    MAX_DRAWDOWN = 5000.0
-    LOCK_THRESHOLD = 155100.0  
-    LOCKED_STOP_VALUE = 150100.0
-
     @staticmethod
     def calculate_health(saldo_atual, hwm_previo):
-        hwm_real = max(saldo_atual, hwm_previo)
+        """
+        Calcula a saúde da conta baseada na regra de Trailing do Apex/Prop Firms.
+        Regra: O Trailing Stop sobe junto com o saldo até o 'lock' (ex: +$100 acima do inicial).
+        """
+        # Configurações Padrão (Podem virar dinâmicas no futuro)
+        SALDO_INICIAL = 150000.0
+        MAX_DRAWDOWN = 5000.0
+        TRAVA_PROFIT = 150100.0 # Onde o stop para de subir (geralmente Saldo Inicial + 100)
         
-        # Lógica de Trava (Lock)
-        if hwm_real >= ApexEngine.LOCK_THRESHOLD:
-            stop_atual = ApexEngine.LOCKED_STOP_VALUE
-            status_trailing = "TRAVADO (Fixo)"
-            falta = 0.0
-        else:
-            stop_atual = hwm_real - ApexEngine.MAX_DRAWDOWN
-            status_trailing = "MÓVEL (Trailing)"
-            falta = ApexEngine.LOCK_THRESHOLD - hwm_real
-            
-        buffer = max(0.0, saldo_atual - stop_atual)
+        # 1. Definição do HWM (High Water Mark) - O pico histórico
+        # O HWM nunca pode ser menor que o saldo inicial
+        hwm_atual = max(saldo_atual, hwm_previo, SALDO_INICIAL)
         
-        # Fases
-        if saldo_atual < ApexEngine.LOCK_THRESHOLD:
+        # 2. Cálculo do Trailing Stop
+        # Se o HWM for menor que a trava, o stop é HWM - DD
+        # Se o HWM for maior que a trava, o stop trava em (Saldo Inicial - DD) + (Trava - Saldo Inicial)?
+        # Simplificação Apex: O stop sobe até o Breakeven+100 e para.
+        
+        stop_loss_teorico = hwm_atual - MAX_DRAWDOWN
+        stop_locked = TRAVA_PROFIT - MAX_DRAWDOWN # Ex: 150100 - 5000 = 145100? Não.
+        # Correção da Regra Apex Comum:
+        # O Drawdown Trailing para de subir quando atinge o Saldo Inicial (ou Saldo Inicial + 100).
+        stop_maximo = SALDO_INICIAL + 100.0
+        
+        # O stop atual é o MÍNIMO entre (HWM - 5000) e (Stop Travado Máximo)
+        # Mas ele nunca desce. Assumimos que o hwm_previo já traz o histórico.
+        # Aqui recalculamos o stop baseado no pico atual.
+        stop_atual = min(stop_maximo, hwm_atual - MAX_DRAWDOWN)
+        
+        # 3. Buffer (Oxigênio)
+        buffer = saldo_atual - stop_atual
+        
+        # 4. Fase e Status
+        fase = "Fase 1 (Construção)"
+        falta_para_trava = 0.0
+        
+        if stop_atual < stop_maximo:
+            fase = "Fase 1 (Subindo Stop)"
+            falta_para_trava = (stop_maximo + MAX_DRAWDOWN) - hwm_atual
+        elif saldo_atual >= 155100: # Exemplo de meta fase 2
+            fase = "Fase 3 (Aprovado?)"
+            falta_para_trava = 0
+        elif saldo_atual > stop_maximo + MAX_DRAWDOWN:
             fase = "Fase 2 (Colchão)"
-            meta_prox = ApexEngine.LOCK_THRESHOLD
-        elif saldo_atual < 161000.0:
-            fase = "Fase 3 (Blindagem)"
-            meta_prox = 161000.0
-        else:
-            fase = "Fase 4 (Império)"
-            meta_prox = 1000000.0
             
         return {
             "saldo": saldo_atual,
-            "hwm": hwm_real,
+            "hwm": hwm_atual,
             "stop_atual": stop_atual,
             "buffer": buffer,
             "fase": fase,
-            "status_trailing": status_trailing,
-            "falta_para_trava": max(0.0, falta),
-            "meta_proxima": meta_prox
+            "status_trailing": f"Travado em ${stop_atual:,.0f}" if stop_atual >= stop_maximo else "Móvel (Subindo)",
+            "falta_para_trava": max(0.0, falta_para_trava)
         }
 
-# ==============================================================================
-# 2. MOTOR DE RISCO (Ruína e Vidas) - ATUALIZADO
-# ==============================================================================
 class RiskEngine:
-    
     @staticmethod
-    def calculate_lives(buffer_total, risco_por_trade, qtd_contas=1):
+    def calculate_lives(total_buffer, custo_stop, contas_ativas):
         """
-        Calcula quantas 'Vidas' (Stops Cheios) o trader tem.
-        
-        Lógica:
-        - O risco financeiro é multiplicado pelo número de contas (Copy Trading).
-        - Se você tem $5k de buffer e opera 10 contas com risco de $100 cada:
-          Seu risco real é $1.000 por trade. Você tem 5 vidas, não 50.
+        Calcula quantas 'Vidas' (stops cheios) o trader tem.
         """
-        # Proteção contra divisão por zero
-        if risco_por_trade <= 0: 
-            return 999.0 
-            
-        risco_total_grupo = risco_por_trade * max(1, qtd_contas)
-        
-        if risco_total_grupo <= 0:
-            return 999.0
-            
-        vidas = buffer_total / risco_total_grupo
-        return vidas
+        if custo_stop <= 0: return 0.0
+        # Se tiver mais de uma conta, o risco se multiplica se for Copy Trading
+        risco_total = custo_stop * (contas_ativas if contas_ativas > 0 else 1)
+        return total_buffer / risco_total
 
     @staticmethod
-    def calculate_ruin(win_rate_percent, avg_win, avg_loss, total_buffer):
-        if total_buffer <= 0: return 100.0
-        if avg_loss == 0: return 0.0
+    def calculate_ruin(win_rate, avg_win, avg_loss, capital, trades_results=None):
+        """
+        Calcula Probabilidade de Ruína baseada em Brownian Motion.
+        AGORA COM SCAN ATÔMICO: Se 'trades_results' for passado, usa o Desvio Padrão Real.
+        """
+        if capital <= 0: return 100.00
+        if avg_loss == 0 and avg_win == 0: return 0.00
+        if avg_loss == 0: return 0.00 # Só ganha
         
-        p = win_rate_percent / 100.0
+        p = win_rate / 100.0
         q = 1.0 - p
-        ev = (p * avg_win) - (q * avg_loss)
         
-        if ev <= 0: return 100.0
+        # 1. Expectativa Matemática (Drift)
+        # Quanto ganha por trade na média
+        mu = (p * avg_win) - (q * avg_loss)
         
-        s2 = (p * (avg_win - ev)**2) + (q * (-avg_loss - ev)**2)
-        if s2 == 0: return 0.0
+        # Se a expectativa for negativa, a ruína é certa (100%) no longo prazo
+        if mu <= 0: return 100.00
         
-        try:
-            arg = -2 * ev * total_buffer / s2
-            ruin = math.exp(arg) * 100.0
-        except OverflowError:
-            ruin = 0.0
+        # 2. Variância (Volatilidade) - O SCAN ATÔMICO
+        variance = 0.0
+        
+        if trades_results is not None and len(trades_results) > 1:
+            # MODO PRECISO: Calcula a variância real do histórico
+            # Isso captura aquele loss gigante que a média esconde
+            variance = np.var(trades_results, ddof=1) # ddof=1 para amostra
+        else:
+            # MODO ESTIMADO (Fallback): Usa a fórmula binária
+            # E[X^2] - (E[X])^2
+            e_x2 = (p * (avg_win**2)) + (q * (avg_loss**2))
+            variance = e_x2 - (mu**2)
             
-        return min(100.0, max(0.0, ruin))
+        if variance == 0: return 0.0
+        
+        # 3. Fórmula da Ruína (Brownian Motion com Drift)
+        # R = e^(-2 * mu * Z / sigma^2)
+        try:
+            arg = -2 * mu * capital / variance
+            ruin = math.exp(arg)
+            return min(100.0, ruin * 100.0)
+        except OverflowError:
+            return 0.0
 
-# ==============================================================================
-# 3. MOTOR KELLY
-# ==============================================================================
 class PositionSizing:
     @staticmethod
-    def calculate_limits(win_rate_percent, payoff, total_buffer, risk_unit_dollars):
-        if payoff <= 0 or total_buffer <= 0:
-            return 0, 0, 0.0
-            
-        wr = win_rate_percent / 100.0
-        kelly_full = wr - ((1 - wr) / payoff)
-        kelly_half = max(0.0, kelly_full / 2)
+    def calculate_limits(win_rate, payoff, capital, risco_por_trade):
+        """
+        Calcula Kelly Criterion e sugere lotes.
+        """
+        if payoff == 0: return 0, 0, 0.0
         
-        if kelly_half <= 0: return 0, 0, 0.0
-            
-        risk_budget = total_buffer * kelly_half
+        # Kelly = W - (1-W)/R
+        w = win_rate / 100.0
+        kelly_full = w - ((1.0 - w) / payoff)
         
-        if risk_unit_dollars > 0:
-            contracts_max = int(risk_budget / risk_unit_dollars)
-            contracts_min = int(contracts_max * 0.7)
-        else:
-            contracts_max = 0
-            contracts_min = 0
-            
-        # Hard Cap em 50 contratos (Um pouco mais seguro que 100)
-        HARD_CAP = 50 
-        contracts_max = min(contracts_max, HARD_CAP)
-        contracts_min = min(contracts_min, HARD_CAP)
-            
-        return contracts_min, contracts_max, kelly_half
+        if kelly_full <= 0: return 0, 0, 0.0
+        
+        # Usamos Half-Kelly para segurança (fracional)
+        kelly_safe = kelly_full / 2.0
+        
+        # Valor monetário do risco sugerido
+        risk_cash = capital * kelly_safe
+        
+        # Conversão para Lotes (Estimada)
+        # Se risco_por_trade (1 lote) custa X, quantos lotes cabem em risk_cash?
+        risco_unitario = risco_por_trade # Custo de 1 lote (stop padrao)
+        
+        if risco_unitario <= 0: return 0, 0, 0.0
+        
+        lote_sug = risk_cash / risco_unitario
+        
+        lote_min = max(1, int(lote_sug * 0.8))
+        lote_max = max(1, int(lote_sug * 1.2))
+        
+        return lote_min, lote_max, kelly_safe
