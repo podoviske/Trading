@@ -161,7 +161,6 @@ def show(user, role):
             grupos_unicos = sorted(df_c['grupo_nome'].unique())
             for grp in grupos_unicos:
                 with st.expander(f"📂 {grp}", expanded=True):
-                    # Lucro do Grupo (Copy Trading)
                     trades_grp = df_t[df_t['grupo_vinculo'] == grp] if not df_t.empty else pd.DataFrame()
                     lucro_grupo = trades_grp['resultado'].sum() if not trades_grp.empty else 0.0
                     
@@ -217,7 +216,7 @@ def show(user, role):
         else:
             st.info("Nenhuma conta configurada.")
 
-    # --- ABA 4: MONITOR DE PERFORMANCE (AGREGADO + GRÁFICO RESTAURADO) ---
+    # --- ABA 4: MONITOR DE PERFORMANCE ---
     with t4:
         st.subheader("🚀 Monitor de Grupo (Apex Engine)")
         df_c = load_contas(user)
@@ -229,42 +228,33 @@ def show(user, role):
             
             sel_g = col_sel.selectbox("Selecionar Grupo", grps)
             
-            # Filtra contas do grupo
             contas_g = df_c[df_c['grupo_nome'] == sel_g]
             
-            # Adiciona opção "VISÃO GERAL" ao dropdown
             lista_contas_detalhe = ["📊 VISÃO GERAL (Grupo)"] + sorted(contas_g['conta_identificador'].unique())
             sel_conta_id = col_detalhe.selectbox("Visualizar Detalhe", lista_contas_detalhe)
             
             st.markdown("---")
             
-            # Filtra trades do grupo (usados tanto para individual quanto para geral)
             trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
             
-            # --- LÓGICA DE DADOS ---
+            # --- DADOS ---
             saude_final = {}
             saldo_inicial_plot = 0.0
             titulo_grafico = ""
             
             if sel_conta_id == "📊 VISÃO GERAL (Grupo)":
-                # --- MODO AGREGADO ---
                 titulo_grafico = f"Curva Agregada: {sel_g}"
                 
-                # Somas Acumuladas
                 total_saldo = 0.0
                 total_hwm = 0.0
                 total_stop = 0.0
                 total_buffer = 0.0
                 contas_ativas = 0
                 
-                # Calcula lucro total para distribuir (estimativa)
                 lucro_total = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                 
-                # Itera sobre cada conta para somar os buffers individuais (Correto matematicamente)
                 for _, conta in contas_g.iterrows():
                     if conta['status_conta'] == 'Ativa':
-                        # Rateio simples: O lucro do grupo se aplica a cada conta (Copy Trading)
-                        # Saldo Atual da Conta = Saldo Inicial + Lucro Total do Grupo
                         saldo_atual_c = float(conta['saldo_inicial']) + lucro_total
                         hwm_prev_c = float(conta.get('pico_previo', conta['saldo_inicial']))
                         
@@ -284,11 +274,10 @@ def show(user, role):
                     'buffer': total_buffer,
                     'stop_atual': total_stop,
                     'fase': "Visão Macro",
-                    'falta_para_trava': 0.0 # Não aplicável no agregado
+                    'falta_para_trava': 0.0
                 }
                 
             else:
-                # --- MODO INDIVIDUAL ---
                 titulo_grafico = f"Curva de Patrimônio: {sel_conta_id}"
                 conta_alvo = contas_g[contas_g['conta_identificador'] == sel_conta_id]
                 
@@ -304,9 +293,8 @@ def show(user, role):
                     st.warning("Conta não encontrada.")
                     st.stop()
 
-            # --- EXIBIÇÃO DOS CARDS ---
+            # --- CARDS ---
             k1, k2, k3, k4 = st.columns(4)
-            
             with k1:
                 lucro_disp = saude_final['saldo'] - saldo_inicial_plot
                 card_monitor("SALDO ATUAL", f"${saude_final['saldo']:,.2f}", f"Lucro: ${lucro_disp:+,.2f}", "#00FF88" if lucro_disp >=0 else "#FF4B4B")
@@ -323,23 +311,19 @@ def show(user, role):
 
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # --- GRÁFICO RESTAURADO (ÁREA + TRAILING) ---
             cg, cp = st.columns([2.5, 1])
 
+            # --- GRÁFICO (ZOOM CORRIGIDO) ---
             with cg:
                 st.markdown(f"**🌊 {titulo_grafico}**")
                 if not trades_g.empty:
                     df_plot = trades_g.sort_values('created_at').copy()
                     
-                    # Se for agregado, o "saldo inicial" é a soma de todas. Se for individual, é só dela.
-                    # O lucro é somado ao saldo inicial base.
                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_plot
                     df_plot['seq'] = range(1, len(df_plot)+1)
                     
-                    # Recalcula Trailing para histórico (Simulação visual)
-                    # No modo agregado, o trailing visual é aproximado (Soma dos trailings individuais)
+                    # Trailing Simulado
                     def calc_trail_hist(saldo_momento):
-                        # Se for agregado, aproximamos multiplicando a regra
                         n_contas = len(contas_g) if sel_conta_id.startswith("📊") else 1
                         lock_val = 155100.0 * n_contas
                         stop_locked = 150100.0 * n_contas
@@ -349,41 +333,54 @@ def show(user, role):
                         if saldo_momento >= lock_val: return stop_locked
                         return max(start_bal - dd_max, saldo_momento - dd_max)
 
-                    # Cria coluna de Trailing Histórico simulado para o gráfico
                     df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax()
                     df_plot['stop_hist'] = df_plot['hwm_hist'].apply(calc_trail_hist)
                     
-                    # PLOTLY (Visual Antigo Restaurado)
+                    # === PLOTLY ===
                     fig = go.Figure()
                     
-                    # 1. Área de Saldo (Verde/Azulada com preenchimento)
+                    # 1. Saldo (Verde)
                     fig.add_trace(go.Scatter(
                         x=df_plot['seq'], y=df_plot['saldo_acc'],
-                        mode='lines',
-                        name='Patrimônio',
+                        mode='lines', name='Patrimônio',
                         line=dict(color='#00FF88', width=2),
-                        fill='tozeroy',
-                        fillcolor='rgba(0, 255, 136, 0.05)'
+                        fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
                     ))
                     
-                    # 2. Linha de Trailing Stop (Vermelha)
+                    # 2. Stop (Vermelho)
                     fig.add_trace(go.Scatter(
                         x=df_plot['seq'], y=df_plot['stop_hist'],
-                        mode='lines',
-                        name='Trailing Stop',
+                        mode='lines', name='Trailing Stop',
                         line=dict(color='#FF4B4B', width=2, dash='solid')
                     ))
 
-                    # 3. Linha de BreakEven/Inicial
+                    # 3. Linha Inicial
                     fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="gray", annotation_text="Inicial")
-                        
+                    
+                    # --- ZOOM INTELIGENTE (CORREÇÃO DE ESCALA) ---
+                    # Pega todos os valores relevantes para o eixo Y
+                    y_values = pd.concat([df_plot['saldo_acc'], df_plot['stop_hist']])
+                    min_y = y_values.min()
+                    max_y = y_values.max()
+                    
+                    # Garante que o saldo inicial esteja no range visual
+                    min_y = min(min_y, saldo_inicial_plot)
+                    max_y = max(max_y, saldo_inicial_plot)
+                    
+                    # Adiciona margem de respiro (Padding)
+                    # Ex: Se a conta varia entre 148k e 152k, range de 4k. Padding de 400.
+                    # Mínimo de 1000 de padding para não ficar colado.
+                    diff = max_y - min_y
+                    padding = max(1500.0, diff * 0.15)
+                    
                     fig.update_layout(
                         template="plotly_dark",
                         xaxis_title="Quantidade de Trades",
                         yaxis_title="Saldo ($)",
                         height=350,
                         margin=dict(l=10, r=10, t=30, b=10),
-                        legend=dict(orientation="h", y=1.1)
+                        legend=dict(orientation="h", y=1.1),
+                        yaxis=dict(range=[min_y - padding, max_y + padding]) # <--- AQUI A MÁGICA
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 else:
@@ -391,14 +388,12 @@ def show(user, role):
 
             with cp:
                 st.markdown("**🎯 Progresso da Fase**")
-                
-                # Meta Visual (Agregada ou Individual)
                 n_contas_prog = len(contas_g) if sel_conta_id.startswith("📊") else 1
                 meta_visual = 155100.0 * n_contas_prog
                 base_visual = 150000.0 * n_contas_prog
                 
                 if saude_final['saldo'] >= meta_visual:
-                    meta_visual = 161000.0 * n_contas_prog # Próxima fase
+                    meta_visual = 161000.0 * n_contas_prog
                 
                 progresso = 0.0
                 total_range = meta_visual - base_visual
