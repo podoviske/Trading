@@ -26,7 +26,6 @@ def load_trades_db():
             df['created_at'] = pd.to_datetime(df['created_at'])
             if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
             
-            # Garante tipos numéricos para as colunas essenciais
             cols_num = ['resultado', 'lote', 'pts_medio', 'risco_fin', 'stop_pts']
             for c in cols_num:
                 if c in df.columns:
@@ -35,10 +34,10 @@ def load_trades_db():
         return df
     except: return pd.DataFrame()
 
-# --- 2. CSS (Visual da Galeria + Detalhes) ---
+# --- 2. CSS BLINDADO (GRID PERFEITO) ---
 st.markdown("""
     <style>
-    /* Card da Galeria */
+    /* 1. Card com Altura Fixa e Flexbox */
     .trade-card {
         background-color: #161616;
         border-radius: 8px;
@@ -46,7 +45,12 @@ st.markdown("""
         margin-bottom: 15px;
         border: 1px solid #333;
         transition: transform 0.2s, border-color 0.2s;
-        height: 100%;
+        
+        /* O SEGREDO DO ALINHAMENTO: */
+        height: 280px !important;  /* Altura fixa forçada */
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }
     .trade-card:hover {
         transform: translateY(-3px);
@@ -54,26 +58,42 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
     
-    /* Imagem sem borda cinza e com crop */
+    /* 2. Container da Imagem Fixo */
     .card-img-container {
-        width: 100%; height: 160px;
-        background-color: transparent;
+        width: 100%; 
+        height: 150px !important; /* Altura fixa da área da foto */
+        background-color: #0f0f0f; /* Fundo escuro sutil se a imagem falhar */
         border-radius: 5px; 
-        overflow: hidden; display: flex;
-        align-items: center; justify-content: center; 
-        margin-bottom: 10px; position: relative;
+        overflow: hidden; 
+        display: flex;
+        align-items: center; 
+        justify-content: center; 
+        margin-bottom: 10px; 
+        position: relative;
+        flex-shrink: 0; /* Impede que a imagem encolha */
     }
+    
     .card-img { 
         width: 100%; height: 100%; 
         object-fit: cover; object-position: center; display: block; 
     }
     
-    .card-title { font-size: 14px; font-weight: 700; color: white; margin-bottom: 2px; }
-    .card-sub { font-size: 11px; color: #888; margin-bottom: 8px; }
-    .card-res-win { font-size: 16px; font-weight: 800; color: #00FF88; } 
-    .card-res-loss { font-size: 16px; font-weight: 800; color: #FF4B4B; }
+    /* 3. Textos que não quebram o layout (Corta com ...) */
+    .card-content { flex-grow: 1; }
     
-    /* Box de Detalhes Técnicos */
+    .card-title { 
+        font-size: 14px; font-weight: 700; color: white; margin-bottom: 4px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* Corta texto longo */
+    }
+    .card-sub { 
+        font-size: 11px; color: #888; margin-bottom: 8px; 
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    
+    .card-res-win { font-size: 18px; font-weight: 800; color: #00FF88; text-align: right; } 
+    .card-res-loss { font-size: 18px; font-weight: 800; color: #FF4B4B; text-align: right; }
+    
+    /* Box de Detalhes Técnicos (Modal) */
     .tech-box {
         background-color: #111;
         border: 1px solid #333;
@@ -83,7 +103,6 @@ st.markdown("""
         height: 100%;
     }
     .tech-label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 5px; }
-    .tech-val { font-size: 14px; color: white; font-weight: bold; }
     .partial-row { 
         display: flex; justify-content: space-between; 
         border-bottom: 1px solid #222; padding: 4px 0; font-size: 12px; color: #ccc;
@@ -94,14 +113,12 @@ st.markdown("""
 # --- 3. POP-UP DE DETALHES ---
 @st.dialog("Detalhes da Operação", width="large")
 def show_trade_details(row, user, role):
-    # 1. Cabeçalho de Imagem
     if row.get('prints'):
         st.markdown("### 📸 Evidência (Full Screen)")
         st.image(row['prints'], use_container_width=True)
     
     st.markdown("---")
     
-    # 2. Dados Gerais
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"**📅 Data:** {row['data']}")
     c1.markdown(f"**📈 Ativo:** {row['ativo']}")
@@ -115,18 +132,14 @@ def show_trade_details(row, user, role):
     
     st.markdown("---")
     
-    # 3. ÁREA TÉCNICA (STOP E PARCIAIS REAIS)
     st.subheader("📊 Raio-X Técnico")
     
     t1, t2 = st.columns(2)
     
-    # --- COLUNA ESQUERDA: STOP ---
     with t1:
-        # Tenta pegar o stop real do banco
         stop_real = row.get('stop_pts', 0.0)
         risco_usd = row.get('risco_fin', 0.0)
         
-        # Se for trade antigo (sem stop_pts), calcula reverso
         if stop_real == 0 and risco_usd > 0:
             mult = MULTIPLIERS.get(row['ativo'], 0)
             if mult > 0 and row['lote'] > 0:
@@ -141,34 +154,27 @@ def show_trade_details(row, user, role):
         <div class="tech-box">
             <div class="tech-label">⛔ {label_stop}</div>
             <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                <div>
-                    <span style="color:#FF4B4B; font-size:24px; font-weight:bold;">-{stop_real:.2f} pts</span>
-                </div>
+                <div><span style="color:#FF4B4B; font-size:24px; font-weight:bold;">-{stop_real:.2f} pts</span></div>
                 <div style="text-align:right;">
-                    <span style="color:#FF4B4B; font-weight:bold;">-${risco_usd:,.2f}</span>
-                    <br><span style="font-size:10px; color:#666;">Risco Financeiro</span>
+                    <span style="color:#FF4B4B; font-weight:bold;">-${risco_usd:,.2f}</span><br>
+                    <span style="font-size:10px; color:#666;">Risco Financeiro</span>
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-    # --- COLUNA DIREITA: PARCIAIS ---
     with t2:
-        # Tenta ler o JSON de parciais
         raw_partials = row.get('parciais', None)
         html_partials = ""
         
         if raw_partials:
-            # Se for string JSON, converte
             if isinstance(raw_partials, str):
                 try: lista_parciais = json.loads(raw_partials)
                 except: lista_parciais = []
             elif isinstance(raw_partials, list):
                 lista_parciais = raw_partials
-            else:
-                lista_parciais = []
+            else: lista_parciais = []
             
-            # Monta lista visual
             if lista_parciais:
                 for idx, p in enumerate(lista_parciais):
                     pts = float(p.get('pts', 0))
@@ -178,19 +184,11 @@ def show_trade_details(row, user, role):
                     <div class="partial-row">
                         <span>Saída {idx+1}</span>
                         <span><b>{qtd} ctrs</b> @ <span style="color:{cor_p}">{pts:.2f} pts</span></span>
-                    </div>
-                    """
-            else:
-                html_partials = "<div style='color:#666; font-size:12px; padding:10px;'>Sem dados detalhados.</div>"
+                    </div>"""
+            else: html_partials = "<div style='color:#666; font-size:12px; padding:10px;'>Sem dados detalhados.</div>"
         else:
-             # Fallback para trades antigos (só mostra a média)
              pts_medio = row['pts_medio']
-             html_partials = f"""
-             <div style='padding:10px; text-align:center;'>
-                <div style='font-size:12px; color:#888;'>Preço Médio (Resumo)</div>
-                <div style='font-size:18px; color:white; font-weight:bold;'>{pts_medio:.2f} pts</div>
-             </div>
-             """
+             html_partials = f"<div style='padding:10px; text-align:center;'><div style='font-size:12px; color:#888;'>Preço Médio</div><div style='font-size:18px; color:white; font-weight:bold;'>{pts_medio:.2f} pts</div></div>"
 
         st.markdown(f"""
         <div class="tech-box">
@@ -201,10 +199,8 @@ def show_trade_details(row, user, role):
 
     st.markdown("---")
     
-    # 4. Resultado Financeiro
     res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
     st.markdown(f"<h1 style='color:{res_c}; text-align:center; font-size:50px; margin:0;'>${row['resultado']:,.2f}</h1>", unsafe_allow_html=True)
-    
     st.markdown("<br>", unsafe_allow_html=True)
     
     if st.button("🗑️ DELETAR REGISTRO PERMANENTEMENTE", type="primary", use_container_width=True):
@@ -219,14 +215,11 @@ def show(user, role):
     st.title("📜 Galeria de Trades")
     
     dfh = load_trades_db()
-    
-    if not dfh.empty:
-        dfh = dfh[dfh['usuario'] == user]
+    if not dfh.empty: dfh = dfh[dfh['usuario'] == user]
     
     if not dfh.empty:
         with st.expander("🔍 Filtros", expanded=True):
             c1, c2, c3, c4 = st.columns(4)
-            
             all_assets = sorted(list(dfh['ativo'].unique())) if 'ativo' in dfh.columns else ["NQ", "MNQ"]
             all_contexts = sorted(list(dfh['contexto'].unique())) if 'contexto' in dfh.columns else []
             all_groups = sorted(list(dfh['grupo_vinculo'].unique())) if 'grupo_vinculo' in dfh.columns else []
@@ -248,31 +241,28 @@ def show(user, role):
         st.markdown("---")
 
         cols = st.columns(4)
-        
         for i, (index, row) in enumerate(dfh.iterrows()):
-            col_idx = i % 4
-            
-            with cols[col_idx]:
+            with cols[i % 4]:
                 res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
                 res_fmt = f"${row['resultado']:,.2f}"
                 
-                # HTML da Imagem
                 if row.get('prints'):
                     img_html = f'<img src="{row["prints"]}" class="card-img">' 
                 else:
-                    img_html = '<div style="width:100%; height:100%; background-color:#222; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
+                    img_html = '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
                 
                 st.markdown(f"""
                     <div class="trade-card">
                         <div class="card-img-container">{img_html}</div>
-                        <div class="card-title">{row['ativo']} - {row['direcao']}</div>
-                        <div class="card-sub">{row['data']} • {row['grupo_vinculo']}</div>
+                        <div class="card-content">
+                            <div class="card-title">{row['ativo']} - {row['direcao']}</div>
+                            <div class="card-sub">{row['data']} • {row['grupo_vinculo']}</div>
+                        </div>
                         <div class="{res_class}">{res_fmt}</div>
                     </div>
                 """, unsafe_allow_html=True)
                 
                 if st.button("👁️ Detalhes", key=f"btn_{row['id']}", use_container_width=True):
                     show_trade_details(row, user, role)
-                    
     else:
         st.info("Nenhuma operação registrada ainda.")
