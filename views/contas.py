@@ -241,6 +241,7 @@ def show(user, role):
             saude_final = {}
             saldo_inicial_plot = 0.0
             titulo_grafico = ""
+            n_contas_calc = 1
             
             if sel_conta_id == "📊 VISÃO GERAL (Grupo)":
                 titulo_grafico = f"Curva Agregada: {sel_g}"
@@ -266,6 +267,8 @@ def show(user, role):
                         total_buffer += res['buffer']
                         saldo_inicial_plot += float(conta['saldo_inicial'])
                         contas_ativas += 1
+                
+                n_contas_calc = contas_ativas if contas_ativas > 0 else 1
                 
                 saude_final = {
                     'saldo': total_saldo,
@@ -301,7 +304,7 @@ def show(user, role):
             with k2:
                 card_monitor("HWM (TOPO)", f"${saude_final['hwm']:,.2f}", f"{saude_final['status_trailing']}", "#FFFF00")
             with k3:
-                cor_buf = "#00FF88" if saude_final['buffer'] > (2000 * max(1, len(contas_g) if sel_conta_id.startswith("📊") else 1)) else "#FF4B4B"
+                cor_buf = "#00FF88" if saude_final['buffer'] > (2000 * n_contas_calc) else "#FF4B4B"
                 card_monitor("BUFFER (OXIGÊNIO)", f"${saude_final['buffer']:,.2f}", f"Stop: ${saude_final['stop_atual']:,.0f}", cor_buf)
             with k4:
                 falta = saude_final.get('falta_para_trava', 0)
@@ -313,7 +316,7 @@ def show(user, role):
             
             cg, cp = st.columns([2.5, 1])
 
-            # --- GRÁFICO (CORES CORRIGIDAS) ---
+            # --- GRÁFICO (CORES AJUSTADAS) ---
             with cg:
                 st.markdown(f"**🌊 {titulo_grafico}**")
                 if not trades_g.empty:
@@ -324,17 +327,21 @@ def show(user, role):
                     
                     # Trailing Simulado
                     def calc_trail_hist(saldo_momento):
-                        n_contas = len(contas_g) if sel_conta_id.startswith("📊") else 1
-                        lock_val = 155100.0 * n_contas
-                        stop_locked = 150100.0 * n_contas
-                        dd_max = 5000.0 * n_contas
-                        start_bal = 150000.0 * n_contas
+                        lock_val = 155100.0 * n_contas_calc
+                        stop_locked = 150100.0 * n_contas_calc
+                        dd_max = 5000.0 * n_contas_calc
+                        start_bal = 150000.0 * n_contas_calc
                         
                         if saldo_momento >= lock_val: return stop_locked
                         return max(start_bal - dd_max, saldo_momento - dd_max)
 
                     df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax()
                     df_plot['stop_hist'] = df_plot['hwm_hist'].apply(calc_trail_hist)
+                    
+                    # Definição da Linha de Meta Dinâmica
+                    meta_plot_val = 155100.0 * n_contas_calc
+                    if saude_final['saldo'] >= meta_plot_val:
+                        meta_plot_val = 161000.0 * n_contas_calc
                     
                     # === PLOTLY ===
                     fig = go.Figure()
@@ -354,15 +361,20 @@ def show(user, role):
                         line=dict(color='#FF4B4B', width=2, dash='solid')
                     ))
 
-                    # 3. Linha Inicial (VERDE TRACEJADO)
-                    fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="#00FF88", annotation_text="Inicial")
+                    # 3. Linha Inicial (CINZA SUTIL)
+                    fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="#444", annotation_text="Inicial")
+
+                    # 4. Linha de Meta (VERDE NEON)
+                    fig.add_hline(y=meta_plot_val, line_dash="dash", line_color="#00FF88", annotation_text="Meta Fase")
                     
                     # --- ZOOM INTELIGENTE ---
                     y_values = pd.concat([df_plot['saldo_acc'], df_plot['stop_hist']])
                     min_y = y_values.min()
                     max_y = y_values.max()
+                    
+                    # Inclui as linhas de referência no range
                     min_y = min(min_y, saldo_inicial_plot)
-                    max_y = max(max_y, saldo_inicial_plot)
+                    max_y = max(max_y, meta_plot_val)
                     
                     diff = max_y - min_y
                     padding = max(1500.0, diff * 0.15)
@@ -382,12 +394,11 @@ def show(user, role):
 
             with cp:
                 st.markdown("**🎯 Progresso da Fase**")
-                n_contas_prog = len(contas_g) if sel_conta_id.startswith("📊") else 1
-                meta_visual = 155100.0 * n_contas_prog
-                base_visual = 150000.0 * n_contas_prog
+                meta_visual = 155100.0 * n_contas_calc
+                base_visual = 150000.0 * n_contas_calc
                 
                 if saude_final['saldo'] >= meta_visual:
-                    meta_visual = 161000.0 * n_contas_prog
+                    meta_visual = 161000.0 * n_contas_calc
                 
                 progresso = 0.0
                 total_range = meta_visual - base_visual
