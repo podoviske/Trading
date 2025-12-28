@@ -98,15 +98,20 @@ def show(user, role):
     with c_sel1:
         grupo_sel = st.selectbox("📂 Grupo", grupos_disponiveis)
     
-    # 2. Conta/Detalhe
-    contas_do_grupo = []
+    # 2. Conta/Detalhe (CORREÇÃO AQUI)
+    contas_do_grupo = pd.DataFrame() # Inicializa como DataFrame vazio, não lista
+    
     if not df_contas_all.empty:
         if grupo_sel != "Todos":
             contas_do_grupo = df_contas_all[df_contas_all['grupo_nome'] == grupo_sel]
         else:
             contas_do_grupo = df_contas_all
             
-    lista_contas_view = ["📊 VISÃO GERAL (Agregado)"] + sorted(list(contas_do_grupo['conta_identificador'].unique()))
+    lista_opcoes = []
+    if not contas_do_grupo.empty:
+        lista_opcoes = sorted(list(contas_do_grupo['conta_identificador'].unique()))
+        
+    lista_contas_view = ["📊 VISÃO GERAL (Agregado)"] + lista_opcoes
     
     with c_sel2:
         view_mode = st.selectbox("🔎 Detalhe", lista_contas_view)
@@ -132,7 +137,11 @@ def show(user, role):
     if "VISÃO GERAL" in view_mode:
         contas_alvo = contas_do_grupo
     else:
-        contas_alvo = contas_do_grupo[contas_do_grupo['conta_identificador'] == view_mode]
+        # Filtra apenas se contas_do_grupo não estiver vazio
+        if not contas_do_grupo.empty:
+            contas_alvo = contas_do_grupo[contas_do_grupo['conta_identificador'] == view_mode]
+        else:
+            contas_alvo = pd.DataFrame()
 
     # --- ENGINE DE CÁLCULO (Buffer e Apex) ---
     total_buffer = 0.0
@@ -173,7 +182,6 @@ def show(user, role):
     # --- MÉTRICAS TÉCNICAS (BASEADO NO REALIZADO) ---
     avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0
     
-    # AQUI ESTÁ A MUDANÇA: Voltamos a usar a média real dos losses
     avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
     pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0 
     
@@ -187,16 +195,12 @@ def show(user, role):
         max_dd = (equity - equity.cummax()).min()
 
     # --- CÁLCULOS DE RISCO (RiskEngine + PositionSizing) ---
-    # Calcula o custo do stop baseado na média REAL do que você perde
     custo_stop_padrao = pts_loss_medio_real * lote_medio * MULTIPLIERS.get(ativo_ref, 2)
-    
-    # Se ainda não operou, usa um padrão conservador
     if custo_stop_padrao == 0: custo_stop_padrao = 15 * 1 * 2
     
-    # Impacto no Grupo
     risco_impacto_grupo = custo_stop_padrao * (contas_ativas if contas_ativas > 0 else 1)
     
-    # Vidas Reais (Usa o Motor Logic atualizado)
+    # Vidas Reais
     try:
         vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
     except:
@@ -232,7 +236,6 @@ def show(user, role):
     st.markdown("### 🎯 Performance Técnica")
     t1, t2, t3, t4 = st.columns(4)
     with t1: card("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
-    # Aqui mostramos explicitamente que é o STOP REALIZADO (REAL)
     with t2: card("Stop Médio (Real)", f"{pts_loss_medio_real:.2f} pts", "Base do Risco", "#FF4B4B")
     with t3: card("Lote Médio", f"{lote_medio:.1f}", "Contratos", "white")
     with t4: card("Total Trades", f"{total_trades}", "Executados", "white")
@@ -263,7 +266,6 @@ def show(user, role):
     with l2:
         card("Half-Kelly (Math)", f"{kelly_pct*100:.1f}%", "Teto Teórico", "#888")
     with l3:
-        # Mostra quanto do capital está em jogo
         alloc_dolar = total_buffer * kelly_pct
         card("Risco Financeiro", f"${alloc_dolar:,.0f}", "Alocação Global", "#00FF88")
     with l4:
