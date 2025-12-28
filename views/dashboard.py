@@ -30,7 +30,6 @@ def load_trades_db():
             df['created_at'] = pd.to_datetime(df['created_at'])
             if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
             
-            # Garante float
             cols_float = ['resultado', 'lote', 'pts_medio']
             for c in cols_float:
                 if c in df.columns:
@@ -85,10 +84,9 @@ def show(user, role):
     if not df_trades_all.empty:
         df_trades_all = df_trades_all[df_trades_all['usuario'] == user]
 
-    # --- TOP BAR: SELEÇÃO E FILTROS ---
+    # --- TOP BAR ---
     st.markdown("### 🔭 Visão do Operacional")
     
-    # 1. Grupo
     grupos_disponiveis = ["Todos"]
     if not df_contas_all.empty:
         grupos_disponiveis += sorted(list(df_contas_all['grupo_nome'].unique()))
@@ -98,9 +96,7 @@ def show(user, role):
     with c_sel1:
         grupo_sel = st.selectbox("📂 Grupo", grupos_disponiveis)
     
-    # 2. Conta/Detalhe (CORREÇÃO DE BLINDAGEM AQUI)
-    contas_do_grupo = pd.DataFrame() # Inicia como DataFrame vazio, não lista
-    
+    contas_do_grupo = pd.DataFrame()
     if not df_contas_all.empty:
         if grupo_sel != "Todos":
             contas_do_grupo = df_contas_all[df_contas_all['grupo_nome'] == grupo_sel]
@@ -116,7 +112,6 @@ def show(user, role):
     with c_sel2:
         view_mode = st.selectbox("🔎 Detalhe", lista_contas_view)
 
-    # 3. Datas
     with c_date1:
         d_inicio = st.date_input("De", datetime.now().date() - timedelta(days=30))
     with c_date2:
@@ -124,17 +119,13 @@ def show(user, role):
 
     st.markdown("---")
 
-    # --- FILTRAGEM DE DADOS ---
+    # --- FILTRAGEM ---
     trades_filtered = pd.DataFrame()
-    
-    # Só filtra se existirem dados (Evita KeyError em banco vazio)
     if not df_trades_all.empty:
         trades_filtered = df_trades_all.copy()
-        
         if grupo_sel != "Todos":
             trades_filtered = trades_filtered[trades_filtered['grupo_vinculo'] == grupo_sel]
         
-        # Garante que a coluna 'data' existe antes de filtrar
         if 'data' in trades_filtered.columns:
             trades_filtered = trades_filtered[
                 (trades_filtered['data'] >= d_inicio) & 
@@ -149,7 +140,7 @@ def show(user, role):
         else:
             contas_alvo = pd.DataFrame()
 
-    # --- ENGINE DE CÁLCULO (Buffer e Apex) ---
+    # --- ENGINE (BUFFER) ---
     total_buffer = 0.0
     contas_ativas = 0
     
@@ -167,7 +158,7 @@ def show(user, role):
                 total_buffer += saude['buffer']
                 contas_ativas += 1
 
-    # --- CÁLCULOS ESTATÍSTICOS (KPIs) ---
+    # --- KPI CALCULATIONS ---
     if not trades_filtered.empty:
         wins = trades_filtered[trades_filtered['resultado'] > 0]
         losses = trades_filtered[trades_filtered['resultado'] < 0]
@@ -183,10 +174,8 @@ def show(user, role):
         avg_win = wins['resultado'].mean() if not wins.empty else 0.0
         avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0.0
         payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
-        
         expectancy = ( (win_rate/100) * avg_win ) - ( (1 - (win_rate/100)) * avg_loss )
         
-        # MÉTRICAS TÉCNICAS (REALIZADO)
         avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0
         avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
         pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0 
@@ -194,26 +183,22 @@ def show(user, role):
         lote_medio = trades_filtered['lote'].mean()
         ativo_ref = trades_filtered['ativo'].iloc[-1]
         
-        # Max Drawdown
         df_sorted = trades_filtered.sort_values('created_at')
         equity = df_sorted['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
     else:
-        # Valores padrão se não houver trades
         net_profit = 0.0; gross_profit = 0.0; gross_loss = 0.0; pf = 0.0
         total_trades = 0; win_rate = 0.0; avg_win = 0.0; avg_loss = 0.0
-        payoff = 0.0; expectancy = 0.0
-        avg_pts_gain = 0.0; pts_loss_medio_real = 15.0; lote_medio = 0.0
-        ativo_ref = "MNQ"; max_dd = 0.0
+        payoff = 0.0; expectancy = 0.0; avg_pts_gain = 0.0; pts_loss_medio_real = 15.0
+        lote_medio = 0.0; ativo_ref = "MNQ"; max_dd = 0.0
         wins = pd.DataFrame(); losses = pd.DataFrame()
 
-    # --- CÁLCULOS DE RISCO (RiskEngine) ---
+    # --- RISK ENGINE ---
     custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     if custo_stop_padrao == 0: custo_stop_padrao = 15 * 1 * 2
     
     risco_impacto_grupo = custo_stop_padrao * (contas_ativas if contas_ativas > 0 else 1)
     
-    # Vidas Reais (Blindado)
     try:
         vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
     except:
@@ -222,14 +207,12 @@ def show(user, role):
     prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer)
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
-    
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao)
 
     # ==============================================================================
-    # RENDERIZAÇÃO VISUAL
+    # RENDERIZAÇÃO
     # ==============================================================================
 
-    # 1. DESEMPENHO GERAL
     st.markdown("### 🏁 Desempenho Geral")
     c1, c2, c3, c4 = st.columns(4)
     with c1: card("Resultado Líquido", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit>=0 else "#FF4B4B")
@@ -237,7 +220,6 @@ def show(user, role):
     with c3: card("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
     with c4: card("Expectativa Mat.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy>0 else "#FF4B4B")
 
-    # 2. MÉDIAS FINANCEIRAS
     st.markdown("### 💲 Médias Financeiras")
     m1, m2, m3, m4 = st.columns(4)
     with m1: card("Média Gain ($)", f"${avg_win:,.2f}", "", "#00FF88")
@@ -245,7 +227,6 @@ def show(user, role):
     with m3: card("Risco : Retorno", f"1 : {payoff:.2f}", "Payoff Real", "white")
     with m4: card("Drawdown Máximo", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B")
     
-    # 3. PERFORMANCE TÉCNICA
     st.markdown("### 🎯 Performance Técnica")
     t1, t2, t3, t4 = st.columns(4)
     with t1: card("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
@@ -255,7 +236,6 @@ def show(user, role):
 
     st.markdown("---")
 
-    # 4. ANÁLISE DE SOBREVIVÊNCIA
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
     with k1:
@@ -271,7 +251,6 @@ def show(user, role):
         cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
         card("Prob. Ruína (Real)", f"{prob_ruina:.2f}%", "Risco Moderado", cor_r, border_color=cor_r)
 
-    # 5. INTELIGÊNCIA DE LOTE
     st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
     l1, l2, l3, l4 = st.columns(4)
     with l1:
@@ -284,7 +263,7 @@ def show(user, role):
     with l4:
         card("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA DE ACELERAÇÃO", "#00FF88", border_color="#00FF88")
 
-    # --- 6. GRÁFICOS ---
+    # --- 6. GRÁFICOS (CORRIGIDOS) ---
     st.markdown("---")
     st.markdown("### 📈 Evolução Financeira")
     
@@ -298,18 +277,46 @@ def show(user, role):
             
             view_type = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
             
+            # Define Eixos
             if view_type == "Sequência de Trades":
                 trades_plot['seq'] = range(1, len(trades_plot) + 1)
-                x_axis = 'seq'
+                x_axis = trades_plot['seq']
                 x_title = "Quantidade de Trades"
             else:
-                x_axis = 'created_at'
+                x_axis = trades_plot['created_at']
                 x_title = "Data / Hora"
 
-            fig = px.area(trades_plot, x=x_axis, y='saldo_acumulado', title=f"Curva de Patrimônio", template="plotly_dark")
-            fig.update_traces(line_color='#00FF88', fillcolor='rgba(0, 255, 136, 0.1)')
-            fig.add_hline(y=saldo_inicial_base, line_dash="dash", line_color="gray", annotation_text="Capital Inicial")
-            fig.update_layout(xaxis_title=x_title, yaxis_title="Patrimônio ($)")
+            # === GRÁFICO DE ÁREA COM ZOOM INTELIGENTE (IGUAL ABA CONTAS) ===
+            fig = go.Figure()
+
+            # 1. Área de Saldo
+            fig.add_trace(go.Scatter(
+                x=x_axis, y=trades_plot['saldo_acumulado'],
+                mode='lines', name='Patrimônio',
+                line=dict(color='#00FF88', width=2),
+                fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
+            ))
+
+            # 2. Linha Inicial
+            fig.add_hline(y=saldo_inicial_base, line_dash="dash", line_color="gray", annotation_text="Inicial")
+            
+            # Lógica de Zoom
+            y_vals = trades_plot['saldo_acumulado']
+            min_y = min(y_vals.min(), saldo_inicial_base)
+            max_y = max(y_vals.max(), saldo_inicial_base)
+            
+            diff = max_y - min_y
+            padding = max(500.0, diff * 0.15) # Mínimo de $500 de margem
+
+            fig.update_layout(
+                title=f"Curva de Patrimônio",
+                template="plotly_dark",
+                xaxis_title=x_title,
+                yaxis_title="Patrimônio ($)",
+                yaxis=dict(range=[min_y - padding, max_y + padding]), # <--- ZOOM APLICADO
+                height=400,
+                margin=dict(l=10, r=10, t=40, b=10)
+            )
             
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -320,6 +327,7 @@ def show(user, role):
             st.write("") 
             st.write("") 
             
+            # === PIZZA ESTILIZADA (BORDAS PRETAS) ===
             ctx_perf = trades_filtered.groupby('contexto')['resultado'].sum().reset_index()
             colors = ['#00FF88' if x >= 0 else '#FF4B4B' for x in ctx_perf['resultado']]
             
@@ -328,7 +336,10 @@ def show(user, role):
                 values=abs(ctx_perf['resultado']),
                 hole=.5,
                 textinfo='label+percent',
-                marker=dict(colors=colors)
+                marker=dict(
+                    colors=colors,
+                    line=dict(color='#161616', width=3) # <--- BORDAS PRETAS GROSSAS (CORTE)
+                )
             )])
             
             fig_pie.update_layout(
