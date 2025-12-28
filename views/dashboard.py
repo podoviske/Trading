@@ -258,12 +258,31 @@ def show(user, role):
             
     with g2:
         if not trades_filtered.empty:
-            st.write("") # Espaçamento para alinhar com o radio button
+            st.write("") # Espaçamento
             st.write("") 
+            
+            # --- GRÁFICO DE PIZZA (CONTEXTO) ---
             ctx_perf = trades_filtered.groupby('contexto')['resultado'].sum().reset_index()
-            fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-            fig_bar.update_layout(showlegend=False)
-            st.plotly_chart(fig_bar, use_container_width=True)
+            
+            # Define cores baseadas no resultado (verde lucro, vermelho preju)
+            colors = ['#00FF88' if x >= 0 else '#FF4B4B' for x in ctx_perf['resultado']]
+            
+            fig_pie = go.Figure(data=[go.Pie(
+                labels=ctx_perf['contexto'], 
+                values=abs(ctx_perf['resultado']), # Usa valor absoluto para o tamanho da fatia
+                hole=.5,
+                textinfo='label+percent',
+                marker=dict(colors=colors) # Aplica as cores dinâmicas
+            )])
+            
+            fig_pie.update_layout(
+                title="Resultado por Contexto (Proporção)",
+                template="plotly_dark",
+                showlegend=False,
+                annotations=[dict(text='Contexto', x=0.5, y=0.5, font_size=14, showarrow=False)]
+            )
+            
+            st.plotly_chart(fig_pie, use_container_width=True)
 
     # --- GRÁFICOS TEMPORAIS (DIÁRIO E SEMANAL) ---
     st.markdown("### 📅 Performance Temporal")
@@ -273,21 +292,17 @@ def show(user, role):
         
         # 1. Resultado por DIA (Timeline)
         with t1:
-            # Agrupa por data pura
             daily_perf = trades_filtered.groupby('data')['resultado'].sum().reset_index()
             fig_daily = px.bar(daily_perf, x='data', y='resultado', title="Resultado Diário (Timeline)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
             fig_daily.update_layout(showlegend=False, xaxis_title="Data", yaxis_title="Resultado ($)")
             st.plotly_chart(fig_daily, use_container_width=True)
             
-        # 2. Resultado por Dia da SEMANA (Seg, Ter, Qua...)
+        # 2. Resultado por Dia da SEMANA
         with t2:
             trades_filtered['dia_semana'] = pd.to_datetime(trades_filtered['data']).dt.day_name()
             dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
             trades_filtered['dia_pt'] = trades_filtered['dia_semana'].map(dias_pt)
-            
-            # Ordem correta da semana
             week_order = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']
-            
             week_perf = trades_filtered.groupby('dia_pt')['resultado'].sum().reindex(week_order).reset_index()
             
             fig_week = px.bar(week_perf, x='dia_pt', y='resultado', title="Dia da Semana (Estatístico)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
