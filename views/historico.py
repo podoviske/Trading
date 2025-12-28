@@ -34,91 +34,17 @@ def load_trades_db():
         return df
     except: return pd.DataFrame()
 
-# --- 2. CSS BLINDADO (GRID PERFEITO) ---
-st.markdown("""
-    <style>
-    /* 1. Card com Altura Fixa e Flexbox */
-    .trade-card {
-        background-color: #161616;
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 15px;
-        border: 1px solid #333;
-        transition: transform 0.2s, border-color 0.2s;
-        
-        /* O SEGREDO DO ALINHAMENTO: */
-        height: 280px !important;  /* Altura fixa forçada */
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-    }
-    .trade-card:hover {
-        transform: translateY(-3px);
-        border-color: #B20000;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    }
-    
-    /* 2. Container da Imagem Fixo */
-    .card-img-container {
-        width: 100%; 
-        height: 150px !important; /* Altura fixa da área da foto */
-        background-color: #0f0f0f; /* Fundo escuro sutil se a imagem falhar */
-        border-radius: 5px; 
-        overflow: hidden; 
-        display: flex;
-        align-items: center; 
-        justify-content: center; 
-        margin-bottom: 10px; 
-        position: relative;
-        flex-shrink: 0; /* Impede que a imagem encolha */
-    }
-    
-    .card-img { 
-        width: 100%; height: 100%; 
-        object-fit: cover; object-position: center; display: block; 
-    }
-    
-    /* 3. Textos que não quebram o layout (Corta com ...) */
-    .card-content { flex-grow: 1; }
-    
-    .card-title { 
-        font-size: 14px; font-weight: 700; color: white; margin-bottom: 4px;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* Corta texto longo */
-    }
-    .card-sub { 
-        font-size: 11px; color: #888; margin-bottom: 8px; 
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    
-    .card-res-win { font-size: 18px; font-weight: 800; color: #00FF88; text-align: right; } 
-    .card-res-loss { font-size: 18px; font-weight: 800; color: #FF4B4B; text-align: right; }
-    
-    /* Box de Detalhes Técnicos (Modal) */
-    .tech-box {
-        background-color: #111;
-        border: 1px solid #333;
-        border-radius: 8px;
-        padding: 10px;
-        margin-bottom: 10px;
-        height: 100%;
-    }
-    .tech-label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 5px; }
-    .partial-row { 
-        display: flex; justify-content: space-between; 
-        border-bottom: 1px solid #222; padding: 4px 0; font-size: 12px; color: #ccc;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- 3. POP-UP DE DETALHES ---
+# --- 2. POP-UP DE DETALHES ---
 @st.dialog("Detalhes da Operação", width="large")
 def show_trade_details(row, user, role):
+    # Cabeçalho
     if row.get('prints'):
         st.markdown("### 📸 Evidência (Full Screen)")
         st.image(row['prints'], use_container_width=True)
     
     st.markdown("---")
     
+    # Dados Gerais
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"**📅 Data:** {row['data']}")
     c1.markdown(f"**📈 Ativo:** {row['ativo']}")
@@ -132,14 +58,15 @@ def show_trade_details(row, user, role):
     
     st.markdown("---")
     
+    # ÁREA TÉCNICA
     st.subheader("📊 Raio-X Técnico")
-    
     t1, t2 = st.columns(2)
     
     with t1:
         stop_real = row.get('stop_pts', 0.0)
         risco_usd = row.get('risco_fin', 0.0)
         
+        # Fallback para trades antigos
         if stop_real == 0 and risco_usd > 0:
             mult = MULTIPLIERS.get(row['ativo'], 0)
             if mult > 0 and row['lote'] > 0:
@@ -210,8 +137,81 @@ def show_trade_details(row, user, role):
         time.sleep(1)
         st.rerun()
 
-# --- 4. TELA PRINCIPAL (GALERIA) ---
+# --- 3. TELA PRINCIPAL (GALERIA) ---
 def show(user, role):
+    # [IMPORTANTE] O CSS AGORA ESTÁ DENTRO DO SHOW PARA GARANTIR O CARREGAMENTO
+    st.markdown("""
+        <style>
+        /* 1. Card com Altura Fixa (BLINDAGEM) */
+        .trade-card {
+            background-color: #161616 !important; /* Força cor de fundo */
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #333;
+            transition: transform 0.2s, border-color 0.2s;
+            height: 300px !important;  /* Altura FIXA para alinhar tudo */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .trade-card:hover {
+            transform: translateY(-3px);
+            border-color: #B20000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        
+        /* 2. Container da Imagem Fixo */
+        .card-img-container {
+            width: 100%; 
+            height: 160px !important; /* Altura fixa da área da foto */
+            background-color: #111; /* Fundo escuro caso não tenha foto */
+            border-radius: 5px; 
+            overflow: hidden; 
+            display: flex;
+            align-items: center; 
+            justify-content: center; 
+            margin-bottom: 10px; 
+            position: relative;
+            flex-shrink: 0; 
+        }
+        
+        .card-img { 
+            width: 100%; height: 100%; 
+            object-fit: cover; /* Cobre a área sem distorcer (Zoom/Crop) */
+            object-position: center; 
+            display: block; 
+        }
+        
+        /* 3. Textos Seguros */
+        .card-title { 
+            font-size: 14px; font-weight: 700; color: white; margin-bottom: 4px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .card-sub { 
+            font-size: 11px; color: #888; margin-bottom: 8px; 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .card-res-win { font-size: 18px; font-weight: 800; color: #00FF88; text-align: right; } 
+        .card-res-loss { font-size: 18px; font-weight: 800; color: #FF4B4B; text-align: right; }
+        
+        /* Box de Detalhes (Modal) */
+        .tech-box {
+            background-color: #111;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+            height: 100%;
+        }
+        .tech-label { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 5px; }
+        .partial-row { 
+            display: flex; justify-content: space-between; 
+            border-bottom: 1px solid #222; padding: 4px 0; font-size: 12px; color: #ccc;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.title("📜 Galeria de Trades")
     
     dfh = load_trades_db()
