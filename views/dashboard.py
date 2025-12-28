@@ -155,11 +155,7 @@ def show(user, role):
                 hwm_db = float(conta['pico_previo']) 
                 saldo_atual_est = saldo_ini + lucro_por_conta_est
                 hwm_dinamico = max(hwm_db, saldo_atual_est)
-                
-                # CORREÇÃO LÓGICA: Passar fase_informada para o motor funcionar corretamente
-                fase_inf = conta.get('fase_entrada', 'Fase 2')
-                
-                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_dinamico, fase_informada=fase_inf)
+                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_dinamico)
                 total_buffer += saude['buffer']
                 contas_ativas += 1
 
