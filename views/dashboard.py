@@ -1,92 +1,50 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import math
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from supabase import create_client
 
-# --- 1. CONFIGURAÇÕES E CONEXÃO (Herdado da v250) ---
+# IMPORTANTE: Importando seus novos motores matemáticos
+from modules.logic import ApexEngine, RiskEngine, PositionSizing
+
+# --- 1. CONFIGURAÇÕES E CONEXÃO ---
 MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
 
-# Tenta pegar o cliente Supabase do session_state ou cria um novo
 def get_supabase():
     try:
-        if "supabase" in st.session_state:
-            return st.session_state["supabase"]
+        if "supabase" in st.session_state: return st.session_state["supabase"]
         else:
             url = st.secrets["SUPABASE_URL"]
             key = st.secrets["SUPABASE_KEY"]
             return create_client(url, key)
-    except:
-        return None
+    except: return None
 
-# Funções de Dados (Trazidas da v250 para garantir funcionamento local)
 def load_trades_db():
     try:
-        supabase = get_supabase()
-        res = supabase.table("trades").select("*").execute()
+        sb = get_supabase()
+        res = sb.table("trades").select("*").execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
             df['data'] = pd.to_datetime(df['data']).dt.date
             df['created_at'] = pd.to_datetime(df['created_at'])
             if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
+            if 'conta_id' not in df.columns: df['conta_id'] = 'Geral' # Caso não tenha coluna, assume geral
         return df
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def load_contas_config(user):
     try:
-        supabase = get_supabase()
-        res = supabase.table("contas_config").select("*").eq("usuario", user).execute()
+        sb = get_supabase()
+        res = sb.table("contas_config").select("*").eq("usuario", user).execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
             if 'pico_previo' not in df.columns: df['pico_previo'] = df['saldo_inicial']
             if 'status_conta' not in df.columns: df['status_conta'] = 'Ativa'
         return df
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
-# --- 2. MOTOR DE RISCO (Engine Apex v250) ---
-def calcular_saude_apex(saldo_inicial, pico_previo, trades_df):
-    # Regras por Tamanho de Conta
-    if saldo_inicial >= 250000:   # 300k
-        dd_max = 7500.0; meta_trava = saldo_inicial + dd_max + 100.0
-    elif saldo_inicial >= 100000: # 150k
-        dd_max = 5000.0; meta_trava = 155100.0
-    elif saldo_inicial >= 50000:  # 50k
-        dd_max = 2500.0; meta_trava = 52600.0
-    else:                         # 25k
-        dd_max = 1500.0; meta_trava = 26600.0
-        
-    lucro_acc = trades_df['resultado'].sum() if not trades_df.empty else 0.0
-    saldo_atual = saldo_inicial + lucro_acc
-    
-    # HWM Real
-    if not trades_df.empty:
-        trades_sorted = trades_df.sort_values('created_at')
-        equity_curve = trades_sorted['resultado'].cumsum() + saldo_inicial
-        pico_grafico = equity_curve.max()
-        pico_real = max(saldo_inicial, pico_grafico)
-    else:
-        pico_real = saldo_inicial
-
-    # Trailing Stop
-    stop_travado = saldo_inicial + 100.0
-    if pico_real >= meta_trava:
-        stop_atual = stop_travado
-    else:
-        stop_atual = pico_real - dd_max
-        
-    buffer = max(0.0, saldo_atual - stop_atual)
-    
-    return {
-        "saldo_atual": saldo_atual,
-        "stop_atual": stop_atual,
-        "buffer": buffer,
-        "hwm": pico_real
-    }
-
-# --- 3. COMPONENTE VISUAL (Card v300) ---
+# --- 2. COMPONENTE VISUAL (CARD v300) ---
 def card(label, value, sub_text, color="white", border_color="#333333"):
     st.markdown(
         f"""
@@ -110,175 +68,234 @@ def card(label, value, sub_text, color="white", border_color="#333333"):
         unsafe_allow_html=True
     )
 
-# --- 4. RENDERIZAÇÃO DO DASHBOARD ---
+# --- 3. DASHBOARD LOGIC ---
 def show(user, role):
     
-    # Carrega dados Reais
-    df_raw = load_trades_db()
-    df_contas = load_contas_config(user)
+    # Carrega dados crus
+    df_trades_all = load_trades_db()
+    df_contas_all = load_contas_config(user)
     
-    if df_raw.empty:
-        st.info("Aguardando dados... Registre seu primeiro trade.")
-        return
+    # Filtra trades do usuário
+    if not df_trades_all.empty:
+        df_trades_all = df_trades_all[df_trades_all['usuario'] == user]
 
-    # Filtra usuário
-    df = df_raw[df_raw['usuario'] == user].copy()
-    if df.empty:
-        st.warning("Nenhum trade encontrado para este usuário.")
-        return
-
-    # --- ÁREA DE FILTROS ---
-    with st.expander("🔍 Filtros Avançados", expanded=True):
-        c_d1, c_d2, c_grp, c_ctx = st.columns([1, 1, 1, 2])
-        
-        # Datas
-        min_date = df['data'].min()
-        max_date = df['data'].max()
-        d_inicio = c_d1.date_input("Início", min_date)
-        d_fim = c_d2.date_input("Fim", max_date)
-        
-        # Grupos
-        if 'grupo_vinculo' in df.columns:
-            lista_grupos = ["Todos"] + sorted(list(df['grupo_vinculo'].unique()))
-            sel_grupo = c_grp.selectbox("Grupo", lista_grupos)
+    # --- TOP BAR: SELEÇÃO DE ESCOPO (O "Pulo do Gato") ---
+    # Aqui resolvemos a questão de ver o Grupo ou a Conta Individual
+    
+    st.markdown("### 🔭 Visão do Operacional")
+    
+    # 1. Seleciona o Grupo
+    grupos_disponiveis = ["Todos"]
+    if not df_contas_all.empty:
+        grupos_disponiveis = sorted(list(df_contas_all['grupo_nome'].unique()))
+    
+    c_sel1, c_sel2, c_date1, c_date2 = st.columns([1.5, 1.5, 1, 1])
+    
+    with c_sel1:
+        grupo_sel = st.selectbox("📂 Selecionar Grupo", grupos_disponiveis)
+    
+    # 2. Seleciona a Conta (Depende do Grupo)
+    contas_do_grupo = []
+    if not df_contas_all.empty:
+        if grupo_sel != "Todos":
+            contas_do_grupo = df_contas_all[df_contas_all['grupo_nome'] == grupo_sel]
         else:
-            sel_grupo = "Todos"
-
-        # Contexto
-        all_ctx = list(df['contexto'].unique())
-        sel_ctx = c_ctx.multiselect("Contexto", all_ctx, default=all_ctx)
-
-    # Aplica Filtros
-    mask = (df['data'] >= d_inicio) & (df['data'] <= d_fim) & (df['contexto'].isin(sel_ctx))
-    if sel_grupo != "Todos":
-        mask = mask & (df['grupo_vinculo'] == sel_grupo)
+            contas_do_grupo = df_contas_all
+            
+    lista_contas_view = ["📊 VISÃO GERAL (Agregado)"] + sorted(list(contas_do_grupo['conta_identificador'].unique()))
     
-    df_filtered = df[mask].copy()
+    with c_sel2:
+        view_mode = st.selectbox("🔎 Detalhe", lista_contas_view)
 
-    if df_filtered.empty:
-        st.warning("Sem dados para os filtros selecionados.")
-        return
+    # 3. Filtros de Data
+    with c_date1:
+        d_inicio = st.date_input("De", datetime.now().date() - timedelta(days=30))
+    with c_date2:
+        d_fim = st.date_input("Até", datetime.now().date())
 
-    # --- CÁLCULOS KPI (Lógica v250) ---
-    wins = df_filtered[df_filtered['resultado'] > 0]
-    losses = df_filtered[df_filtered['resultado'] < 0]
+    st.markdown("---")
+
+    # --- PROCESSAMENTO DOS DADOS (AGREGAÇÃO) ---
     
-    net_profit = df_filtered['resultado'].sum()
+    # 1. Filtra Trades pelo Grupo e Data
+    trades_filtered = df_trades_all.copy()
+    if grupo_sel != "Todos":
+        trades_filtered = trades_filtered[trades_filtered['grupo_vinculo'] == grupo_sel]
+        
+    trades_filtered = trades_filtered[
+        (trades_filtered['data'] >= d_inicio) & 
+        (trades_filtered['data'] <= d_fim)
+    ]
+    
+    # 2. Determina quais contas analisar
+    if "VISÃO GERAL" in view_mode:
+        # Modo Grupo: Analisa TODAS as contas do grupo selecionado
+        contas_alvo = contas_do_grupo
+        # Trades já estão filtrados pelo grupo acima
+    else:
+        # Modo Individual: Analisa só a conta específica
+        contas_alvo = contas_do_grupo[contas_do_grupo['conta_identificador'] == view_mode]
+        # Filtra trades só dessa conta (supondo que exista coluna conta_id ou identificador no trade)
+        # Se não tiver coluna conta_id no trade, o filtro por grupo é o melhor que temos por enquanto.
+        # Ajuste conforme seu DB real.
+        pass 
+
+    # --- CÁLCULO FINANCEIRO E APEX (LOOP INTELIGENTE) ---
+    
+    total_buffer = 0.0
+    soma_saldos = 0.0
+    total_risco_base = 0.0
+    contas_ativas = 0
+    
+    # Itera sobre cada conta para calcular o buffer individualmente (Regra: 150k cada)
+    # Depois soma tudo para dar a visão do grupo
+    if not contas_alvo.empty:
+        for _, conta in contas_alvo.iterrows():
+            if conta['status_conta'] == 'Ativa':
+                # Pega trades "deste grupo/conta" para calcular o saldo atual dela
+                # Nota: Na v300 idealmente cada trade tem 'conta_id'. 
+                # Se não tiver, usamos o proporcional ou assumimos simetria.
+                # Aqui usaremos a lógica simplificada: Saldo Atual = Saldo Inicial + Lucro do Grupo (se for visão grupo)
+                # Para ser EXATO, precisaria filtrar trades por conta_id.
+                
+                # Simulação para o Motor (Assumindo simetria se não tiver ID):
+                # Se estamos vendo o grupo todo, o "Saldo Atual" desta conta é estimado
+                # Se seu DB de trades não separa por conta individual, o Buffer será uma estimativa baseada no total.
+                
+                # Abordagem Robusta:
+                # O Motor Apex precisa de (Saldo Atual, HWM).
+                # Vamos calcular o Saldo Atual real somando o lucro.
+                saldo_ini = float(conta['saldo_inicial'])
+                hwm_prev = float(conta['pico_previo'])
+                
+                # Se for visão individual, filtra trades dessa conta (se possível)
+                # Se for visão geral, o lucro é rateado ou somado? 
+                # Assumindo CopyTrading: O lucro total do grupo dividido pelo num contas = lucro desta conta.
+                
+                lucro_total_periodo = trades_filtered['resultado'].sum()
+                num_contas_grupo = len(contas_do_grupo) if len(contas_do_grupo) > 0 else 1
+                lucro_desta_conta = lucro_total_periodo / num_contas_grupo # Estimativa de Copy
+                
+                saldo_atual_est = saldo_ini + lucro_desta_conta
+                
+                # CHAMA O MOTOR APEX (Importado do logic.py)
+                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_prev)
+                
+                total_buffer += saude['buffer']
+                soma_saldos += saude['saldo']
+                contas_ativas += 1
+                
+                # Soma HWM apenas para referência
+                # hwm_grupo += saude['hwm']
+
+    # Se não tiver contas, zera tudo
+    if contas_ativas == 0:
+        total_buffer = 0
+        soma_saldos = 0
+
+    # --- CÁLCULOS ESTATÍSTICOS (KPIs) ---
+    wins = trades_filtered[trades_filtered['resultado'] > 0]
+    losses = trades_filtered[trades_filtered['resultado'] < 0]
+    
+    net_profit = trades_filtered['resultado'].sum()
     gross_profit = wins['resultado'].sum()
     gross_loss = abs(losses['resultado'].sum())
     
     pf = gross_profit / gross_loss if gross_loss > 0 else 99.99
-    win_rate = (len(wins) / len(df_filtered) * 100) if len(df_filtered) > 0 else 0.0
+    win_rate = (len(wins) / len(trades_filtered) * 100) if not trades_filtered.empty else 0.0
     
     avg_win = wins['resultado'].mean() if not wins.empty else 0
     avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0
     payoff = avg_win / avg_loss if avg_loss > 0 else 0
+    
+    # Expectativa Matemática ($)
     expectancy = ( (win_rate/100) * avg_win ) - ( (1 - (win_rate/100)) * avg_loss )
-    
-    max_dd = 0.0
-    if not df_filtered.empty:
-        df_filtered = df_filtered.sort_values('created_at')
-        df_filtered['equity'] = df_filtered['resultado'].cumsum()
-        max_dd = (df_filtered['equity'] - df_filtered['equity'].cummax()).min()
 
-    # --- CÁLCULO DE RISCO/SAÚDE (Motor Apex) ---
-    total_buffer_real = 0.0
-    contas_analisadas = 0
-    
-    if not df_contas.empty:
-        c_alvo = df_contas if sel_grupo == "Todos" else df_contas[df_contas['grupo_nome'] == sel_grupo]
-        for _, row in c_alvo.iterrows():
-            if row.get('status_conta', 'Ativa') == 'Ativa':
-                # Trades específicos desta conta/grupo para o cálculo de HWM
-                trades_deste_grupo = df[df['grupo_vinculo'] == row['grupo_nome']]
-                status_conta = calcular_saude_apex(
-                    float(row['saldo_inicial']), 
-                    float(row.get('pico_previo', row['saldo_inicial'])), 
-                    trades_deste_grupo
-                )
-                total_buffer_real += status_conta['buffer']
-                contas_analisadas += 1
-
-    # Risco Comportamental (Vidas)
-    lote_medio = df_filtered['lote'].mean() if not df_filtered.empty else 0
+    # Risco Comportamental (Baseado nos Stops tomados)
     pts_loss_medio = abs(losses['pts_medio'].mean()) if not losses.empty else 15.0
-    ativo_ref = df_filtered['ativo'].iloc[-1] if not df_filtered.empty else "MNQ"
+    ativo_ref = trades_filtered['ativo'].iloc[-1] if not trades_filtered.empty else "MNQ"
+    custo_stop_padrao = pts_loss_medio * MULTIPLIERS.get(ativo_ref, 2) 
     
-    risco_por_trade = lote_medio * pts_loss_medio * MULTIPLIERS.get(ativo_ref, 2)
-    if risco_por_trade == 0: risco_por_trade = 300.0 # Fallback
+    # O Risco "Unitário" para o grupo é o custo do stop x número de contas ativas (pois o copy replica)
+    # Se stopou em uma, stopou em todas.
+    risco_impacto_grupo = custo_stop_padrao * contas_ativas
+    if risco_impacto_grupo == 0: risco_impacto_grupo = 1.0 # Evita div zero
+
+    # --- CHAMADA AOS MOTORES DE RISCO E KELLY ---
     
-    # Multiplica pelo número de contas copiadas
-    risco_grupo_total = risco_por_trade * (contas_analisadas if contas_analisadas > 0 else 1)
-    vidas_u = total_buffer_real / risco_grupo_total if risco_grupo_total > 0 else 0
-
-    # Probabilidade de Ruína Simplificada
-    prob_ruina = 0.0
-    if vidas_u < 5: prob_ruina = 80.0
-    elif vidas_u < 10: prob_ruina = 20.0
-    elif expectancy <= 0: prob_ruina = 100.0
-
-    # Kelly (Inteligência de Lote)
-    kelly_val = (win_rate/100) - ((1 - (win_rate/100)) / payoff) if payoff > 0 else 0
-    kelly_half = max(0.0, kelly_val / 2)
-    lote_sug_min = 0
-    lote_sug_max = 0
-    if kelly_half > 0 and total_buffer_real > 0:
-         risco_teto = total_buffer_real * kelly_half
-         base_unit = pts_loss_medio * MULTIPLIERS.get(ativo_ref, 2)
-         if base_unit > 0:
-             lote_sug_max = int(risco_teto / base_unit)
-             lote_sug_min = int(lote_sug_max * 0.7)
-
-    # --- RENDERIZAÇÃO DOS CARDS (Layout v300) ---
-    st.markdown("---")
+    # 1. Vidas Reais (Quantos stops o GRUPO aguenta antes de ALGUMA conta quebrar)
+    # Como somamos os buffers, e o risco é replicado, a divisão se mantém proporcional.
+    vidas_u = total_buffer / risco_impacto_grupo if risco_impacto_grupo > 0 else 0
     
-    st.markdown("### 🏁 Desempenho Geral")
+    # 2. Probabilidade de Ruína (RiskEngine)
+    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer)
+    
+    # 3. Sugestão de Lote (PositionSizing)
+    # Aqui ele sugere o lote TOTAL para o grupo.
+    # Ex: Se buffer é 50k, ele sugere lote para proteger 50k.
+    # Como você opera via Copy, esse lote será distribuído.
+    lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao * contas_ativas)
+
+    # --- RENDERIZAÇÃO VISUAL ---
+
+    # Linha 1: Financeiro
+    st.markdown("### 🏁 Desempenho Financeiro")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        card("Resultado Líquido", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit>=0 else "#FF4B4B")
+        card("Resultado Líquido", f"${net_profit:,.2f}", f"Soma do Período", "#00FF88" if net_profit>=0 else "#FF4B4B")
     with c2:
         card("Fator de Lucro (PF)", f"{pf:.2f}", "Ideal > 1.5", "#FF4B4B" if pf < 1.5 else "#00FF88")
     with c3:
         card("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
     with c4:
-        card("Expectativa Mat.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy>0 else "#FF4B4B")
+        card("Expectativa", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy>0 else "#FF4B4B")
 
-    st.markdown("### 🛡️ Análise de Sobrevivência")
+    # Linha 2: Sobrevivência (Dados dos Motores)
+    st.markdown(f"### 🛡️ Saúde & Risco ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
     with k1:
-        card("Buffer Real (Hoje)", f"${total_buffer_real:,.0f}", f"{contas_analisadas} Contas Ativas", "#00FF88")
+        card("Buffer Total (Oxigênio)", f"${total_buffer:,.0f}", f"{contas_ativas} Contas Ativas", "#00FF88" if total_buffer > 2000 else "#FF4B4B")
     with k2:
-        cor_v = "#FF4B4B" if vidas_u < 10 else "#00FF88"
-        card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco: ${risco_grupo_total:,.0f}", cor_v)
+        # Cor dinâmica para Vidas
+        cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
+        card("Vidas (Tentativas)", f"{vidas_u:.1f}", f"Risco Impacto: ${risco_impacto_grupo:,.0f}", cor_v)
     with k3:
-        card("Half-Kelly", f"{kelly_half*100:.1f}%", "Teto Teórico", "#888")
+        # Cor dinâmica para Ruína
+        cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
+        card("Prob. Ruína", f"{prob_ruina:.2f}%", "Chance de Quebrar", cor_r, border_color=cor_r)
     with k4:
-        card("Sugestão Lote", f"{lote_sug_min} a {lote_sug_max}", "Zona de Aceleração", "#00FF88", border_color="#00FF88")
+        card("Sugestão Lote (Grupo)", f"{lote_min} a {lote_max}", f"Kelly: {kelly_pct*100:.1f}%", "#00FF88", border_color="#00FF88")
 
-    # --- RENDERIZAÇÃO DOS GRÁFICOS (Layout v250 Adaptado) ---
-    st.markdown("### 📈 Evolução Financeira")
+    # --- GRÁFICOS ---
+    st.markdown("### 📈 Evolução de Capital")
     
-    g1, g2 = st.columns([2, 1])
+    g1, g2 = st.columns([3, 1])
+    
     with g1:
-        # Gráfico de Equity
-        if sel_grupo == "Todos":
-            saldo_inicial_plot = df_contas['saldo_inicial'].sum() if not df_contas.empty else 0
+        if not trades_filtered.empty:
+            trades_plot = trades_filtered.sort_values('created_at').copy()
+            
+            # Ajuste do Eixo Y (Saldo Base)
+            # Se for Geral: Soma dos Saldos Iniciais de todas as contas do grupo
+            # Se for Individual: Saldo Inicial da conta
+            saldo_inicial_base = contas_alvo['saldo_inicial'].sum() if not contas_alvo.empty else 0
+            
+            trades_plot['saldo_acumulado'] = trades_plot['resultado'].cumsum() + saldo_inicial_base
+            
+            fig = px.area(trades_plot, x='created_at', y='saldo_acumulado', title=f"Curva de Patrimônio ({view_mode})", template="plotly_dark")
+            fig.update_traces(line_color='#00FF88', fillcolor='rgba(0, 255, 136, 0.1)')
+            
+            # Linha de Referência (Saldo Inicial)
+            fig.add_hline(y=saldo_inicial_base, line_dash="dash", line_color="gray", annotation_text="Capital Inicial")
+            
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            saldo_inicial_plot = df_contas[df_contas['grupo_nome'] == sel_grupo]['saldo_inicial'].sum() if not df_contas.empty else 0
+            st.info("Sem dados para exibir gráfico.")
             
-        # Fallback se não tiver contas cadastradas
-        if saldo_inicial_plot == 0: saldo_inicial_plot = 0
-            
-        df_filtered = df_filtered.sort_values('created_at')
-        df_filtered['equity_curve'] = df_filtered['resultado'].cumsum() + saldo_inicial_plot
-        
-        fig_eq = px.area(df_filtered, x='created_at', y='equity_curve', title="Curva de Patrimônio", template="plotly_dark")
-        fig_eq.update_traces(line_color='#00FF88', fillcolor='rgba(0, 255, 136, 0.1)')
-        fig_eq.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="gray")
-        st.plotly_chart(fig_eq, use_container_width=True)
-
     with g2:
-        # Gráfico por Contexto
-        ctx_perf = df_filtered.groupby('contexto')['resultado'].sum().reset_index()
-        fig_bar = px.bar(ctx_perf, x='contexto', y='resultado', title="Resultado por Contexto", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-        st.plotly_chart(fig_bar, use_container_width=True)
+        if not trades_filtered.empty:
+            df_pie = trades_filtered.groupby('resultado').count() # Simplificado
+            fig_pie = go.Figure(data=[go.Pie(labels=['Gain', 'Loss'], values=[len(wins), len(losses)], hole=.6)])
+            fig_pie.update_layout(template="plotly_dark", title="Proporção W/L", showlegend=False)
+            fig_pie.update_traces(marker=dict(colors=['#00FF88', '#FF4B4B']))
+            st.plotly_chart(fig_pie, use_container_width=True)
