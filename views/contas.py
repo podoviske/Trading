@@ -7,7 +7,7 @@ from supabase import create_client
 import time
 import math  # Importante para arredondar os trades para cima
 
-# Importa o Cérebro
+# Importa o Cérebro (Certifique-se que o logic.py foi atualizado conforme combinamos antes)
 from modules.logic import ApexEngine
 
 # --- 1. CONEXÃO ---
@@ -130,8 +130,10 @@ def show(user, role):
                 g_sel = col_a.selectbox("Grupo", sorted(df_g['nome'].unique()))
                 c_id = col_b.text_input("Identificador (Ex: PA-001)")
                 
-                s_ini = col_a.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
-                p_pre = col_b.number_input("Pico Máximo (HWM)", value=150000.0, step=100.0)
+                # [MODIFICAÇÃO IMPORTANTE AQUI - LABELS CLAROS]
+                s_ini = col_a.number_input("Saldo ATUAL (Hoje na Corretora) ($)", value=150000.0, step=100.0, help="Não coloque o saldo inicial de fábrica! Coloque quanto tem lá AGORA.")
+                p_pre = col_b.number_input("Pico Máximo (HWM - Topo Histórico) ($)", value=150000.0, step=100.0, help="Qual foi o maior valor que essa conta já viu?")
+                
                 fase_ini = col_a.selectbox("Fase Inicial (Referência)", ["Fase 1", "Fase 2", "Fase 3", "Fase 4"])
                 
                 if st.form_submit_button("Cadastrar Conta"):
@@ -169,6 +171,7 @@ def show(user, role):
                     
                     for _, row in contas_g.iterrows():
                         st_icon = "🟢" if row['status_conta'] == "Ativa" else "🔴"
+                        # Cálculo básico para o card da visão geral
                         saldo_atual = float(row['saldo_inicial']) + lucro_grupo
                         delta = saldo_atual - float(row['saldo_inicial'])
                         cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
@@ -217,7 +220,7 @@ def show(user, role):
         else:
             st.info("Nenhuma conta configurada.")
 
-    # --- ABA 4: MONITOR DE PERFORMANCE ---
+    # --- ABA 4: MONITOR DE PERFORMANCE (MANTIDA E CONECTADA AO LOGIC.PY) ---
     with t4:
         st.subheader("🚀 Monitor de Grupo (Apex Engine)")
         df_c = load_contas(user)
@@ -260,7 +263,8 @@ def show(user, role):
                         saldo_atual_c = float(conta['saldo_inicial']) + lucro_total
                         hwm_prev_c = float(conta.get('pico_previo', conta['saldo_inicial']))
                         
-                        res = ApexEngine.calculate_health(saldo_atual_c, hwm_prev_c)
+                        # [CONEXÃO COM LOGIC.PY] Passando a fase corretamente
+                        res = ApexEngine.calculate_health(saldo_atual_c, hwm_prev_c, conta.get('fase_entrada', 'Fase 1'))
                         
                         total_saldo += res['saldo']
                         total_hwm += res['hwm']
@@ -292,7 +296,8 @@ def show(user, role):
                     hwm_prev = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
                     saldo_inicial_plot = float(conta_ref['saldo_inicial'])
                     
-                    saude_final = ApexEngine.calculate_health(saldo_atual_est, hwm_prev)
+                    # [CONEXÃO COM LOGIC.PY]
+                    saude_final = ApexEngine.calculate_health(saldo_atual_est, hwm_prev, conta_ref.get('fase_entrada', 'Fase 1'))
                 else:
                     st.warning("Conta não encontrada.")
                     st.stop()
