@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import plotly.express as px
+import plotly.graph_objects as go
 from supabase import create_client
 import time
 
-# Importa o Cérebro para cálculos de Fase
+# Importa o Cérebro
 from modules.logic import ApexEngine
 
-# --- 1. CONEXÃO E FUNÇÕES DE CARGA ---
+# --- 1. CONEXÃO ---
 def get_supabase():
     try:
         if "supabase" in st.session_state: return st.session_state["supabase"]
@@ -31,7 +32,6 @@ def load_contas(user):
         res = sb.table("contas_config").select("*").eq("usuario", user).execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
-            # Garante tipos numéricos e valores padrão
             if 'pico_previo' not in df.columns: df['pico_previo'] = df['saldo_inicial']
             if 'fase_entrada' not in df.columns: df['fase_entrada'] = 'Fase 1'
             if 'status_conta' not in df.columns: df['status_conta'] = 'Ativa'
@@ -54,8 +54,7 @@ def load_trades(user):
         return df
     except: return pd.DataFrame()
 
-# --- 2. COMPONENTE VISUAL (CARD PEQUENO) ---
-# Ajustado CSS para não vazar texto
+# --- 2. COMPONENTE VISUAL ---
 def card_monitor(label, value, sub_text, color="white", border_color="#333"):
     st.markdown(
         f"""
@@ -66,7 +65,7 @@ def card_monitor(label, value, sub_text, color="white", border_color="#333"):
             border: 1px solid {border_color}; 
             text-align: center; 
             margin-bottom: 10px;
-            height: 90px; /* Altura fixa controlada */
+            height: 90px;
             display: flex; flex-direction: column; justify-content: center; overflow: hidden;
         ">
             <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">
@@ -91,7 +90,6 @@ def show(user, role):
 
     sb = get_supabase()
     
-    # Abas
     t1, t2, t3, t4 = st.tabs(["📂 Criar Grupo", "💳 Cadastrar Conta", "📋 Visão Geral", "🚀 Monitor de Performance"])
     
     # --- ABA 1: GRUPOS ---
@@ -148,9 +146,9 @@ def show(user, role):
                             st.rerun()
                         except Exception as e: st.error(f"Erro: {e}")
         else:
-            st.warning("Crie um grupo primeiro na aba anterior.")
+            st.warning("Crie um grupo primeiro.")
 
-    # --- ABA 3: VISÃO GERAL (COM EDIÇÃO DE FASE) ---
+    # --- ABA 3: VISÃO GERAL ---
     with t3:
         st.subheader("📋 Gestão e Edição")
         df_c = load_contas(user)
@@ -163,7 +161,7 @@ def show(user, role):
             grupos_unicos = sorted(df_c['grupo_nome'].unique())
             for grp in grupos_unicos:
                 with st.expander(f"📂 {grp}", expanded=True):
-                    # Calcula lucro do grupo (Copy Trading: trades do grupo impactam todas as contas dele)
+                    # Lucro do Grupo (Copy Trading)
                     trades_grp = df_t[df_t['grupo_vinculo'] == grp] if not df_t.empty else pd.DataFrame()
                     lucro_grupo = trades_grp['resultado'].sum() if not trades_grp.empty else 0.0
                     
@@ -175,7 +173,6 @@ def show(user, role):
                         delta = saldo_atual - float(row['saldo_inicial'])
                         cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
                         
-                        # Layout da Linha da Conta
                         c_info, c_edit, c_del = st.columns([3, 0.5, 0.5])
                         
                         c_info.markdown(f"""
@@ -188,25 +185,19 @@ def show(user, role):
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        # -- POPOVER DE EDIÇÃO --
                         with c_edit.popover("⚙️"):
                             st.write(f"Editar **{row['conta_identificador']}**")
-                            
-                            # 1. Grupo
                             idx_grp = lista_grupos_existentes.index(row['grupo_nome']) if row['grupo_nome'] in lista_grupos_existentes else 0
                             novo_grp = st.selectbox("Grupo", lista_grupos_existentes, index=idx_grp, key=f"mv_g_{row['id']}")
                             
-                            # 2. Status
                             status_ops = ["Ativa", "Pausada", "Quebrada"]
                             idx_st = status_ops.index(row['status_conta']) if row['status_conta'] in status_ops else 0
                             novo_status = st.selectbox("Status", status_ops, index=idx_st, key=f"mv_s_{row['id']}")
                             
-                            # 3. Fase (NOVO)
                             fase_ops = ["Fase 1", "Fase 2", "Fase 3", "Fase 4"]
                             idx_fase = fase_ops.index(row.get('fase_entrada', 'Fase 1')) if row.get('fase_entrada', 'Fase 1') in fase_ops else 0
                             nova_fase = st.selectbox("Fase", fase_ops, index=idx_fase, key=f"mv_f_{row['id']}")
 
-                            # 4. Saldo
                             novo_saldo_ini = st.number_input("Saldo Inicial", value=float(row['saldo_inicial']), key=f"mv_si_{row['id']}")
                             
                             if st.button("💾 Salvar", key=f"btn_sv_{row['id']}"):
@@ -220,14 +211,13 @@ def show(user, role):
                                 time.sleep(1)
                                 st.rerun()
 
-                        # Botão Deletar
                         if c_del.button("🗑️", key=f"del_acc_{row['id']}"):
                             sb.table("contas_config").delete().eq("id", row['id']).execute()
                             st.rerun()
         else:
             st.info("Nenhuma conta configurada.")
 
-    # --- ABA 4: MONITOR DE PERFORMANCE (CORRIGIDO) ---
+    # --- ABA 4: MONITOR DE PERFORMANCE (AGREGADO + GRÁFICO RESTAURADO) ---
     with t4:
         st.subheader("🚀 Monitor de Grupo (Apex Engine)")
         df_c = load_contas(user)
@@ -235,113 +225,196 @@ def show(user, role):
 
         if not df_c.empty:
             grps = sorted(df_c['grupo_nome'].unique())
-            
-            # Seletores
             col_sel, col_detalhe = st.columns([1.5, 1.5])
+            
             sel_g = col_sel.selectbox("Selecionar Grupo", grps)
             
             # Filtra contas do grupo
             contas_g = df_c[df_c['grupo_nome'] == sel_g]
             
-            # Dropdown de Detalhe (Escolher Conta Específica)
-            lista_contas_detalhe = sorted(contas_g['conta_identificador'].unique())
+            # Adiciona opção "VISÃO GERAL" ao dropdown
+            lista_contas_detalhe = ["📊 VISÃO GERAL (Grupo)"] + sorted(contas_g['conta_identificador'].unique())
             sel_conta_id = col_detalhe.selectbox("Visualizar Detalhe", lista_contas_detalhe)
             
             st.markdown("---")
             
-            # Filtra trades do grupo
+            # Filtra trades do grupo (usados tanto para individual quanto para geral)
             trades_g = df_t[df_t['grupo_vinculo'] == sel_g] if not df_t.empty else pd.DataFrame()
             
-            # [CORREÇÃO CRÍTICA] Seleciona a conta ESPECÍFICA escolhida no dropdown
-            conta_alvo = contas_g[contas_g['conta_identificador'] == sel_conta_id]
+            # --- LÓGICA DE DADOS ---
+            saude_final = {}
+            saldo_inicial_plot = 0.0
+            titulo_grafico = ""
             
-            if not conta_alvo.empty:
-                conta_ref = conta_alvo.iloc[0] # Agora pega a conta certa!
+            if sel_conta_id == "📊 VISÃO GERAL (Grupo)":
+                # --- MODO AGREGADO ---
+                titulo_grafico = f"Curva Agregada: {sel_g}"
                 
-                # --- CÁLCULO APEX ENGINE ---
-                # Estima saldo atual = Saldo Inicial da Conta + Lucro do Grupo
-                lucro_acumulado = trades_g['resultado'].sum() if not trades_g.empty else 0.0
-                saldo_atual_est = float(conta_ref['saldo_inicial']) + lucro_acumulado
-                hwm_prev = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
+                # Somas Acumuladas
+                total_saldo = 0.0
+                total_hwm = 0.0
+                total_stop = 0.0
+                total_buffer = 0.0
+                contas_ativas = 0
                 
-                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_prev)
+                # Calcula lucro total para distribuir (estimativa)
+                lucro_total = trades_g['resultado'].sum() if not trades_g.empty else 0.0
                 
-                # --- EXIBIÇÃO ---
-                # Cards Superiores
-                k1, k2, k3, k4 = st.columns(4)
-                
-                with k1:
-                    card_monitor("SALDO ATUAL", f"${saude['saldo']:,.2f}", f"Lucro: ${lucro_acumulado:+,.2f}", "#00FF88" if lucro_acumulado >=0 else "#FF4B4B")
-                with k2:
-                    card_monitor("HWM (TOPO)", f"${saude['hwm']:,.2f}", f"{saude['status_trailing']}", "#FFFF00")
-                with k3:
-                    cor_buf = "#00FF88" if saude['buffer'] > 2000 else "#FF4B4B"
-                    card_monitor("BUFFER (OXIGÊNIO)", f"${saude['buffer']:,.2f}", f"Stop: ${saude['stop_atual']:,.0f}", cor_buf)
-                with k4:
-                    falta = saude.get('falta_para_trava', 0)
-                    lbl_fase = saude['fase']
-                    sub_fase = f"Falta: ${falta:,.0f}" if falta > 0 else "Stop Travado 🔒"
-                    card_monitor("STATUS / FASE", lbl_fase, sub_fase, "#00FF88", "#00FF88")
-
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                # --- ÁREA DE GRÁFICO E PROGRESSO ---
-                cg, cp = st.columns([2.5, 1])
-
-                with cg:
-                    st.markdown(f"**🌊 Curva de Patrimônio: {sel_conta_id}**")
-                    if not trades_g.empty:
-                        # Prepara dados para o gráfico
-                        df_plot = trades_g.sort_values('created_at').copy()
-                        df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + float(conta_ref['saldo_inicial'])
-                        df_plot['seq'] = range(1, len(df_plot)+1)
+                # Itera sobre cada conta para somar os buffers individuais (Correto matematicamente)
+                for _, conta in contas_g.iterrows():
+                    if conta['status_conta'] == 'Ativa':
+                        # Rateio simples: O lucro do grupo se aplica a cada conta (Copy Trading)
+                        # Saldo Atual da Conta = Saldo Inicial + Lucro Total do Grupo
+                        saldo_atual_c = float(conta['saldo_inicial']) + lucro_total
+                        hwm_prev_c = float(conta.get('pico_previo', conta['saldo_inicial']))
                         
-                        # Recalcula Trailing para histórico (Aprox)
-                        # Nota: O ideal seria salvar o stop histórico, mas aqui simulamos
-                        def calc_trail_hist(saldo):
-                            # Simulação simples da regra
-                            lock = 155100.0
-                            if saldo >= lock: return 150100.0
-                            return max(150000.0 - 5000, saldo - 5000)
+                        res = ApexEngine.calculate_health(saldo_atual_c, hwm_prev_c)
                         
-                        # Plota
-                        fig = px.line(df_plot, x='seq', y='saldo_acc', template="plotly_dark")
-                        fig.update_traces(line_color='#00FF88', fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)')
-                        
-                        # Linhas de referência
-                        fig.add_hline(y=float(conta_ref['saldo_inicial']), line_dash="dash", line_color="gray", annotation_text="Inicial")
-                        if saude['stop_atual'] > 0:
-                            fig.add_hline(y=saude['stop_atual'], line_color="#FF4B4B", annotation_text="Stop Atual")
-                            
-                        fig.update_layout(xaxis_title="Trades", yaxis_title="Saldo ($)", height=350)
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("Registre trades para ver a curva.")
-
-                with cp:
-                    st.markdown("**🎯 Progresso da Fase**")
-                    
-                    # Definição de Meta Visual baseada na Fase
-                    meta_visual = 155100.0 # Meta da Fase 2 (Trava)
-                    if saude['saldo'] >= 155100.0: meta_visual = 161000.0 # Meta da Fase 3
-                    
-                    progresso = 0.0
-                    total_range = meta_visual - 150000.0
-                    ganho = saude['saldo'] - 150000.0
-                    
-                    if total_range > 0:
-                        progresso = min(1.0, max(0.0, ganho / total_range))
-                    
-                    st.progress(progresso)
-                    st.caption(f"Meta Próxima: ${meta_visual:,.0f}")
-                    
-                    if progresso >= 1.0:
-                        st.success("META ATINGIDA! 🚀")
-                    else:
-                        falta_meta = meta_visual - saude['saldo']
-                        st.write(f"Faltam: **${falta_meta:,.2f}**")
-
+                        total_saldo += res['saldo']
+                        total_hwm += res['hwm']
+                        total_stop += res['stop_atual']
+                        total_buffer += res['buffer']
+                        saldo_inicial_plot += float(conta['saldo_inicial'])
+                        contas_ativas += 1
+                
+                saude_final = {
+                    'saldo': total_saldo,
+                    'hwm': total_hwm,
+                    'status_trailing': f"Agregado ({contas_ativas} contas)",
+                    'buffer': total_buffer,
+                    'stop_atual': total_stop,
+                    'fase': "Visão Macro",
+                    'falta_para_trava': 0.0 # Não aplicável no agregado
+                }
+                
             else:
-                st.warning("Conta não encontrada.")
+                # --- MODO INDIVIDUAL ---
+                titulo_grafico = f"Curva de Patrimônio: {sel_conta_id}"
+                conta_alvo = contas_g[contas_g['conta_identificador'] == sel_conta_id]
+                
+                if not conta_alvo.empty:
+                    conta_ref = conta_alvo.iloc[0]
+                    lucro_acumulado = trades_g['resultado'].sum() if not trades_g.empty else 0.0
+                    saldo_atual_est = float(conta_ref['saldo_inicial']) + lucro_acumulado
+                    hwm_prev = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
+                    saldo_inicial_plot = float(conta_ref['saldo_inicial'])
+                    
+                    saude_final = ApexEngine.calculate_health(saldo_atual_est, hwm_prev)
+                else:
+                    st.warning("Conta não encontrada.")
+                    st.stop()
+
+            # --- EXIBIÇÃO DOS CARDS ---
+            k1, k2, k3, k4 = st.columns(4)
+            
+            with k1:
+                lucro_disp = saude_final['saldo'] - saldo_inicial_plot
+                card_monitor("SALDO ATUAL", f"${saude_final['saldo']:,.2f}", f"Lucro: ${lucro_disp:+,.2f}", "#00FF88" if lucro_disp >=0 else "#FF4B4B")
+            with k2:
+                card_monitor("HWM (TOPO)", f"${saude_final['hwm']:,.2f}", f"{saude_final['status_trailing']}", "#FFFF00")
+            with k3:
+                cor_buf = "#00FF88" if saude_final['buffer'] > (2000 * max(1, len(contas_g) if sel_conta_id.startswith("📊") else 1)) else "#FF4B4B"
+                card_monitor("BUFFER (OXIGÊNIO)", f"${saude_final['buffer']:,.2f}", f"Stop: ${saude_final['stop_atual']:,.0f}", cor_buf)
+            with k4:
+                falta = saude_final.get('falta_para_trava', 0)
+                lbl_fase = saude_final['fase']
+                sub_fase = f"Falta: ${falta:,.0f}" if falta > 0 else "---"
+                card_monitor("STATUS / FASE", lbl_fase, sub_fase, "#00FF88", "#00FF88")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # --- GRÁFICO RESTAURADO (ÁREA + TRAILING) ---
+            cg, cp = st.columns([2.5, 1])
+
+            with cg:
+                st.markdown(f"**🌊 {titulo_grafico}**")
+                if not trades_g.empty:
+                    df_plot = trades_g.sort_values('created_at').copy()
+                    
+                    # Se for agregado, o "saldo inicial" é a soma de todas. Se for individual, é só dela.
+                    # O lucro é somado ao saldo inicial base.
+                    df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_plot
+                    df_plot['seq'] = range(1, len(df_plot)+1)
+                    
+                    # Recalcula Trailing para histórico (Simulação visual)
+                    # No modo agregado, o trailing visual é aproximado (Soma dos trailings individuais)
+                    def calc_trail_hist(saldo_momento):
+                        # Se for agregado, aproximamos multiplicando a regra
+                        n_contas = len(contas_g) if sel_conta_id.startswith("📊") else 1
+                        lock_val = 155100.0 * n_contas
+                        stop_locked = 150100.0 * n_contas
+                        dd_max = 5000.0 * n_contas
+                        start_bal = 150000.0 * n_contas
+                        
+                        if saldo_momento >= lock_val: return stop_locked
+                        return max(start_bal - dd_max, saldo_momento - dd_max)
+
+                    # Cria coluna de Trailing Histórico simulado para o gráfico
+                    df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax()
+                    df_plot['stop_hist'] = df_plot['hwm_hist'].apply(calc_trail_hist)
+                    
+                    # PLOTLY (Visual Antigo Restaurado)
+                    fig = go.Figure()
+                    
+                    # 1. Área de Saldo (Verde/Azulada com preenchimento)
+                    fig.add_trace(go.Scatter(
+                        x=df_plot['seq'], y=df_plot['saldo_acc'],
+                        mode='lines',
+                        name='Patrimônio',
+                        line=dict(color='#00FF88', width=2),
+                        fill='tozeroy',
+                        fillcolor='rgba(0, 255, 136, 0.05)'
+                    ))
+                    
+                    # 2. Linha de Trailing Stop (Vermelha)
+                    fig.add_trace(go.Scatter(
+                        x=df_plot['seq'], y=df_plot['stop_hist'],
+                        mode='lines',
+                        name='Trailing Stop',
+                        line=dict(color='#FF4B4B', width=2, dash='solid')
+                    ))
+
+                    # 3. Linha de BreakEven/Inicial
+                    fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="gray", annotation_text="Inicial")
+                        
+                    fig.update_layout(
+                        template="plotly_dark",
+                        xaxis_title="Quantidade de Trades",
+                        yaxis_title="Saldo ($)",
+                        height=350,
+                        margin=dict(l=10, r=10, t=30, b=10),
+                        legend=dict(orientation="h", y=1.1)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Registre trades para ver a curva.")
+
+            with cp:
+                st.markdown("**🎯 Progresso da Fase**")
+                
+                # Meta Visual (Agregada ou Individual)
+                n_contas_prog = len(contas_g) if sel_conta_id.startswith("📊") else 1
+                meta_visual = 155100.0 * n_contas_prog
+                base_visual = 150000.0 * n_contas_prog
+                
+                if saude_final['saldo'] >= meta_visual:
+                    meta_visual = 161000.0 * n_contas_prog # Próxima fase
+                
+                progresso = 0.0
+                total_range = meta_visual - base_visual
+                ganho = saude_final['saldo'] - base_visual
+                
+                if total_range > 0:
+                    progresso = min(1.0, max(0.0, ganho / total_range))
+                
+                st.progress(progresso)
+                st.caption(f"Meta Próxima: ${meta_visual:,.0f}")
+                
+                falta_meta = meta_visual - saude_final['saldo']
+                if progresso >= 1.0:
+                    st.success("META ATINGIDA! 🚀")
+                else:
+                    st.write(f"Faltam: **${falta_meta:,.2f}**")
+
         else:
             st.info("Crie um Grupo e Contas primeiro.")
