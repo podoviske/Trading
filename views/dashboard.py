@@ -98,8 +98,8 @@ def show(user, role):
     with c_sel1:
         grupo_sel = st.selectbox("📂 Grupo", grupos_disponiveis)
     
-    # 2. Conta/Detalhe (CORREÇÃO AQUI)
-    contas_do_grupo = pd.DataFrame() # Inicializa como DataFrame vazio, não lista
+    # 2. Conta/Detalhe (CORREÇÃO DE BLINDAGEM AQUI)
+    contas_do_grupo = pd.DataFrame() # Inicia como DataFrame vazio, não lista
     
     if not df_contas_all.empty:
         if grupo_sel != "Todos":
@@ -125,19 +125,25 @@ def show(user, role):
     st.markdown("---")
 
     # --- FILTRAGEM DE DADOS ---
-    trades_filtered = df_trades_all.copy()
-    if grupo_sel != "Todos":
-        trades_filtered = trades_filtered[trades_filtered['grupo_vinculo'] == grupo_sel]
+    trades_filtered = pd.DataFrame()
+    
+    # Só filtra se existirem dados (Evita KeyError em banco vazio)
+    if not df_trades_all.empty:
+        trades_filtered = df_trades_all.copy()
         
-    trades_filtered = trades_filtered[
-        (trades_filtered['data'] >= d_inicio) & 
-        (trades_filtered['data'] <= d_fim)
-    ]
+        if grupo_sel != "Todos":
+            trades_filtered = trades_filtered[trades_filtered['grupo_vinculo'] == grupo_sel]
+        
+        # Garante que a coluna 'data' existe antes de filtrar
+        if 'data' in trades_filtered.columns:
+            trades_filtered = trades_filtered[
+                (trades_filtered['data'] >= d_inicio) & 
+                (trades_filtered['data'] <= d_fim)
+            ]
     
     if "VISÃO GERAL" in view_mode:
         contas_alvo = contas_do_grupo
     else:
-        # Filtra apenas se contas_do_grupo não estiver vazio
         if not contas_do_grupo.empty:
             contas_alvo = contas_do_grupo[contas_do_grupo['conta_identificador'] == view_mode]
         else:
@@ -162,45 +168,52 @@ def show(user, role):
                 contas_ativas += 1
 
     # --- CÁLCULOS ESTATÍSTICOS (KPIs) ---
-    wins = trades_filtered[trades_filtered['resultado'] > 0]
-    losses = trades_filtered[trades_filtered['resultado'] < 0]
-    
-    net_profit = trades_filtered['resultado'].sum() if not trades_filtered.empty else 0.0
-    gross_profit = wins['resultado'].sum() if not wins.empty else 0.0
-    gross_loss = abs(losses['resultado'].sum()) if not losses.empty else 0.0
-    
-    pf = gross_profit / gross_loss if gross_loss > 0 else 99.99
-    total_trades = len(trades_filtered)
-    win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0.0
-    
-    avg_win = wins['resultado'].mean() if not wins.empty else 0.0
-    avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0.0
-    payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
-    
-    expectancy = ( (win_rate/100) * avg_win ) - ( (1 - (win_rate/100)) * avg_loss )
-    
-    # --- MÉTRICAS TÉCNICAS (BASEADO NO REALIZADO) ---
-    avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0
-    
-    avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
-    pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0 
-    
-    lote_medio = trades_filtered['lote'].mean() if not trades_filtered.empty else 0.0
-    ativo_ref = trades_filtered['ativo'].iloc[-1] if not trades_filtered.empty else "MNQ"
-    
-    max_dd = 0.0
     if not trades_filtered.empty:
+        wins = trades_filtered[trades_filtered['resultado'] > 0]
+        losses = trades_filtered[trades_filtered['resultado'] < 0]
+        
+        net_profit = trades_filtered['resultado'].sum()
+        gross_profit = wins['resultado'].sum() if not wins.empty else 0.0
+        gross_loss = abs(losses['resultado'].sum()) if not losses.empty else 0.0
+        
+        pf = gross_profit / gross_loss if gross_loss > 0 else 99.99
+        total_trades = len(trades_filtered)
+        win_rate = (len(wins) / total_trades * 100) if total_trades > 0 else 0.0
+        
+        avg_win = wins['resultado'].mean() if not wins.empty else 0.0
+        avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0.0
+        payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
+        
+        expectancy = ( (win_rate/100) * avg_win ) - ( (1 - (win_rate/100)) * avg_loss )
+        
+        # MÉTRICAS TÉCNICAS (REALIZADO)
+        avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0
+        avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
+        pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0 
+        
+        lote_medio = trades_filtered['lote'].mean()
+        ativo_ref = trades_filtered['ativo'].iloc[-1]
+        
+        # Max Drawdown
         df_sorted = trades_filtered.sort_values('created_at')
         equity = df_sorted['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
+    else:
+        # Valores padrão se não houver trades
+        net_profit = 0.0; gross_profit = 0.0; gross_loss = 0.0; pf = 0.0
+        total_trades = 0; win_rate = 0.0; avg_win = 0.0; avg_loss = 0.0
+        payoff = 0.0; expectancy = 0.0
+        avg_pts_gain = 0.0; pts_loss_medio_real = 15.0; lote_medio = 0.0
+        ativo_ref = "MNQ"; max_dd = 0.0
+        wins = pd.DataFrame(); losses = pd.DataFrame()
 
-    # --- CÁLCULOS DE RISCO (RiskEngine + PositionSizing) ---
-    custo_stop_padrao = pts_loss_medio_real * lote_medio * MULTIPLIERS.get(ativo_ref, 2)
+    # --- CÁLCULOS DE RISCO (RiskEngine) ---
+    custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     if custo_stop_padrao == 0: custo_stop_padrao = 15 * 1 * 2
     
     risco_impacto_grupo = custo_stop_padrao * (contas_ativas if contas_ativas > 0 else 1)
     
-    # Vidas Reais
+    # Vidas Reais (Blindado)
     try:
         vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
     except:
