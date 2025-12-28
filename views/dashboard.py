@@ -190,7 +190,7 @@ def show(user, role):
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, risco_impacto_grupo)
 
     # ==============================================================================
-    # RENDERIZAÇÃO VISUAL
+    # RENDERIZAÇÃO VISUAL (RESTAURANDO O LAYOUT COMPLETO)
     # ==============================================================================
 
     # 1. DESEMPENHO GERAL
@@ -209,13 +209,15 @@ def show(user, role):
     with m3: card("Risco : Retorno", f"1 : {payoff:.2f}", "Payoff Real", "white")
     with m4: card("Drawdown Máximo", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B")
     
-    # 3. PERFORMANCE TÉCNICA (Recuperada)
+    # 3. PERFORMANCE TÉCNICA (LINHA QUE FALTAVA)
     st.markdown("### 🎯 Performance Técnica")
     t1, t2, t3, t4 = st.columns(4)
     with t1: card("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
     with t2: card("Stop Médio (Loss)", f"{avg_pts_loss:.2f} pts", "Base do Risco", "#FF4B4B")
     with t3: card("Lote Médio", f"{lote_medio:.1f}", "Contratos", "white")
     with t4: card("Total Trades", f"{total_trades}", "Executados", "white")
+
+    st.markdown("---")
 
     # 4. ANÁLISE DE SOBREVIVÊNCIA
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
@@ -233,7 +235,7 @@ def show(user, role):
         cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
         card("Prob. Ruína (Real)", f"{prob_ruina:.2f}%", "Risco Moderado", cor_r, border_color=cor_r)
 
-    # 5. INTELIGÊNCIA DE LOTE (Recuperada)
+    # 5. INTELIGÊNCIA DE LOTE (SEPARADO)
     st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
     l1, l2, l3, l4 = st.columns(4)
     with l1:
