@@ -260,12 +260,7 @@ def show(user, role):
                         saldo_atual_c = float(conta['saldo_inicial']) + lucro_total
                         hwm_prev_c = float(conta.get('pico_previo', conta['saldo_inicial']))
                         
-                        # Passar a fase informada para o cálculo correto
-                        res = ApexEngine.calculate_health(
-                            saldo_atual_c, 
-                            hwm_prev_c, 
-                            fase_informada=conta.get('fase_entrada', 'Fase 2')
-                        )
+                        res = ApexEngine.calculate_health(saldo_atual_c, hwm_prev_c)
                         
                         total_saldo += res['saldo']
                         total_hwm += res['hwm']
@@ -283,8 +278,7 @@ def show(user, role):
                     'buffer': total_buffer,
                     'stop_atual': total_stop,
                     'fase': "Visão Macro",
-                    'falta_para_trava': 0.0,
-                    'meta_proxima': 160000.0 * n_contas_calc # Default para gráfico
+                    'falta_para_trava': 0.0
                 }
                 
             else:
@@ -298,11 +292,7 @@ def show(user, role):
                     hwm_prev = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
                     saldo_inicial_plot = float(conta_ref['saldo_inicial'])
                     
-                    saude_final = ApexEngine.calculate_health(
-                        saldo_atual_est, 
-                        hwm_prev,
-                        fase_informada=conta_ref.get('fase_entrada', 'Fase 2')
-                    )
+                    saude_final = ApexEngine.calculate_health(saldo_atual_est, hwm_prev)
                 else:
                     st.warning("Conta não encontrada.")
                     st.stop()
@@ -344,33 +334,15 @@ def show(user, role):
                         start_bal = 150000.0 * n_contas_calc
                         
                         if saldo_momento >= lock_val: return stop_locked
-                        # Trailing sobe mas não desce (simplificação para gráfico histórico)
-                        # Na real precisaria calcular o HWM momento a momento
                         return max(start_bal - dd_max, saldo_momento - dd_max)
 
-                    # Recalcular HWM histórico corretamente
                     df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax()
-                    
-                    # Função de trailing mais precisa para o gráfico
-                    def get_trail_points(balances):
-                        trails = []
-                        hwm = 150000.0 * n_contas_calc
-                        lock = 155100.0 * n_contas_calc
-                        stop_lock = 150100.0 * n_contas_calc
-                        dd = 5000.0 * n_contas_calc
-                        
-                        for b in balances:
-                            hwm = max(hwm, b)
-                            if hwm >= lock:
-                                trails.append(stop_lock)
-                            else:
-                                trails.append(hwm - dd)
-                        return trails
-                        
-                    df_plot['stop_hist'] = get_trail_points(df_plot['saldo_acc'].tolist())
+                    df_plot['stop_hist'] = df_plot['hwm_hist'].apply(calc_trail_hist)
                     
                     # Meta Dinâmica para o gráfico
-                    meta_plot_val = saude_final.get('meta_proxima', 160000.0 * n_contas_calc)
+                    meta_plot_val = 155100.0 * n_contas_calc
+                    if saude_final['saldo'] >= meta_plot_val:
+                        meta_plot_val = 161000.0 * n_contas_calc
                     
                     # === PLOTLY ===
                     fig = go.Figure()
@@ -422,13 +394,12 @@ def show(user, role):
 
             with cp:
                 st.markdown("**🎯 Progresso da Fase**")
-                meta_visual = saude_final.get('meta_proxima', 160000.0 * n_contas_calc)
+                meta_visual = 155100.0 * n_contas_calc
                 base_visual = 150000.0 * n_contas_calc
                 
-                # Se estiver na fase 3 ou 4, ajusta a base
-                if saude_final['saldo'] >= (155100.0 * n_contas_calc):
-                     base_visual = 155100.0 * n_contas_calc
-
+                if saude_final['saldo'] >= meta_visual:
+                    meta_visual = 161000.0 * n_contas_calc
+                
                 progresso = 0.0
                 total_range = meta_visual - base_visual
                 ganho = saude_final['saldo'] - base_visual
