@@ -249,7 +249,7 @@ def show(user, role):
         card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco Histórico: ${risco_impacto_grupo:,.0f}", cor_v)
     with k4:
         cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
-        card("Prob. Ruína (Real)", f"{prob_ruina:.2f}%", "Risco Moderado", cor_r, border_color=cor_r)
+        card("Prob. Ruína (Real)", f"{prob_ruina:.5f}%", "Risco Moderado", cor_r, border_color=cor_r)
 
     st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
     l1, l2, l3, l4 = st.columns(4)
