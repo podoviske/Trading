@@ -389,16 +389,16 @@ if check_password():
             st.session_state.clear()
             st.rerun()
 
-    # ==========================================================================
-    # 7. ABA: DASHBOARD (MÉTRICAS + GRÁFICOS)
-    # ==========================================================================
-    if selected == "Dashboard":
+    # ==============================================================================
+    # 7. ABA: DASHBOARD (v201 - VISUAL RESTAURADO + CORREÇÕES)
+    # ==============================================================================
+    elif selected == "Dashboard":
         st.title(f"📊 Central de Controle ({USER})")
         
         df_raw = load_trades_db()
         df_contas = load_contas_config()
         
-        # Inicialização de Variáveis de Segurança (Evita NameError)
+        # INICIALIZAÇÃO DE VARIÁVEIS DE SEGURANÇA (Para não quebrar se não tiver dados)
         win_rate_dec = 0.0; loss_rate_dec = 0.0; payoff = 0.0; total_trades = 0
         r_min_show = 0.0; r_max_show = 0.0
         
@@ -530,7 +530,7 @@ if check_password():
                     if prob_ruina > 10.0 and total_trades >= 5 and expectancy > 0:
                         st.markdown(f"""<div class="piscante-erro">💀 ALERTA DE RUÍNA: {prob_ruina:.2f}% 💀<br><span style="font-size:16px;">REDUZA O LOTE AGORA.</span></div>""", unsafe_allow_html=True)
 
-                    # --- EXIBIÇÃO CARDS (AGORA COMPLETO) ---
+                    # --- EXIBIÇÃO CARDS (AGORA COMPLETO IGUAL AO PRINT) ---
                     
                     # LINHA 1: GERAL
                     st.markdown("##### 🏁 Desempenho Geral")
@@ -605,10 +605,11 @@ if check_password():
                         r_min_show = 0.0; r_max_show = 0.0
                         cor_k = "#888"; status_k = "DADOS INSUFICIENTES"
 
-                    ka, kb, kc = st.columns(3)
-                    with ka: card_metric("HALF-KELLY", f"{kelly_half*100:.1f}%", "Teto Matemático", "#888")
-                    with kb: card_metric("RISCO FINANCEIRO", f"${r_min_show:,.0f}", "Sugerido", cor_k)
-                    with kc: 
+                    ka, kb, kc, kd = st.columns(4) # AJUSTADO PARA 4 COLUNAS IGUAL PRINT
+                    with ka: card_metric("BUFFER DISPONÍVEL", f"${total_buffer_real:,.0f}", f"Stop: ${stop_atual_val:,.0f}", "#00FF88")
+                    with kb: card_metric("HALF-KELLY", f"{kelly_half*100:.1f}%", "Teto Matemático", "#888")
+                    with kc: card_metric("RISCO FINANCEIRO", f"${r_min_show:,.0f}", "Sugerido", cor_k)
+                    with kd: 
                         st.markdown(f"""<div style="background: #161616; border: 2px solid {cor_k}; border-radius: 12px; padding: 10px; text-align: center;">
                             <div style="color:#888; font-size:11px; font-weight:bold;">SUGESTÃO DE LOTE</div>
                             <div style="color:{cor_k}; font-size:26px; font-weight:900;">{lote_sug} ctrs</div>
