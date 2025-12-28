@@ -140,7 +140,7 @@ def show(user, role):
         else:
             contas_alvo = pd.DataFrame()
 
-    # --- ENGINE (BUFFER) ---
+    # --- ENGINE (BUFFER COM HWM DINÂMICO) ---
     total_buffer = 0.0
     contas_ativas = 0
     
@@ -152,14 +152,20 @@ def show(user, role):
         for _, conta in contas_alvo.iterrows():
             if conta['status_conta'] == 'Ativa':
                 saldo_ini = float(conta['saldo_inicial'])
-                hwm_prev = float(conta['pico_previo'])
+                hwm_db = float(conta['pico_previo']) 
                 saldo_atual_est = saldo_ini + lucro_por_conta_est
-                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_prev)
+                hwm_dinamico = max(hwm_db, saldo_atual_est)
+                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_dinamico)
                 total_buffer += saude['buffer']
                 contas_ativas += 1
 
     # --- KPI CALCULATIONS ---
+    # Variáveis para Risk Engine
+    results_list = [] # SCAN ATÔMICO: Lista crua de resultados
+    
     if not trades_filtered.empty:
+        results_list = trades_filtered['resultado'].tolist() # Extrai a lista real
+        
         wins = trades_filtered[trades_filtered['resultado'] > 0]
         losses = trades_filtered[trades_filtered['resultado'] < 0]
         
@@ -193,7 +199,7 @@ def show(user, role):
         lote_medio = 0.0; ativo_ref = "MNQ"; max_dd = 0.0
         wins = pd.DataFrame(); losses = pd.DataFrame()
 
-    # --- RISK ENGINE ---
+    # --- RISK ENGINE (ATOMICO) ---
     custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     if custo_stop_padrao == 0: custo_stop_padrao = 15 * 1 * 2
     
@@ -204,7 +210,9 @@ def show(user, role):
     except:
         vidas_u = total_buffer / risco_impacto_grupo if risco_impacto_grupo > 0 else 0.0
     
-    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer)
+    # AQUI ESTÁ A MUDANÇA: Passamos 'results_list' para o cálculo preciso
+    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list)
+    
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao)
@@ -243,13 +251,14 @@ def show(user, role):
         card("Z-Score (Edge)", f"{edge_calc:.4f}", "Edge Matemático", cor_edge)
     with k2:
         cor_buf = "#00FF88" if total_buffer > 2000 else "#FF4B4B"
-        card("Buffer Real (Hoje)", f"${total_buffer:,.0f}", f"{contas_ativas} Contas Ativas", cor_buf)
+        card("Buffer Real (Trailing)", f"${total_buffer:,.0f}", f"{contas_ativas} Contas | Trailing Ajustado", cor_buf)
     with k3:
         cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
         card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco Histórico: ${risco_impacto_grupo:,.0f}", cor_v)
     with k4:
+        # Agora o cálculo é ATÔMICO (sensível à volatilidade real)
         cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
-        card("Prob. Ruína (Real)", f"{prob_ruina:.5f}%", "Risco Moderado", cor_r, border_color=cor_r)
+        card("Prob. Ruína (Real)", f"{prob_ruina:.4f}%", "Risco Moderado", cor_r, border_color=cor_r)
 
     st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
     l1, l2, l3, l4 = st.columns(4)
@@ -263,7 +272,7 @@ def show(user, role):
     with l4:
         card("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA DE ACELERAÇÃO", "#00FF88", border_color="#00FF88")
 
-    # --- 6. GRÁFICOS (CORRIGIDOS) ---
+    # --- GRÁFICOS ---
     st.markdown("---")
     st.markdown("### 📈 Evolução Financeira")
     
@@ -277,7 +286,6 @@ def show(user, role):
             
             view_type = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
             
-            # Define Eixos
             if view_type == "Sequência de Trades":
                 trades_plot['seq'] = range(1, len(trades_plot) + 1)
                 x_axis = trades_plot['seq']
@@ -286,38 +294,30 @@ def show(user, role):
                 x_axis = trades_plot['created_at']
                 x_title = "Data / Hora"
 
-            # === GRÁFICO DE ÁREA COM ZOOM INTELIGENTE (IGUAL ABA CONTAS) ===
             fig = go.Figure()
-
-            # 1. Área de Saldo
             fig.add_trace(go.Scatter(
                 x=x_axis, y=trades_plot['saldo_acumulado'],
                 mode='lines', name='Patrimônio',
                 line=dict(color='#00FF88', width=2),
                 fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
             ))
-
-            # 2. Linha Inicial
             fig.add_hline(y=saldo_inicial_base, line_dash="dash", line_color="gray", annotation_text="Inicial")
             
-            # Lógica de Zoom
             y_vals = trades_plot['saldo_acumulado']
             min_y = min(y_vals.min(), saldo_inicial_base)
             max_y = max(y_vals.max(), saldo_inicial_base)
-            
             diff = max_y - min_y
-            padding = max(500.0, diff * 0.15) # Mínimo de $500 de margem
+            padding = max(500.0, diff * 0.15)
 
             fig.update_layout(
                 title=f"Curva de Patrimônio",
                 template="plotly_dark",
                 xaxis_title=x_title,
                 yaxis_title="Patrimônio ($)",
-                yaxis=dict(range=[min_y - padding, max_y + padding]), # <--- ZOOM APLICADO
+                yaxis=dict(range=[min_y - padding, max_y + padding]),
                 height=400,
                 margin=dict(l=10, r=10, t=40, b=10)
             )
-            
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Sem dados para exibir gráfico.")
@@ -327,7 +327,6 @@ def show(user, role):
             st.write("") 
             st.write("") 
             
-            # === PIZZA ESTILIZADA (BORDAS PRETAS) ===
             ctx_perf = trades_filtered.groupby('contexto')['resultado'].sum().reset_index()
             colors = ['#00FF88' if x >= 0 else '#FF4B4B' for x in ctx_perf['resultado']]
             
@@ -336,10 +335,7 @@ def show(user, role):
                 values=abs(ctx_perf['resultado']),
                 hole=.5,
                 textinfo='label+percent',
-                marker=dict(
-                    colors=colors,
-                    line=dict(color='#161616', width=3) # <--- BORDAS PRETAS GROSSAS (CORTE)
-                )
+                marker=dict(colors=colors, line=dict(color='#161616', width=3))
             )])
             
             fig_pie.update_layout(
@@ -348,28 +344,23 @@ def show(user, role):
                 showlegend=False,
                 annotations=[dict(text='Contexto', x=0.5, y=0.5, font_size=14, showarrow=False)]
             )
-            
             st.plotly_chart(fig_pie, use_container_width=True)
 
-    # --- GRÁFICOS TEMPORAIS ---
+    # --- TEMPORAL ---
     st.markdown("### 📅 Performance Temporal")
-    
     if not trades_filtered.empty:
         t1, t2 = st.columns(2)
-        
         with t1:
             daily_perf = trades_filtered.groupby('data')['resultado'].sum().reset_index()
             fig_daily = px.bar(daily_perf, x='data', y='resultado', title="Resultado Diário (Timeline)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
             fig_daily.update_layout(showlegend=False, xaxis_title="Data", yaxis_title="Resultado ($)")
             st.plotly_chart(fig_daily, use_container_width=True)
-            
         with t2:
             trades_filtered['dia_semana'] = pd.to_datetime(trades_filtered['data']).dt.day_name()
             dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
             trades_filtered['dia_pt'] = trades_filtered['dia_semana'].map(dias_pt)
             week_order = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']
             week_perf = trades_filtered.groupby('dia_pt')['resultado'].sum().reindex(week_order).reset_index()
-            
             fig_week = px.bar(week_perf, x='dia_pt', y='resultado', title="Dia da Semana (Estatístico)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
             fig_week.update_layout(showlegend=False, xaxis_title="Dia", yaxis_title="Resultado ($)")
             st.plotly_chart(fig_week, use_container_width=True)
