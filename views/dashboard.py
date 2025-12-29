@@ -7,7 +7,7 @@ from supabase import create_client
 
 # Importando seus motores matemáticos
 from modules.logic import ApexEngine, RiskEngine, PositionSizing
-# [NOVO] Importando a função de salvar HWM
+# Importando a função de salvar HWM
 from modules.database import update_hwm 
 
 # --- 1. CONFIGURAÇÕES E CONEXÃO ---
@@ -246,7 +246,7 @@ def show(user, role):
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao)
 
     # ==============================================================================
-    # RENDERIZAÇÃO (MANTIDA IDÊNTICA AO SEU ORIGINAL)
+    # RENDERIZAÇÃO
     # ==============================================================================
 
     st.markdown("### 🏁 Desempenho Geral")
@@ -274,9 +274,35 @@ def show(user, role):
 
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
+    
+    # --- [NOVA LÓGICA DE Z-SCORE PROFISSIONAL] ---
+    num_trades_risco = len(results_list_ruina) # Usa lista completa, não filtrada
+    
+    # 1. Calcula o Z-Score Serial (O Sensor de Colisão)
+    z_serial = RiskEngine.calculate_z_score_serial(results_list_ruina)
+    
+    # 2. Mantém o Edge Matemático (O GPS) para o subtexto
+    edge_estatico = edge_calc 
+
+    # 3. Define Cores e Mensagens por Maturidade
+    if num_trades_risco < 15:
+        cor_z = "#888888" # Cinza (Irrelevante)
+        val_z = "---"
+        sub_z = "Amostra Insuficiente"
+    elif num_trades_risco < 30:
+        cor_z = "#FFFF00" # Amarelo (Calibrando)
+        val_z = f"{z_serial:.2f}"
+        sub_z = f"Calibrando ({num_trades_risco}/30)"
+    else:
+        # Acima de 30 trades, a cor reflete a saúde da sequência
+        cor_z = "#00FF88" if z_serial > 0 else "#FF4B4B"
+        val_z = f"{z_serial:.2f}"
+        status_edge = "Edge +" if edge_estatico > 0 else "Edge -"
+        sub_z = f"{status_edge} (Robustez)"
+
     with k1:
-        cor_edge = "#00FF88" if edge_calc > 0 else "#FF4B4B"
-        card("Z-Score (Edge)", f"{edge_calc:.4f}", "Edge Matemático", cor_edge)
+        card("Z-Score (Sequência)", val_z, sub_z, cor_z, border_color=cor_z)
+        
     with k2:
         # Buffer agora mostra a realidade
         cor_buf = "#00FF88" if total_buffer > 2000 else "#FF4B4B"
