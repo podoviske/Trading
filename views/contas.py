@@ -5,9 +5,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 from supabase import create_client
 import time
-import math  # Importante para arredondar os trades para cima
+import math
 
-# Importa o Cérebro (Certifique-se que o logic.py foi atualizado conforme combinamos antes)
+# Importa o Cérebro
 from modules.logic import ApexEngine
 
 # --- 1. CONEXÃO ---
@@ -130,10 +130,8 @@ def show(user, role):
                 g_sel = col_a.selectbox("Grupo", sorted(df_g['nome'].unique()))
                 c_id = col_b.text_input("Identificador (Ex: PA-001)")
                 
-                # [MODIFICAÇÃO IMPORTANTE AQUI - LABELS CLAROS]
-                s_ini = col_a.number_input("Saldo ATUAL (Hoje na Corretora) ($)", value=150000.0, step=100.0, help="Não coloque o saldo inicial de fábrica! Coloque quanto tem lá AGORA.")
-                p_pre = col_b.number_input("Pico Máximo (HWM - Topo Histórico) ($)", value=150000.0, step=100.0, help="Qual foi o maior valor que essa conta já viu?")
-                
+                s_ini = col_a.number_input("Saldo ATUAL na Corretora ($)", value=150000.0, step=100.0)
+                p_pre = col_b.number_input("Pico Máximo (HWM)", value=150000.0, step=100.0)
                 fase_ini = col_a.selectbox("Fase Inicial (Referência)", ["Fase 1", "Fase 2", "Fase 3", "Fase 4"])
                 
                 if st.form_submit_button("Cadastrar Conta"):
@@ -171,7 +169,6 @@ def show(user, role):
                     
                     for _, row in contas_g.iterrows():
                         st_icon = "🟢" if row['status_conta'] == "Ativa" else "🔴"
-                        # Cálculo básico para o card da visão geral
                         saldo_atual = float(row['saldo_inicial']) + lucro_grupo
                         delta = saldo_atual - float(row['saldo_inicial'])
                         cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
@@ -220,7 +217,7 @@ def show(user, role):
         else:
             st.info("Nenhuma conta configurada.")
 
-    # --- ABA 4: MONITOR DE PERFORMANCE (MANTIDA E CONECTADA AO LOGIC.PY) ---
+    # --- ABA 4: MONITOR DE PERFORMANCE ---
     with t4:
         st.subheader("🚀 Monitor de Grupo (Apex Engine)")
         df_c = load_contas(user)
@@ -263,7 +260,6 @@ def show(user, role):
                         saldo_atual_c = float(conta['saldo_inicial']) + lucro_total
                         hwm_prev_c = float(conta.get('pico_previo', conta['saldo_inicial']))
                         
-                        # [CONEXÃO COM LOGIC.PY] Passando a fase corretamente
                         res = ApexEngine.calculate_health(saldo_atual_c, hwm_prev_c, conta.get('fase_entrada', 'Fase 1'))
                         
                         total_saldo += res['saldo']
@@ -296,7 +292,6 @@ def show(user, role):
                     hwm_prev = float(conta_ref.get('pico_previo', conta_ref['saldo_inicial']))
                     saldo_inicial_plot = float(conta_ref['saldo_inicial'])
                     
-                    # [CONEXÃO COM LOGIC.PY]
                     saude_final = ApexEngine.calculate_health(saldo_atual_est, hwm_prev, conta_ref.get('fase_entrada', 'Fase 1'))
                 else:
                     st.warning("Conta não encontrada.")
@@ -322,7 +317,7 @@ def show(user, role):
             
             cg, cp = st.columns([2.5, 1])
 
-            # --- GRÁFICO (CORES DEFINITIVAS) ---
+            # --- GRÁFICO ---
             with cg:
                 st.markdown(f"**🌊 {titulo_grafico}**")
                 if not trades_g.empty:
@@ -331,7 +326,6 @@ def show(user, role):
                     df_plot['saldo_acc'] = df_plot['resultado'].cumsum() + saldo_inicial_plot
                     df_plot['seq'] = range(1, len(df_plot)+1)
                     
-                    # Trailing Simulado
                     def calc_trail_hist(saldo_momento):
                         lock_val = 155100.0 * n_contas_calc
                         stop_locked = 150100.0 * n_contas_calc
@@ -344,15 +338,12 @@ def show(user, role):
                     df_plot['hwm_hist'] = df_plot['saldo_acc'].cummax()
                     df_plot['stop_hist'] = df_plot['hwm_hist'].apply(calc_trail_hist)
                     
-                    # Meta Dinâmica para o gráfico
                     meta_plot_val = 155100.0 * n_contas_calc
                     if saude_final['saldo'] >= meta_plot_val:
                         meta_plot_val = 161000.0 * n_contas_calc
                     
-                    # === PLOTLY ===
                     fig = go.Figure()
                     
-                    # 1. Saldo (AZUL)
                     fig.add_trace(go.Scatter(
                         x=df_plot['seq'], y=df_plot['saldo_acc'],
                         mode='lines', name='Patrimônio',
@@ -360,27 +351,20 @@ def show(user, role):
                         fill='tozeroy', fillcolor='rgba(41, 98, 255, 0.1)'
                     ))
                     
-                    # 2. Stop (VERMELHO)
                     fig.add_trace(go.Scatter(
                         x=df_plot['seq'], y=df_plot['stop_hist'],
                         mode='lines', name='Trailing Stop',
                         line=dict(color='#FF4B4B', width=2, dash='solid')
                     ))
 
-                    # 3. Linha Inicial (CINZA SUTIL)
                     fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="#444", annotation_text="Inicial")
-
-                    # 4. Linha de Meta (VERDE NEON)
                     fig.add_hline(y=meta_plot_val, line_dash="dash", line_color="#00FF88", annotation_text="Meta")
                     
-                    # --- ZOOM ---
                     y_values = pd.concat([df_plot['saldo_acc'], df_plot['stop_hist']])
                     min_y = y_values.min()
                     max_y = y_values.max()
-                    
                     min_y = min(min_y, saldo_inicial_plot)
                     max_y = max(max_y, meta_plot_val)
-                    
                     diff = max_y - min_y
                     padding = max(1500.0, diff * 0.15)
                     
@@ -422,20 +406,18 @@ def show(user, role):
                 else:
                     st.write(f"Faltam: **${falta_meta:,.2f}**")
                     
-                   # --- NOVO: ESTIMATIVA DE TRADES FALTANTES COM PROTEÇÃO ---
-        # Este bloco deve estar alinhado com o 'if total_range > 0:' acima
-        if not trades_g.empty and 'resultado' in trades_g.columns:
-            wins = trades_g[trades_g['resultado'] > 0]
-            avg_win = wins['resultado'].mean() if not wins.empty else 0.0
-            
-            if avg_win > 0 and falta_meta > 0:
-                trades_left = math.ceil(falta_meta / avg_win)
-                st.caption(f"🎯 Aprox. **{trades_left} trades** (média ${avg_win:,.0f})")
-            else:
-                st.caption("Faça gains para estimar trades.")
-        else:
-            st.caption("Aguardando histórico de trades para estimativas.")
+                # --- NOVO: ESTIMATIVA DE TRADES FALTANTES COM PROTEÇÃO ---
+                if not trades_g.empty and 'resultado' in trades_g.columns:
+                    wins = trades_g[trades_g['resultado'] > 0]
+                    avg_win = wins['resultado'].mean() if not wins.empty else 0.0
+                    
+                    if avg_win > 0 and falta_meta > 0:
+                        trades_left = math.ceil(falta_meta / avg_win)
+                        st.caption(f"🎯 Aprox. **{trades_left} trades** (média ${avg_win:,.0f})")
+                    else:
+                        st.caption("Faça gains para estimar trades.")
+                else:
+                    st.caption("Aguardando histórico de trades para estimativas.")
 
-    # Este ELSE deve estar alinhado com o 'if not df_c.empty:' que inicia a aba
-    else:
-        st.info("Crie um Grupo e Contas primeiro.")
+        else:
+            st.info("Crie um Grupo e Contas primeiro.")
