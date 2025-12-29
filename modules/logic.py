@@ -32,7 +32,7 @@ class ApexEngine:
         # 3. Buffer Real
         buffer = saldo_atual - stop_atual
         
-        # 4. Status Visuais (RESTAURADOS - CORRIGE O ERRO DA ABA CONTAS)
+        # 4. Status Visuais
         travado = stop_atual >= TRAVA_PROFIT
         status_trailing = f"Travado em ${stop_atual:,.0f}" if travado else "Móvel (Subindo)"
         
@@ -47,19 +47,21 @@ class ApexEngine:
             "stop_atual": stop_atual,
             "buffer": max(0.0, buffer),
             "fase": fase_informada,
-            "status_trailing": status_trailing,      # <--- Chave que faltava
-            "falta_para_trava": max(0.0, falta_para_trava) # <--- Chave que faltava
+            "status_trailing": status_trailing,
+            "falta_para_trava": max(0.0, falta_para_trava)
         }
 
 class RiskEngine:
     @staticmethod
     def calculate_lives(total_buffer, custo_stop, contas_ativas):
+        """Calcula quantas 'vidas' restam baseadas no custo médio do stop."""
         if custo_stop <= 0: return 0.0
         risco_grupo = custo_stop * (contas_ativas if contas_ativas > 0 else 1)
         return total_buffer / risco_grupo
 
     @staticmethod
     def calculate_ruin(win_rate, avg_win, avg_loss, capital, trades_results=None):
+        """Calcula a Probabilidade de Ruína usando variância atômica."""
         if capital <= 0: return 100.0
         if avg_loss == 0 and avg_win == 0: return 0.0
         
@@ -82,9 +84,63 @@ class RiskEngine:
             return min(100.0, math.exp(arg) * 100.0)
         except: return 100.0
 
+    @staticmethod
+    def calculate_z_score_serial(trades_results):
+        """
+        Calcula o Z-Score Serial (Runs Test) para detectar se os ganhos/perdas
+        estão vindo em sequências perigosas (Agrupamento) ou aleatórias.
+        """
+        if not trades_results or len(trades_results) < 2:
+            return 0.0
+
+        # 1. Converter sequência para binário (Win=1, Loss=-1)
+        # Ignora breakeven (0.0) para não sujar a sequência
+        binary_sequence = []
+        for r in trades_results:
+            if r > 0: binary_sequence.append(1)
+            elif r < 0: binary_sequence.append(-1)
+        
+        n = len(binary_sequence)
+        if n < 2: return 0.0
+
+        # 2. Contar Wins e Losses
+        n_plus = binary_sequence.count(1)
+        n_minus = binary_sequence.count(-1)
+
+        # Se só houver vitórias ou só derrotas, não há desvio (Z=0 ou indefinido)
+        if n_plus == 0 or n_minus == 0:
+            return 0.0 # Estatisticamente inconclusivo, retorna neutro
+
+        # 3. Contar 'Runs' (Sequências)
+        # Ex: W, W, L, W = 3 runs (WW, L, W)
+        runs = 1
+        for i in range(1, n):
+            if binary_sequence[i] != binary_sequence[i-1]:
+                runs += 1
+
+        # 4. Cálculo Estatístico (Wald-Wolfowitz)
+        # Média Esperada de Runs (Mu)
+        mu = (2 * n_plus * n_minus) / n + 1
+
+        # Desvio Padrão Esperado (Sigma)
+        variance_numerator = (mu - 1) * (mu - 2)
+        variance_denominator = n - 1
+        
+        if variance_denominator <= 0: return 0.0
+        
+        sigma = math.sqrt(variance_numerator / variance_denominator)
+
+        if sigma == 0: return 0.0
+
+        # 5. Z-Score Final
+        z = (runs - mu) / sigma
+        
+        return z
+
 class PositionSizing:
     @staticmethod
     def calculate_limits(win_rate, payoff, capital, risco_por_trade):
+        """Calcula sugestão de lote baseada em Half-Kelly."""
         if payoff <= 0 or win_rate <= 0: return 0, 0, 0.0
         w = win_rate / 100.0
         kelly_full = w - ((1.0 - w) / payoff)
