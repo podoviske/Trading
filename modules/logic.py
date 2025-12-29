@@ -61,28 +61,74 @@ class RiskEngine:
 
     @staticmethod
     def calculate_ruin(win_rate, avg_win, avg_loss, capital, trades_results=None):
-        """Calcula a Probabilidade de Ruína usando variância atômica."""
+        """
+        🔥 APEX-SHIELD PROTOCOL (Risco de Ruína v2.0) 🔥
+        Calcula a Probabilidade de Ruína Operacional considerando:
+        1. Penalidade por Baixa Amostragem (Confidence Penalty).
+        2. Volatilidade das Perdas (Stress Loss).
+        3. Sequência de Agrupamento (Z-Score Multiplier).
+        """
         if capital <= 0: return 100.0
         if avg_loss == 0 and avg_win == 0: return 0.0
         
-        p = win_rate / 100.0
-        q = 1.0 - p
-        mu = (p * avg_win) - (q * avg_loss)
+        # --- CAMADA 1: CONFIDENCE PENALTY (Amostragem) ---
+        # Se N < 100, penalizamos o Win Rate usando Erro Padrão.
+        n_trades = len(trades_results) if trades_results else 0
+        wr_raw = win_rate / 100.0
         
-        if mu <= 0: return 100.0
-        
-        # Scan Atômico (Variância Real)
-        if trades_results is not None and len(trades_results) > 2:
-            variance = np.var(trades_results, ddof=1)
+        if 0 < n_trades < 100:
+            # Margem de erro para intervalo de confiança de 95%
+            margin_error = 1.96 * math.sqrt((wr_raw * (1 - wr_raw)) / n_trades)
+            # O WR usado no cálculo será o Limite Inferior (Pior Cenário)
+            p_adjusted = max(0.1, wr_raw - margin_error)
         else:
-            variance = (p * (avg_win**2)) + (q * (avg_loss**2)) - (mu**2)
-            
-        if variance <= 0: return 0.0
+            p_adjusted = wr_raw
+
+        q_adjusted = 1.0 - p_adjusted
+
+        # --- CAMADA 2: STRESS LOSS (Volatilidade de Perda) ---
+        # Se as perdas oscilam muito, assumimos um Loss maior que a média.
+        loss_input = abs(avg_loss)
         
+        if trades_results:
+            # Filtra apenas os losses para ver a volatilidade do "lado ruim"
+            losses_only = [x for x in trades_results if x < 0]
+            if len(losses_only) > 1:
+                std_dev_loss = np.std(losses_only, ddof=1)
+                # O Loss considerado é a Média + 1 Desvio Padrão
+                loss_input += std_dev_loss
+
+        # Recalcula Mu (Vantagem) com os dados "estressados"
+        mu_stress = (p_adjusted * avg_win) - (q_adjusted * loss_input)
+        
+        # Se no cenário estressado a vantagem some, risco é total
+        if mu_stress <= 0: return 100.0
+        
+        # Cálculo da Variância do Sistema Estressado
+        variance_stress = (p_adjusted * (avg_win**2)) + (q_adjusted * (loss_input**2)) - (mu_stress**2)
+        if variance_stress <= 0: return 0.0
+
+        # --- FÓRMULA DE DIFUSÃO BASE ---
         try:
-            arg = -2 * mu * capital / variance
-            return min(100.0, math.exp(arg) * 100.0)
-        except: return 100.0
+            arg = -2 * mu_stress * capital / variance_stress
+            prob_base = math.exp(arg) * 100.0
+        except:
+            prob_base = 100.0
+
+        # --- CAMADA 3: Z-SCORE MULTIPLIER (Panic Factor) ---
+        # Se a sequência atual é perigosa (Z < -1.0), inflamos o risco.
+        prob_final = prob_base
+        
+        # Chama a função vizinha para pegar o Z-Score atual
+        z_score = RiskEngine.calculate_z_score_serial(trades_results)
+        
+        if z_score < -1.0:
+            # Multiplicador exponencial baseado na gravidade do agrupamento
+            # Ex: Z=-1.2 -> Multiplica por (1 + 1.44) = 2.44x
+            multiplier = 1 + (abs(z_score) ** 2)
+            prob_final = prob_base * multiplier
+
+        return min(100.0, prob_final)
 
     @staticmethod
     def calculate_z_score_serial(trades_results):
@@ -94,7 +140,6 @@ class RiskEngine:
             return 0.0
 
         # 1. Converter sequência para binário (Win=1, Loss=-1)
-        # Ignora breakeven (0.0) para não sujar a sequência
         binary_sequence = []
         for r in trades_results:
             if r > 0: binary_sequence.append(1)
@@ -107,22 +152,18 @@ class RiskEngine:
         n_plus = binary_sequence.count(1)
         n_minus = binary_sequence.count(-1)
 
-        # Se só houver vitórias ou só derrotas, não há desvio (Z=0 ou indefinido)
         if n_plus == 0 or n_minus == 0:
-            return 0.0 # Estatisticamente inconclusivo, retorna neutro
+            return 0.0 
 
         # 3. Contar 'Runs' (Sequências)
-        # Ex: W, W, L, W = 3 runs (WW, L, W)
         runs = 1
         for i in range(1, n):
             if binary_sequence[i] != binary_sequence[i-1]:
                 runs += 1
 
         # 4. Cálculo Estatístico (Wald-Wolfowitz)
-        # Média Esperada de Runs (Mu)
         mu = (2 * n_plus * n_minus) / n + 1
 
-        # Desvio Padrão Esperado (Sigma)
         variance_numerator = (mu - 1) * (mu - 2)
         variance_denominator = n - 1
         
