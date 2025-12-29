@@ -140,14 +140,13 @@ def show(user, role):
         avg_win = wins['resultado'].mean(); avg_loss = abs(losses['resultado'].mean())
         payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
         expectancy = ((win_rate/100) * avg_win) - ((1 - (win_rate/100)) * avg_loss)
-        avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0 # Essa linha não deu erro
+        avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0 
         avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
         pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0
         lote_medio = trades_filtered_view['lote'].mean(); ativo_ref = trades_filtered_view['ativo'].iloc[-1]
         equity = trades_filtered_view.sort_values('created_at')['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
     else:
-        # CORREÇÃO AQUI: Adicionei avg_pts_gain=0.0 que faltava
         net_profit=0; pf=0; win_rate=0; expectancy=0; avg_win=0; avg_loss=0; payoff=0; max_dd=0; total_trades=0
         pts_loss_medio_real=15.0; avg_pts_gain=0.0; lote_medio=0; ativo_ref="MNQ"; wins=pd.DataFrame(); losses=pd.DataFrame()
 
@@ -218,7 +217,13 @@ def show(user, role):
 
     st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
     l1, l2, l3, l4 = st.columns(4)
-    with l1: card("Buffer Disponível", f"${total_buffer:,.0f}", "Base p/ Lote (Apex)", "white")
+    with l1:
+        # Buffer Color Logic
+        if total_buffer > 2500: cor_buf_lote = "#00FF88"
+        elif total_buffer > 1000: cor_buf_lote = "#FFFF00"
+        else: cor_buf_lote = "#FF4B4B"
+        card("Buffer Disponível", f"${total_buffer:,.0f}", "Base p/ Lote (Apex)", cor_buf_lote, border_color=cor_buf_lote)
+
     with l2: card("Half-Kelly", f"{kelly_pct*100:.1f}%", "Aproveitamento", "#888")
     with l3: card("Risco Financeiro", f"${total_buffer * kelly_pct:,.0f}", "Alocação Sugerida", "#00FF88")
     with l4: card("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA DE OPERAÇÃO", "#00FF88", border_color="#00FF88")
