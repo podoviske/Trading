@@ -140,13 +140,16 @@ def show(user, role):
         avg_win = wins['resultado'].mean(); avg_loss = abs(losses['resultado'].mean())
         payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
         expectancy = ((win_rate/100) * avg_win) - ((1 - (win_rate/100)) * avg_loss)
-        pts_loss_medio_real = abs(losses['pts_medio'].mean()) if not losses.empty else 15.0
+        avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0 # Essa linha não deu erro
+        avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
+        pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0
         lote_medio = trades_filtered_view['lote'].mean(); ativo_ref = trades_filtered_view['ativo'].iloc[-1]
         equity = trades_filtered_view.sort_values('created_at')['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
     else:
+        # CORREÇÃO AQUI: Adicionei avg_pts_gain=0.0 que faltava
         net_profit=0; pf=0; win_rate=0; expectancy=0; avg_win=0; avg_loss=0; payoff=0; max_dd=0; total_trades=0
-        pts_loss_medio_real=15.0; lote_medio=0; ativo_ref="MNQ"; wins=pd.DataFrame(); losses=pd.DataFrame()
+        pts_loss_medio_real=15.0; avg_pts_gain=0.0; lote_medio=0; ativo_ref="MNQ"; wins=pd.DataFrame(); losses=pd.DataFrame()
 
     custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
@@ -182,7 +185,7 @@ def show(user, role):
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
     
-    # 1. Z-SCORE SERIAL (SENSOR DE COLISÃO)
+    # 1. LOGICA Z-SCORE SERIAL
     num_trades_risco = len(results_list_full)
     z_serial = RiskEngine.calculate_z_score_serial(results_list_full)
     
@@ -193,21 +196,23 @@ def show(user, role):
     else:
         cor_zs = "#00FF88" if z_serial > 0 else "#FF4B4B"
         val_zs = f"{z_serial:.2f}"; sub_zs = "Consistência (Runs)"
+
     with k1: card("Z-Score (Sequência)", val_zs, sub_zs, cor_zs, border_color=cor_zs)
 
-    # 2. Z-SCORE EDGE (GPS DE LUCRO)
+    # 2. LOGICA Z-SCORE EDGE
     if num_trades_risco < 15:
         cor_ze = "#888888"; val_ze = "---"; sub_ze = "Amostra Insuficiente"
     else:
         cor_ze = "#00FF88" if edge_calc > 0 else "#FF4B4B"
         val_ze = f"{edge_calc:.4f}"; sub_ze = "Expectativa (GPS)"
+
     with k2: card("Z-Score (Edge)", val_ze, sub_ze, cor_ze, border_color=cor_ze)
     
     # 3. VIDAS REAIS
     cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
     with k3: card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco: ${custo_stop_padrao:,.0f}", cor_v)
     
-    # 4. PROBABILIDADE DE RUÍNA
+    # 4. PROBABILIDADE DE RUINA
     cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
     with k4: card("Prob. Ruína", f"{prob_ruina:.4f}%", "Risco de Quebra", cor_r, border_color=cor_r)
 
