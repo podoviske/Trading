@@ -172,20 +172,32 @@ class RiskEngine:
 class PositionSizing:
     @staticmethod
     def calculate_limits(win_rate, payoff, capital, risco_por_trade):
-        """Calcula sugestão de lote baseada em Half-Kelly."""
-        if payoff <= 0 or win_rate <= 0: return 0, 0, 0.0
-        w = win_rate / 100.0
-        kelly_full = w - ((1.0 - w) / payoff)
+        """
+        Calcula Lote Tático para MNQ (Micro Nasdaq).
+        Regra de Ouro: Manter sempre entre 15 a 20 vidas (trades) de buffer.
+        """
+        # 1. Definição do Risco MNQ (15 pontos x $2)
+        RISK_MNQ = 30.0
         
-        if kelly_full <= 0: return 0, 0, 0.0
+        if capital <= 0: return 0, 0, 0.0
+
+        # 2. Cálculo Baseado em Vidas (Sobrevivência)
+        # Se eu quero ter 20 vidas, divido o buffer por 20. O resultado divido por $30.
+        # Lote Conservador (20 vidas)
+        lote_min = int((capital / 20) / RISK_MNQ)
         
-        kelly_safe = kelly_full / 2.0
-        risk_cash = capital * kelly_safe
+        # Lote Agressivo (15 vidas)
+        lote_max = int((capital / 15) / RISK_MNQ)
         
-        if risco_por_trade <= 0: return 0, 0, 0.0
-        
-        lote_ideal = risk_cash / risco_por_trade
-        lote_min = max(1, int(lote_ideal * 0.8))
-        lote_max = max(1, int(lote_ideal * 1.2))
-        
+        # Garante que seja pelo menos 1 contrato
+        lote_min = max(1, lote_min)
+        lote_max = max(1, lote_max)
+
+        # 3. Mantemos o Kelly apenas como referência estatística (percentual)
+        kelly_safe = 0.0
+        if payoff > 0 and win_rate > 0:
+            w = win_rate / 100.0
+            kelly_full = w - ((1.0 - w) / payoff)
+            kelly_safe = max(0.0, kelly_full / 4.0) # Quarter Kelly para registro
+
         return lote_min, lote_max, kelly_safe
