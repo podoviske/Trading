@@ -422,15 +422,20 @@ def show(user, role):
                 else:
                     st.write(f"Faltam: **${falta_meta:,.2f}**")
                     
-                    # --- NOVO: ESTIMATIVA DE TRADES FALTANTES ---
-                    wins = trades_g[trades_g['resultado'] > 0]
-                    avg_win = wins['resultado'].mean() if not wins.empty else 0.0
-                    
-                    if avg_win > 0 and falta_meta > 0:
-                        trades_left = math.ceil(falta_meta / avg_win)
-                        st.caption(f"🎯 Aprox. **{trades_left} trades** (média ${avg_win:,.0f})")
-                    else:
-                        st.caption("Faça gains para estimar trades.")
-
+                   # --- NOVO: ESTIMATIVA DE TRADES FALTANTES COM PROTEÇÃO ---
+        # Este bloco deve estar alinhado com o 'if total_range > 0:' acima
+        if not trades_g.empty and 'resultado' in trades_g.columns:
+            wins = trades_g[trades_g['resultado'] > 0]
+            avg_win = wins['resultado'].mean() if not wins.empty else 0.0
+            
+            if avg_win > 0 and falta_meta > 0:
+                trades_left = math.ceil(falta_meta / avg_win)
+                st.caption(f"🎯 Aprox. **{trades_left} trades** (média ${avg_win:,.0f})")
+            else:
+                st.caption("Faça gains para estimar trades.")
         else:
-            st.info("Crie um Grupo e Contas primeiro.")
+            st.caption("Aguardando histórico de trades para estimativas.")
+
+    # Este ELSE deve estar alinhado com o 'if not df_c.empty:' que inicia a aba
+    else:
+        st.info("Crie um Grupo e Contas primeiro.")
