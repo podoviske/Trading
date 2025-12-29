@@ -62,70 +62,63 @@ class RiskEngine:
     @staticmethod
     def calculate_ruin(win_rate, avg_win, avg_loss, capital, trades_results=None):
         """
-        🔥 APEX-SHIELD PROTOCOL (Risco de Ruína v2.0) 🔥
-        Calcula a Probabilidade de Ruína Operacional considerando:
-        1. Penalidade por Baixa Amostragem (Confidence Penalty).
-        2. Volatilidade das Perdas (Stress Loss).
-        3. Sequência de Agrupamento (Z-Score Multiplier).
+        🔥 APEX-SHIELD PROTOCOL (Risco de Ruína v2.1 - Calibrado) 🔥
+        Calcula a Probabilidade de Ruína Operacional com ajustes de realidade:
+        1. Penalidade por Baixa Amostragem (Suavizada para 80% confiança).
+        2. Volatilidade das Perdas (Suavizada para 0.3 StdDev).
+        3. Sequência de Agrupamento (Trigger em -1.2 Z-Score).
         """
         if capital <= 0: return 100.0
         if avg_loss == 0 and avg_win == 0: return 0.0
         
-        # --- CAMADA 1: CONFIDENCE PENALTY (Amostragem) ---
-        # Se N < 100, penalizamos o Win Rate usando Erro Padrão.
         n_trades = len(trades_results) if trades_results else 0
         wr_raw = win_rate / 100.0
         
+        # --- AJUSTE 1: PENALIDADE DE AMOSTRAGEM (Confidence Penalty) ---
+        # Reduzimos de 1.96 (muito rígido) para 1.28 (padrão de mercado para <100 trades)
         if 0 < n_trades < 100:
-            # Margem de erro para intervalo de confiança de 95%
-            margin_error = 1.96 * math.sqrt((wr_raw * (1 - wr_raw)) / n_trades)
-            # O WR usado no cálculo será o Limite Inferior (Pior Cenário)
+            margin_error = 1.28 * math.sqrt((wr_raw * (1 - wr_raw)) / n_trades)
             p_adjusted = max(0.1, wr_raw - margin_error)
         else:
             p_adjusted = wr_raw
 
         q_adjusted = 1.0 - p_adjusted
 
-        # --- CAMADA 2: STRESS LOSS (Volatilidade de Perda) ---
-        # Se as perdas oscilam muito, assumimos um Loss maior que a média.
+        # --- AJUSTE 2: STRESS LOSS (Volatilidade de Perda) ---
         loss_input = abs(avg_loss)
         
         if trades_results:
-            # Filtra apenas os losses para ver a volatilidade do "lado ruim"
             losses_only = [x for x in trades_results if x < 0]
             if len(losses_only) > 1:
                 std_dev_loss = np.std(losses_only, ddof=1)
-                # O Loss considerado é a Média + 1 Desvio Padrão
-                loss_input += std_dev_loss
+                # Consideramos apenas 30% do desvio padrão como "gordura" de risco extra
+                # Antes estava 100% (muito pessimista)
+                loss_input += (std_dev_loss * 0.3)
 
-        # Recalcula Mu (Vantagem) com os dados "estressados"
+        # Recalcula Mu (Vantagem) com os dados ajustados
         mu_stress = (p_adjusted * avg_win) - (q_adjusted * loss_input)
         
-        # Se no cenário estressado a vantagem some, risco é total
+        # Se a vantagem desaparecer no cenário de estresse, risco é total
         if mu_stress <= 0: return 100.0
         
-        # Cálculo da Variância do Sistema Estressado
+        # Variância do Sistema Estressado
         variance_stress = (p_adjusted * (avg_win**2)) + (q_adjusted * (loss_input**2)) - (mu_stress**2)
         if variance_stress <= 0: return 0.0
 
-        # --- FÓRMULA DE DIFUSÃO BASE ---
+        # --- FÓRMULA DE DIFUSÃO ---
         try:
             arg = -2 * mu_stress * capital / variance_stress
             prob_base = math.exp(arg) * 100.0
         except:
             prob_base = 100.0
 
-        # --- CAMADA 3: Z-SCORE MULTIPLIER (Panic Factor) ---
-        # Se a sequência atual é perigosa (Z < -1.0), inflamos o risco.
+        # --- AJUSTE 3: Z-SCORE MULTIPLIER (Panic Factor) ---
         prob_final = prob_base
-        
-        # Chama a função vizinha para pegar o Z-Score atual
         z_score = RiskEngine.calculate_z_score_serial(trades_results)
         
-        if z_score < -1.0:
-            # Multiplicador exponencial baseado na gravidade do agrupamento
-            # Ex: Z=-1.2 -> Multiplica por (1 + 1.44) = 2.44x
-            multiplier = 1 + (abs(z_score) ** 2)
+        # Só ativa o multiplicador de pânico se o agrupamento for real (Z < -1.2)
+        if z_score < -1.2:
+            multiplier = 1 + (abs(z_score)) 
             prob_final = prob_base * multiplier
 
         return min(100.0, prob_final)
@@ -133,13 +126,12 @@ class RiskEngine:
     @staticmethod
     def calculate_z_score_serial(trades_results):
         """
-        Calcula o Z-Score Serial (Runs Test) para detectar se os ganhos/perdas
-        estão vindo em sequências perigosas (Agrupamento) ou aleatórias.
+        Calcula o Z-Score Serial (Runs Test) para detectar sequências.
         """
         if not trades_results or len(trades_results) < 2:
             return 0.0
 
-        # 1. Converter sequência para binário (Win=1, Loss=-1)
+        # 1. Converter sequência para binário
         binary_sequence = []
         for r in trades_results:
             if r > 0: binary_sequence.append(1)
@@ -155,13 +147,13 @@ class RiskEngine:
         if n_plus == 0 or n_minus == 0:
             return 0.0 
 
-        # 3. Contar 'Runs' (Sequências)
+        # 3. Contar 'Runs'
         runs = 1
         for i in range(1, n):
             if binary_sequence[i] != binary_sequence[i-1]:
                 runs += 1
 
-        # 4. Cálculo Estatístico (Wald-Wolfowitz)
+        # 4. Estatística
         mu = (2 * n_plus * n_minus) / n + 1
 
         variance_numerator = (mu - 1) * (mu - 2)
@@ -173,7 +165,6 @@ class RiskEngine:
 
         if sigma == 0: return 0.0
 
-        # 5. Z-Score Final
         z = (runs - mu) / sigma
         
         return z
