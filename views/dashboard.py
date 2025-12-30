@@ -128,6 +128,27 @@ def show(user, role):
 
     results_list_full = trades_full_risk['resultado'].tolist() if not trades_full_risk.empty else []
 
+    # --- CORREÇÃO: INICIALIZAÇÃO SEGURA DAS VARIÁVEIS ---
+    # Isso garante que elas existam mesmo se o banco estiver vazio
+    net_profit = 0.0
+    gross_profit = 0.0
+    gross_loss = 0.0
+    pf = 0.0
+    win_rate = 0.0
+    total_trades = 0
+    avg_win = 0.0
+    avg_loss = 0.0
+    payoff = 0.0
+    expectancy = 0.0
+    avg_pts_gain = 0.0
+    pts_loss_medio_real = 15.0 # Padrão seguro
+    lote_medio = 0.0
+    max_dd = 0.0
+    wins = pd.DataFrame()
+    losses = pd.DataFrame()
+    ativo_ref = "MNQ" # Padrão seguro
+    # ---------------------------------------------------
+
     if not trades_filtered_view.empty:
         wins = trades_filtered_view[trades_filtered_view['resultado'] > 0]
         losses = trades_filtered_view[trades_filtered_view['resultado'] < 0]
@@ -142,13 +163,16 @@ def show(user, role):
         expectancy = ((win_rate/100) * avg_win) - ((1 - (win_rate/100)) * avg_loss)
         avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0 
         avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
-        pts_loss_medio_real = avg_pts_loss if avg_pts_loss > 0 else 15.0
-        lote_medio = trades_filtered_view['lote'].mean(); ativo_ref = trades_filtered_view['ativo'].iloc[-1]
+        
+        if avg_pts_loss > 0:
+            pts_loss_medio_real = avg_pts_loss
+            
+        lote_medio = trades_filtered_view['lote'].mean()
+        if 'ativo' in trades_filtered_view.columns:
+            ativo_ref = trades_filtered_view['ativo'].iloc[-1]
+            
         equity = trades_filtered_view.sort_values('created_at')['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
-    else:
-        net_profit=0; pf=0; win_rate=0; expectancy=0; avg_win=0; avg_loss=0; payoff=0; max_dd=0; total_trades=0
-        pts_loss_medio_real=15.0; avg_pts_gain=0.0; lote_medio=0; ativo_ref="MNQ"; wins=pd.DataFrame(); losses=pd.DataFrame()
 
     custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
