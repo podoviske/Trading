@@ -111,13 +111,42 @@ def show(user, role):
     
     contas_alvo = contas_do_grupo if "VISÃO GERAL" in view_mode else contas_do_grupo[contas_do_grupo['conta_identificador'] == view_mode]
 
+    # Função para calcular lucro real por conta
+    def calcular_lucro_conta(conta_id, grupo_nome, df_trades):
+        """
+        Calcula o lucro real de uma conta específica.
+        - Trades INDIVIDUAIS (conta_id = esta conta) → soma 100%
+        - Trades REPLICADOS (conta_id = NULL, grupo = este grupo) → soma 100% (cada conta recebe o trade completo)
+        """
+        lucro_total = 0.0
+        
+        if not df_trades.empty:
+            # Trades individuais desta conta
+            if 'conta_id' in df_trades.columns:
+                trades_individuais = df_trades[df_trades['conta_id'] == conta_id]
+                lucro_total += trades_individuais['resultado'].sum()
+                
+                # Trades replicados do grupo (conta_id é NULL)
+                trades_replicados = df_trades[
+                    (df_trades['grupo_vinculo'] == grupo_nome) & 
+                    (df_trades['conta_id'].isna())
+                ]
+                lucro_total += trades_replicados['resultado'].sum()
+            else:
+                # Fallback: se não tem conta_id, usa lógica antiga (divide por grupo)
+                trades_grupo = df_trades[df_trades['grupo_vinculo'] == grupo_nome]
+                lucro_total = trades_grupo['resultado'].sum()
+        
+        return lucro_total
+
     total_buffer = 0.0; contas_ativas = 0; hwm_updated_flag = False
     if not contas_alvo.empty:
-        lucro_total_absoluto = trades_full_risk['resultado'].sum() if not trades_full_risk.empty else 0.0
-        num_contas_no_filtro = len(contas_alvo); lucro_por_conta_est = lucro_total_absoluto / num_contas_no_filtro
         for _, conta in contas_alvo.iterrows():
             if conta['status_conta'] == 'Ativa':
-                saldo_atual_est = float(conta['saldo_inicial']) + lucro_por_conta_est
+                # Calcula lucro REAL desta conta (individual + replicado)
+                lucro_conta = calcular_lucro_conta(conta['id'], conta['grupo_nome'], trades_full_risk)
+                
+                saldo_atual_est = float(conta['saldo_inicial']) + lucro_conta
                 hwm_dinamico = max(float(conta['pico_previo']), saldo_atual_est)
                 if hwm_dinamico > float(conta['pico_previo']):
                     update_hwm(conta['id'], hwm_dinamico); hwm_updated_flag = True
