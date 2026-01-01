@@ -9,6 +9,7 @@ import views.atm as atm
 import views.historico as historico
 import views.plano as plano
 import views.admin as admin
+import views.antitilt as antitilt
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -300,8 +301,8 @@ if check_password():
         from streamlit_option_menu import option_menu
         
         # Lista base de opções
-        options = ["Dashboard", "Registrar Trade", "Histórico"]
-        icons = ["grid-1x2-fill", "lightning-charge-fill", "clock-history"]
+        options = ["Dashboard", "Registrar Trade", "Histórico", "Anti-Tilt"]
+        icons = ["grid-1x2-fill", "lightning-charge-fill", "clock-history", "shield-check"]
         
         # Adiciona opções de gestão para admin/master
         if role in ['master', 'admin']:
@@ -375,6 +376,9 @@ if check_password():
         
     elif pagina_atual == "Histórico":
         historico.show(user, role)
+    
+    elif pagina_atual == "Anti-Tilt":
+        antitilt.show(user, role)
         
     elif pagina_atual == "Plano de Trading":
         plano.show()
