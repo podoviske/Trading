@@ -43,185 +43,225 @@ def show(user, role):
     df_contas = load_contas(user)
     
     # ============================================================
-    # LINHA 1: ATM + VINCULAÇÃO (lado a lado)
+    # BLOCO 1: REGISTRO RÁPIDO (sempre visível)
     # ============================================================
-    col_atm, col_vinculo = st.columns([1, 1.5])
+    st.markdown("#### 🎯 Registro Rápido")
     
-    with col_atm:
-        atm_sel = st.selectbox("🎯 Estratégia / ATM", ["Manual"] + list(atm_db.keys()))
+    # Linha 1: Vinculação + Ativo + Direção
+    c1, c2, c3, c4 = st.columns([2, 1, 1, 1.5])
     
-    with col_vinculo:
-        tipo_vinculo = st.radio(
-            "📂 Vincular a:",
-            ["Replicado (grupo)", "Individual (conta)"],
-            horizontal=True,
-            label_visibility="visible"
-        )
-    
-    # Seleção de Grupo ou Conta
-    grupo_sel = None
-    conta_sel_id = None
-    conta_sel_nome = None
-    num_contas_grupo = 0
-    
-    if "Replicado" in tipo_vinculo:
+    with c1:
+        # Monta lista unificada: grupos e contas
+        opcoes_vinculo = []
+        mapa_vinculo = {}  # Para recuperar dados depois
+        
         if not df_grupos.empty:
-            lista_grupos = sorted(df_grupos['nome'].unique())
-            grupo_sel = st.selectbox("Selecione o Grupo", lista_grupos, label_visibility="collapsed")
-            # Conta quantas contas ativas
-            if not df_contas.empty:
-                contas_grp = df_contas[(df_contas['grupo_nome'] == grupo_sel) & (df_contas['status_conta'] == 'Ativa')]
-                num_contas_grupo = len(contas_grp)
-        else:
-            st.warning("⚠️ Crie um grupo primeiro na aba Contas.")
-            st.stop()
-    else:
+            for _, g in df_grupos.iterrows():
+                label = f"🔄 {g['nome']}"
+                opcoes_vinculo.append(label)
+                # Conta quantas contas ativas no grupo
+                if not df_contas.empty:
+                    n_ativas = len(df_contas[(df_contas['grupo_nome'] == g['nome']) & (df_contas['status_conta'] == 'Ativa')])
+                else:
+                    n_ativas = 0
+                mapa_vinculo[label] = {"tipo": "grupo", "nome": g['nome'], "conta_id": None, "n_contas": n_ativas}
+        
         if not df_contas.empty:
-            df_contas['display'] = df_contas['conta_identificador'] + " (" + df_contas['grupo_nome'] + ")"
-            lista_contas = df_contas.sort_values('display')['display'].tolist()
-            conta_display = st.selectbox("Selecione a Conta", lista_contas, label_visibility="collapsed")
-            conta_row = df_contas[df_contas['display'] == conta_display].iloc[0]
-            conta_sel_id = conta_row['id']
-            conta_sel_nome = conta_row['conta_identificador']
-            grupo_sel = conta_row['grupo_nome']
-        else:
-            st.warning("⚠️ Cadastre uma conta primeiro na aba Contas.")
+            for _, conta in df_contas.iterrows():
+                label = f"☝️ {conta['conta_identificador']} ({conta['grupo_nome']})"
+                opcoes_vinculo.append(label)
+                mapa_vinculo[label] = {"tipo": "individual", "nome": conta['grupo_nome'], "conta_id": conta['id'], "conta_nome": conta['conta_identificador']}
+        
+        if not opcoes_vinculo:
+            st.warning("⚠️ Crie um grupo/conta primeiro.")
             st.stop()
+        
+        vinculo_sel = st.selectbox("Vincular a", opcoes_vinculo, label_visibility="collapsed")
+        vinculo_info = mapa_vinculo[vinculo_sel]
+    
+    with c2:
+        atv = st.selectbox("Ativo", ["MNQ", "NQ", "ES", "MES"], label_visibility="collapsed")
+    
+    with c3:
+        dr = st.radio("Direção", ["Compra", "Venda"], horizontal=True, label_visibility="collapsed")
+    
+    with c4:
+        dt = st.date_input("Data", datetime.now().date(), label_visibility="collapsed")
+    
+    # Linha 2: Lote + Pontos (entrada rápida)
+    c5, c6, c7 = st.columns([1, 1, 2])
+    
+    with c5:
+        lt = st.number_input("Lote", min_value=1, value=1)
+    
+    with c6:
+        pts_rapido = st.number_input("Pontos", value=0.0, step=0.25, help="Resultado em pontos (+ gain, - loss)")
+    
+    with c7:
+        # Resultado calculado em tempo real
+        resultado_rapido = pts_rapido * MULTIPLIERS.get(atv, 2) * lt
+        cor_res = "#00FF88" if resultado_rapido >= 0 else "#FF4B4B"
+        st.markdown(f"""
+            <div style="background:#111; border:1px solid {cor_res}; border-radius:8px; padding:12px; text-align:center; margin-top:5px;">
+                <span style="color:#888; font-size:11px;">RESULTADO</span><br>
+                <span style="color:{cor_res}; font-size:24px; font-weight:bold;">${resultado_rapido:,.2f}</span>
+            </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
-
-    # Carrega config do ATM
-    if atm_sel != "Manual":
-        config = atm_db[atm_sel]
-        lt_default = int(config["lote"])
-        stp_default = float(config["stop"])
-        try: parciais_pre = json.loads(config["parciais"]) if isinstance(config["parciais"], str) else config["parciais"]
-        except: parciais_pre = []
-    else:
-        lt_default = 1; stp_default = 0.0; parciais_pre = []
-
-    # ============================================================
-    # LINHA 2: DETALHES + RESULTADO (lado a lado)
-    # ============================================================
-    col_esq, col_dir = st.columns([1, 1.2])
     
-    # --- COLUNA ESQUERDA: DETALHES ---
-    with col_esq:
-        st.markdown("##### 📝 Detalhes da Execução")
+    # ============================================================
+    # BLOCO 2: DETALHES (expandir se quiser)
+    # ============================================================
+    with st.expander("📝 Detalhes (opcional)", expanded=False):
+        d1, d2, d3, d4 = st.columns(4)
         
-        # Data + Direção
-        c1, c2 = st.columns([1.5, 1])
-        dt = c1.date_input("Data", datetime.now().date())
-        dr = c2.radio("Direção", ["Compra", "Venda"], horizontal=True)
+        with d1:
+            atm_sel = st.selectbox("ATM / Estratégia", ["Manual"] + list(atm_db.keys()))
         
-        # Ativo + Contexto
-        c3, c4 = st.columns(2)
-        atv = c3.selectbox("Ativo", ["MNQ", "NQ", "ES", "MES"])
-        ctx = c4.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
+        with d2:
+            ctx = st.selectbox("Contexto", ["Contexto A", "Contexto B", "Contexto C"])
         
-        # Psicológico
-        psi = st.selectbox("Psicológico", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Neutro"])
+        with d3:
+            psi = st.selectbox("Psicológico", ["Focado/Bem", "Ansioso", "Vingativo", "Cansado", "Neutro"])
         
-        # Lote + Stop
-        c5, c6 = st.columns(2)
-        lt = c5.number_input("Lote Total", min_value=1, value=lt_default)
-        stp = c6.number_input("Stop (Pts)", min_value=0.0, value=stp_default, step=0.25)
+        with d4:
+            stp = st.number_input("Stop (Pts)", min_value=0.0, value=15.0, step=0.25)
+        
+        # Upload
+        up = st.file_uploader("📸 Evidências", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
         
         # Risco calculado
         if stp > 0:
             risco_calc = stp * MULTIPLIERS.get(atv, 2) * lt
-            st.error(f"📉 Risco: **${risco_calc:,.2f}**")
+            st.caption(f"📉 Risco estimado: **${risco_calc:,.2f}**")
 
-    # --- COLUNA DIREITA: RESULTADO ---
-    with col_dir:
-        st.markdown("##### 💰 Resultado & Parciais")
+    # Carrega config do ATM se selecionado
+    if 'atm_sel' in dir() and atm_sel != "Manual":
+        config = atm_db.get(atm_sel, {})
+        parciais_pre = []
+        if config:
+            try: 
+                parciais_pre = json.loads(config["parciais"]) if isinstance(config.get("parciais"), str) else config.get("parciais", [])
+            except: 
+                parciais_pre = []
+    else:
+        atm_sel = "Manual"
+        parciais_pre = []
+        stp = 15.0
+        ctx = "Contexto A"
+        psi = "Focado/Bem"
+        up = None
+
+    # ============================================================
+    # BLOCO 3: PARCIAIS (expandir se múltiplas saídas)
+    # ============================================================
+    with st.expander("🎯 Parciais (múltiplas saídas)", expanded=False):
+        st.caption("Use se você saiu em mais de um preço. Senão, ignore - o sistema usa o 'Pontos' do registro rápido.")
         
         # Gestão de parciais
-        if "num_parciais" not in st.session_state or atm_sel != st.session_state.get("last_atm"):
-            st.session_state.num_parciais = len(parciais_pre) if parciais_pre else 1
-            st.session_state.last_atm = atm_sel
+        if "num_parciais" not in st.session_state:
+            st.session_state.num_parciais = 1
 
         # Botões Add/Reset
-        cb1, cb2, cb3 = st.columns([1, 1, 2])
-        if cb1.button("➕ Add"): st.session_state.num_parciais += 1; st.rerun()
-        if cb2.button("🧹 Reset"): st.session_state.num_parciais = 1; st.rerun()
+        cb1, cb2, cb3 = st.columns([1, 1, 3])
+        if cb1.button("➕ Add"): 
+            st.session_state.num_parciais += 1
+            st.rerun()
+        if cb2.button("🧹 Reset"): 
+            st.session_state.num_parciais = 1
+            st.rerun()
 
-        saidas = []
-        alocacao_atual = 0
+        saidas_parciais = []
+        alocacao_parciais = 0
         
-        # Loop de Parciais
         for i in range(st.session_state.num_parciais):
-            val_pts = float(parciais_pre[i]["pts"]) if i < len(parciais_pre) else 0.0
-            val_qtd = int(parciais_pre[i]["qtd"]) if i < len(parciais_pre) else (lt if i == 0 else 0)
-            
             cp1, cp2, cp3 = st.columns([1.2, 0.8, 1])
-            pts = cp1.number_input(f"Pts {i+1}", value=val_pts, key=f"pts_{i}_{atm_sel}", step=0.25, label_visibility="collapsed" if i > 0 else "visible")
-            qtd = cp2.number_input(f"Qtd {i+1}", value=val_qtd, key=f"qtd_{i}_{atm_sel}", min_value=0, label_visibility="collapsed" if i > 0 else "visible")
             
-            fin_parcial = pts * MULTIPLIERS.get(atv, 2) * qtd
-            cor_fin = "#00FF88" if fin_parcial > 0 else ("#FF4B4B" if fin_parcial < 0 else "#666")
-            cp3.markdown(f"<div style='padding-top:28px; text-align:right; font-weight:bold; color:{cor_fin}'>${fin_parcial:,.2f}</div>", unsafe_allow_html=True)
+            p_pts = cp1.number_input(f"Pts Saída {i+1}", value=0.0, key=f"parc_pts_{i}", step=0.25)
+            p_qtd = cp2.number_input(f"Qtd {i+1}", value=1 if i == 0 else 0, key=f"parc_qtd_{i}", min_value=0)
             
-            saidas.append({"pts": pts, "qtd": qtd})
-            alocacao_atual += qtd
-
-        # Validação + Resultado Final
-        diff = lt - alocacao_atual
-        if diff != 0:
-            st.warning(f"⚠️ Alocação: {alocacao_atual}/{lt} contratos")
-            bloquear_gain = True
-            total_trade = 0
-        else:
-            total_trade = sum([s["pts"] * MULTIPLIERS.get(atv, 2) * s["qtd"] for s in saidas])
-            cor_tot = "#00FF88" if total_trade >= 0 else "#FF4B4B"
-            st.markdown(f"""
-                <div style="background:#111; border:2px solid {cor_tot}; padding:15px; border-radius:8px; text-align:center; margin-top:10px;">
-                    <div style="color:#888; font-size:11px;">RESULTADO FINAL</div>
-                    <div style="font-size:26px; font-weight:bold; color:{cor_tot};">${total_trade:,.2f}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            bloquear_gain = False
+            p_valor = p_pts * MULTIPLIERS.get(atv, 2) * p_qtd
+            cor_p = "#00FF88" if p_valor >= 0 else "#FF4B4B"
+            cp3.markdown(f"<div style='padding-top:28px; color:{cor_p}; font-weight:bold;'>${p_valor:,.2f}</div>", unsafe_allow_html=True)
+            
+            saidas_parciais.append({"pts": p_pts, "qtd": p_qtd})
+            alocacao_parciais += p_qtd
         
-        # Upload de evidências (compacto)
-        st.markdown("<br>", unsafe_allow_html=True)
-        up = st.file_uploader("📸 Evidências", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, label_visibility="collapsed")
+        # Validação
+        if alocacao_parciais > 0 and alocacao_parciais != lt:
+            st.warning(f"⚠️ Soma das parciais ({alocacao_parciais}) ≠ Lote ({lt})")
+        
+        usar_parciais = alocacao_parciais > 0 and alocacao_parciais == lt and any(s['pts'] != 0 for s in saidas_parciais)
 
     st.markdown("---")
     
     # ============================================================
-    # RODAPÉ: RESUMO + BOTÕES
+    # BLOCO 4: RESUMO + BOTÕES (sempre no final)
     # ============================================================
     
-    # Resumo da vinculação
-    if "Replicado" in tipo_vinculo:
-        st.info(f"🔄 **Trade Replicado** → Grupo **{grupo_sel}** ({num_contas_grupo} contas ativas)")
+    # Decide qual resultado usar
+    if 'usar_parciais' in dir() and usar_parciais:
+        resultado_final = sum([s["pts"] * MULTIPLIERS.get(atv, 2) * s["qtd"] for s in saidas_parciais])
+        pts_final = sum([s["pts"] * s["qtd"] for s in saidas_parciais]) / lt if lt > 0 else 0
+        saidas_final = saidas_parciais
+        modo_resultado = "parciais"
     else:
-        st.info(f"☝️ **Trade Individual** → Conta **{conta_sel_nome}**")
-
-    # Botões de ação
-    b1, b2 = st.columns(2)
-    btn_gain = False
+        resultado_final = resultado_rapido
+        pts_final = pts_rapido
+        saidas_final = [{"pts": pts_rapido, "qtd": lt}]
+        modo_resultado = "rapido"
     
-    if b1.button("🟢 REGISTRAR GAIN", use_container_width=True, type="primary", disabled=bloquear_gain):
-        btn_gain = True
-        
-    if b2.button("🔴 REGISTRAR STOP", use_container_width=True):
-        saidas = [{"pts": -stp, "qtd": lt}]
-        btn_gain = True
+    cor_final = "#00FF88" if resultado_final >= 0 else "#FF4B4B"
+    
+    # Info de vinculação
+    if vinculo_info["tipo"] == "grupo":
+        st.info(f"🔄 **Trade Replicado** → Grupo **{vinculo_info['nome']}** ({vinculo_info['n_contas']} contas ativas)")
+    else:
+        st.info(f"☝️ **Trade Individual** → Conta **{vinculo_info['conta_nome']}**")
+    
+    # Card de resultado final
+    st.markdown(f"""
+        <div style="background:linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border:2px solid {cor_final}; border-radius:12px; padding:20px; text-align:center; margin:10px 0;">
+            <div style="color:#888; font-size:12px; text-transform:uppercase; letter-spacing:1px;">Resultado Final</div>
+            <div style="color:{cor_final}; font-size:36px; font-weight:800; margin:5px 0;">${resultado_final:,.2f}</div>
+            <div style="color:#666; font-size:11px;">{pts_final:+.2f} pts • {lt} contrato(s) • {atv}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Botões de ação
+    st.markdown("<br>", unsafe_allow_html=True)
+    b1, b2 = st.columns(2)
+    
+    btn_gain = False
+    btn_stop = False
+    
+    with b1:
+        if st.button("🟢 REGISTRAR GAIN", use_container_width=True):
+            btn_gain = True
+    
+    with b2:
+        if st.button("🔴 REGISTRAR STOP", use_container_width=True):
+            btn_stop = True
 
     # ============================================================
     # LÓGICA DE SALVAMENTO
     # ============================================================
-    if btn_gain:
+    if btn_gain or btn_stop:
         sb = get_supabase()
+        
+        # Se clicou STOP, sobrescreve com valor negativo
+        if btn_stop:
+            stp_val = stp if 'stp' in dir() else 15.0
+            saidas_final = [{"pts": -stp_val, "qtd": lt}]
+            resultado_final = -stp_val * MULTIPLIERS.get(atv, 2) * lt
+            pts_final = -stp_val
+        
         with st.spinner("Gravando..."):
             try:
-                res_financeiro = sum([s["pts"] * MULTIPLIERS.get(atv, 2) * s["qtd"] for s in saidas])
-                pts_total_pond = sum([s["pts"] * s["qtd"] for s in saidas]) / lt if lt > 0 else 0
-                
                 img_url = ""
-                if up:
-                    arquivo = up[0] 
+                if 'up' in dir() and up:
+                    arquivo = up[0]
                     file_name = f"{uuid.uuid4()}.png"
                     sb.storage.from_("prints").upload(file_name, arquivo.getvalue())
                     img_url = sb.storage.from_("prints").get_public_url(file_name)
@@ -232,27 +272,26 @@ def show(user, role):
                     "data": str(dt),
                     "ativo": atv,
                     "direcao": dr,
-                    "contexto": ctx,
-                    "comportamento": psi,
+                    "contexto": ctx if 'ctx' in dir() else "Contexto A",
+                    "comportamento": psi if 'psi' in dir() else "Focado/Bem",
                     "lote": lt,
-                    "resultado": res_financeiro,
-                    "pts_medio": pts_total_pond,
-                    "grupo_vinculo": grupo_sel,
+                    "resultado": resultado_final,
+                    "pts_medio": pts_final,
+                    "grupo_vinculo": vinculo_info["nome"],
                     "prints": img_url,
-                    "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt),
-                    "stop_pts": stp,
-                    "parciais": saidas,
-                    "conta_id": conta_sel_id
+                    "risco_fin": (stp if 'stp' in dir() else 15.0) * MULTIPLIERS.get(atv, 2) * lt,
+                    "stop_pts": stp if 'stp' in dir() else 15.0,
+                    "parciais": saidas_final,
+                    "conta_id": vinculo_info.get("conta_id")
                 }
                 
                 sb.table("trades").insert(trade_data).execute()
                 
                 st.balloons()
-                if conta_sel_id:
-                    st.toast(f"Trade individual salvo! ${res_financeiro:,.2f}", icon="☝️")
-                else:
-                    st.toast(f"Trade replicado salvo! ${res_financeiro:,.2f}", icon="🔄")
+                tipo_msg = "Stop registrado" if btn_stop else "Gain registrado"
+                st.toast(f"{tipo_msg}! ${resultado_final:,.2f}", icon="✅")
                 time.sleep(1.5)
                 st.rerun()
+                
             except Exception as e:
                 st.error(f"Erro: {e}")
