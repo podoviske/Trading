@@ -12,6 +12,30 @@ from modules.database import update_hwm
 # --- 1. CONFIGURAÇÕES E CONEXÃO ---
 MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
 
+# --- TOOLTIPS: Explicações claras para cada métrica ---
+TOOLTIPS = {
+    "resultado_liquido": "Soma de todos os seus ganhos menos todas as perdas no período selecionado. É o dinheiro real que você ganhou ou perdeu.",
+    "fator_lucro": "Quanto você ganha para cada $1 que perde. Ex: PF 1.70 = você ganha $1.70 para cada $1 perdido. Ideal: acima de 1.5",
+    "win_rate": "Porcentagem de trades que terminaram em lucro. Ex: 71% = de cada 100 trades, 71 foram gains.",
+    "expectativa": "Quanto você espera ganhar EM MÉDIA por trade. É o valor que, estatisticamente, cada trade deve render.",
+    "media_gain": "Valor médio dos seus trades positivos. Quanto você ganha, em média, quando acerta.",
+    "media_loss": "Valor médio dos seus trades negativos. Quanto você perde, em média, quando erra.",
+    "payoff": "Razão entre ganho médio e perda média. Ex: 1:0.69 significa que seu gain médio é 0.69x seu loss médio.",
+    "drawdown": "Maior queda do seu saldo desde um pico até um vale. Mostra o pior momento da sua curva.",
+    "pts_gain": "Média de pontos capturados nos trades positivos. Mostra sua eficiência técnica nos gains.",
+    "stop_medio": "Média de pontos perdidos nos trades negativos. É a base para calcular seu risco real.",
+    "lote_medio": "Quantidade média de contratos operados por trade.",
+    "total_trades": "Quantidade total de operações realizadas no período filtrado.",
+    "z_score_serial": "Mede se seus resultados são aleatórios ou têm padrão. Positivo = tendência a alternar W/L. Negativo = tendência a sequências.",
+    "z_score_edge": "Mede sua vantagem estatística. Positivo = você tem edge. Negativo = o mercado tem vantagem sobre você.",
+    "vidas": "Quantos stops você aguenta antes de zerar o buffer. Ex: 10.1 vidas = você pode tomar 10 stops seguidos.",
+    "prob_ruina": "Probabilidade matemática de você quebrar a conta. Baseado no seu histórico. Ideal: abaixo de 1%.",
+    "buffer": "Dinheiro disponível entre seu saldo atual e o stop da conta. É seu 'oxigênio' para operar.",
+    "half_kelly": "Percentual do buffer que você deveria arriscar por trade, segundo o critério de Kelly (versão conservadora).",
+    "risco_financeiro": "Valor em dólares que você deveria arriscar por trade, baseado no Half-Kelly.",
+    "sugestao_lote": "Faixa de contratos recomendada para operar, baseada no seu buffer e risco calculado."
+}
+
 def get_supabase():
     try:
         if "supabase" in st.session_state: return st.session_state["supabase"]
@@ -51,10 +75,11 @@ def load_contas_config(user):
         return df
     except: return pd.DataFrame()
 
-def card(label, value, sub_text, color="white", border_color="#333333"):
+def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
+    """Card simples com tooltip via HTML title (hover nativo)"""
     st.markdown(
         f"""
-        <div style="
+        <div title="{tooltip_text}" style="
             background-color: #161616; 
             padding: 15px; 
             border-radius: 8px; 
@@ -63,9 +88,10 @@ def card(label, value, sub_text, color="white", border_color="#333333"):
             margin-bottom: 10px;
             height: 100px; 
             display: flex; flex-direction: column; justify-content: center;
+            cursor: help;
         ">
-            <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px; display: flex; justify-content: center; align-items: center; gap: 5px;">
-                {label} <span style="font-size:9px; border: 1px solid #444; border-radius: 50%; width: 10px; height: 10px; display: inline-flex; justify-content: center; align-items: center;">?</span>
+            <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
+                {label} <span style="font-size:9px; color:#555;">ⓘ</span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
@@ -113,39 +139,26 @@ def show(user, role):
 
     # Função para calcular lucro real por conta
     def calcular_lucro_conta(conta_id, grupo_nome, df_trades):
-        """
-        Calcula o lucro real de uma conta específica.
-        - Trades INDIVIDUAIS (conta_id = esta conta) → soma 100%
-        - Trades REPLICADOS (conta_id = NULL, grupo = este grupo) → soma 100% (cada conta recebe o trade completo)
-        """
         lucro_total = 0.0
-        
         if not df_trades.empty:
-            # Trades individuais desta conta
             if 'conta_id' in df_trades.columns:
                 trades_individuais = df_trades[df_trades['conta_id'] == conta_id]
                 lucro_total += trades_individuais['resultado'].sum()
-                
-                # Trades replicados do grupo (conta_id é NULL)
                 trades_replicados = df_trades[
                     (df_trades['grupo_vinculo'] == grupo_nome) & 
                     (df_trades['conta_id'].isna())
                 ]
                 lucro_total += trades_replicados['resultado'].sum()
             else:
-                # Fallback: se não tem conta_id, usa lógica antiga (divide por grupo)
                 trades_grupo = df_trades[df_trades['grupo_vinculo'] == grupo_nome]
                 lucro_total = trades_grupo['resultado'].sum()
-        
         return lucro_total
 
     total_buffer = 0.0; contas_ativas = 0; hwm_updated_flag = False
     if not contas_alvo.empty:
         for _, conta in contas_alvo.iterrows():
             if conta['status_conta'] == 'Ativa':
-                # Calcula lucro REAL desta conta (individual + replicado)
                 lucro_conta = calcular_lucro_conta(conta['id'], conta['grupo_nome'], trades_full_risk)
-                
                 saldo_atual_est = float(conta['saldo_inicial']) + lucro_conta
                 hwm_dinamico = max(float(conta['pico_previo']), saldo_atual_est)
                 if hwm_dinamico > float(conta['pico_previo']):
@@ -155,13 +168,9 @@ def show(user, role):
     
     if hwm_updated_flag: st.toast("🚀 Novo Topo Histórico Salvo!", icon="💾")
 
-    # --- CORREÇÃO ITEM 5: USAR TRADES FILTRADOS PARA CÁLCULO DE RUÍNA ---
-    # Antes: results_list_full = trades_full_risk['resultado'].tolist()
-    # Agora: Usa o período selecionado pelo usuário
     results_list_filtered = trades_filtered_view['resultado'].tolist() if not trades_filtered_view.empty else []
 
-    # --- INICIALIZAÇÃO SEGURA DAS VARIÁVEIS ---
-    # Isso garante que elas existam mesmo se o banco estiver vazio
+    # Inicialização segura
     net_profit = 0.0
     gross_profit = 0.0
     gross_loss = 0.0
@@ -173,12 +182,12 @@ def show(user, role):
     payoff = 0.0
     expectancy = 0.0
     avg_pts_gain = 0.0
-    pts_loss_medio_real = 15.0 # Padrão seguro
+    pts_loss_medio_real = 15.0
     lote_medio = 0.0
     max_dd = 0.0
     wins = pd.DataFrame()
     losses = pd.DataFrame()
-    ativo_ref = "MNQ" # Padrão seguro
+    ativo_ref = "MNQ"
 
     if not trades_filtered_view.empty:
         wins = trades_filtered_view[trades_filtered_view['resultado'] > 0]
@@ -208,84 +217,120 @@ def show(user, role):
 
     custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
-    
-    # --- CORREÇÃO ITEM 5: Ruína agora usa trades FILTRADOS ---
     prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list_filtered)
     
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao)
 
-    # --- RENDERIZAÇÃO ---
+    # ============================================================
+    # RENDERIZAÇÃO COM TOOLTIPS
+    # ============================================================
+    
     st.markdown("### 🏁 Desempenho Geral")
     c1, c2, c3, c4 = st.columns(4)
-    with c1: card("Resultado Líquido", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", "#00FF88" if net_profit>=0 else "#FF4B4B")
-    with c2: card("Fator de Lucro (PF)", f"{pf:.2f}", "Ideal > 1.5", "#FF4B4B" if pf < 1.5 else "#00FF88")
-    with c3: card("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", "white")
-    with c4: card("Expectativa Mat.", f"${expectancy:.2f}", "Por Trade", "#00FF88" if expectancy>0 else "#FF4B4B")
+    with c1: 
+        card_simples("Resultado Líquido", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", 
+                     TOOLTIPS["resultado_liquido"], "#00FF88" if net_profit>=0 else "#FF4B4B")
+    with c2: 
+        card_simples("Fator de Lucro (PF)", f"{pf:.2f}", "Ideal > 1.5", 
+                     TOOLTIPS["fator_lucro"], "#FF4B4B" if pf < 1.5 else "#00FF88")
+    with c3: 
+        card_simples("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", 
+                     TOOLTIPS["win_rate"], "white")
+    with c4: 
+        card_simples("Expectativa Mat.", f"${expectancy:.2f}", "Por Trade", 
+                     TOOLTIPS["expectativa"], "#00FF88" if expectancy>0 else "#FF4B4B")
 
     st.markdown("### 💲 Médias Financeiras")
     m1, m2, m3, m4 = st.columns(4)
-    with m1: card("Média Gain ($)", f"${avg_win:,.2f}", "", "#00FF88")
-    with m2: card("Média Loss ($)", f"-${avg_loss:,.2f}", "", "#FF4B4B")
-    with m3: card("Risco : Retorno", f"1 : {payoff:.2f}", "Payoff Real", "white")
-    with m4: card("Drawdown Máximo", f"${max_dd:,.2f}", "Pior Queda", "#FF4B4B")
+    with m1: 
+        card_simples("Média Gain ($)", f"${avg_win:,.2f}", "", 
+                     TOOLTIPS["media_gain"], "#00FF88")
+    with m2: 
+        card_simples("Média Loss ($)", f"-${avg_loss:,.2f}", "", 
+                     TOOLTIPS["media_loss"], "#FF4B4B")
+    with m3: 
+        card_simples("Risco : Retorno", f"1 : {payoff:.2f}", "Payoff Real", 
+                     TOOLTIPS["payoff"], "white")
+    with m4: 
+        card_simples("Drawdown Máximo", f"${max_dd:,.2f}", "Pior Queda", 
+                     TOOLTIPS["drawdown"], "#FF4B4B")
     
     st.markdown("### 🎯 Performance Técnica")
     t1, t2, t3, t4 = st.columns(4)
-    with t1: card("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", "#00FF88")
-    with t2: card("Stop Médio (Real)", f"{pts_loss_medio_real:.2f} pts", "Base do Risco", "#FF4B4B")
-    with t3: card("Lote Médio", f"{lote_medio:.1f}", "Contratos", "white")
-    with t4: card("Total Trades", f"{total_trades}", "Executados", "white")
+    with t1: 
+        card_simples("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", 
+                     TOOLTIPS["pts_gain"], "#00FF88")
+    with t2: 
+        card_simples("Stop Médio (Real)", f"{pts_loss_medio_real:.2f} pts", "Base do Risco", 
+                     TOOLTIPS["stop_medio"], "#FF4B4B")
+    with t3: 
+        card_simples("Lote Médio", f"{lote_medio:.1f}", "Contratos", 
+                     TOOLTIPS["lote_medio"], "white")
+    with t4: 
+        card_simples("Total Trades", f"{total_trades}", "Executados", 
+                     TOOLTIPS["total_trades"], "white")
 
     st.markdown("---")
 
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
     
-    # --- CORREÇÃO ITEM 5: Z-Score também usa trades filtrados ---
     num_trades_risco = len(results_list_filtered)
     z_serial = RiskEngine.calculate_z_score_serial(results_list_filtered)
     
     if num_trades_risco < 15:
-        cor_zs = "#888888"; val_zs = "---"; sub_zs = "Amostra Insuficiente"
+        cor_zs = "#888888"; val_zs = "---"; sub_zs = "Mín. 15 trades"
     elif num_trades_risco < 30:
         cor_zs = "#FFFF00"; val_zs = f"{z_serial:.2f}"; sub_zs = f"Calibrando ({num_trades_risco}/30)"
     else:
         cor_zs = "#00FF88" if z_serial > 0 else "#FF4B4B"
-        val_zs = f"{z_serial:.2f}"; sub_zs = "Consistência (Runs)"
+        val_zs = f"{z_serial:.2f}"; sub_zs = "Consistência OK"
 
-    with k1: card("Z-Score (Sequência)", val_zs, sub_zs, cor_zs, border_color=cor_zs)
+    with k1: 
+        card_simples("Z-Score (Sequência)", val_zs, sub_zs, 
+                     TOOLTIPS["z_score_serial"], cor_zs, border_color=cor_zs)
 
-    # 2. LOGICA Z-SCORE EDGE
     if num_trades_risco < 15:
-        cor_ze = "#888888"; val_ze = "---"; sub_ze = "Amostra Insuficiente"
+        cor_ze = "#888888"; val_ze = "---"; sub_ze = "Mín. 15 trades"
     else:
         cor_ze = "#00FF88" if edge_calc > 0 else "#FF4B4B"
-        val_ze = f"{edge_calc:.4f}"; sub_ze = "Expectativa (GPS)"
+        val_ze = f"{edge_calc:.4f}"; sub_ze = "Vantagem" if edge_calc > 0 else "Sem Edge"
 
-    with k2: card("Z-Score (Edge)", val_ze, sub_ze, cor_ze, border_color=cor_ze)
+    with k2: 
+        card_simples("Z-Score (Edge)", val_ze, sub_ze, 
+                     TOOLTIPS["z_score_edge"], cor_ze, border_color=cor_ze)
     
-    # 3. VIDAS REAIS
     cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
-    with k3: card("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco: ${custo_stop_padrao:,.0f}", cor_v)
+    with k3: 
+        card_simples("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco: ${custo_stop_padrao:,.0f}", 
+                     TOOLTIPS["vidas"], cor_v)
     
-    # 4. PROBABILIDADE DE RUINA
     cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
-    with k4: card("Prob. Ruína", f"{prob_ruina:.4f}%", "Risco de Quebra", cor_r, border_color=cor_r)
+    with k4: 
+        card_simples("Prob. Ruína", f"{prob_ruina:.4f}%", "Risco de Quebra", 
+                     TOOLTIPS["prob_ruina"], cor_r, border_color=cor_r)
 
     st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
     l1, l2, l3, l4 = st.columns(4)
+    
     with l1:
-        # Buffer Color Logic
         if total_buffer > 2500: cor_buf_lote = "#00FF88"
         elif total_buffer > 1000: cor_buf_lote = "#FFFF00"
         else: cor_buf_lote = "#FF4B4B"
-        card("Buffer Disponível", f"${total_buffer:,.0f}", "Base p/ Lote (Apex)", cor_buf_lote, border_color=cor_buf_lote)
+        card_simples("Buffer Disponível", f"${total_buffer:,.0f}", "Base p/ Lote", 
+                     TOOLTIPS["buffer"], cor_buf_lote, border_color=cor_buf_lote)
 
-    with l2: card("Half-Kelly", f"{kelly_pct*100:.1f}%", "Aproveitamento", "#888")
-    with l3: card("Risco Financeiro", f"${total_buffer * kelly_pct:,.0f}", "Alocação Sugerida", "#00FF88")
-    with l4: card("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA DE OPERAÇÃO", "#00FF88", border_color="#00FF88")
+    with l2: 
+        card_simples("Half-Kelly", f"{kelly_pct*100:.1f}%", "Aproveitamento", 
+                     TOOLTIPS["half_kelly"], "#888")
+    with l3: 
+        card_simples("Risco Financeiro", f"${total_buffer * kelly_pct:,.0f}", "Alocação Sugerida", 
+                     TOOLTIPS["risco_financeiro"], "#00FF88")
+    with l4: 
+        card_simples("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA SEGURA", 
+                     TOOLTIPS["sugestao_lote"], "#00FF88", border_color="#00FF88")
 
     # --- GRÁFICOS ---
     st.markdown("---")
