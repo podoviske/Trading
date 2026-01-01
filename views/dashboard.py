@@ -76,69 +76,63 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip simples que aparece no centro do card"""
-    import random
-    card_id = f"card_{random.randint(10000, 99999)}"
+    """Card com tooltip usando abordagem inline consistente"""
+    import hashlib
+    # ID único baseado no label pra ser consistente
+    card_id = f"c{hashlib.md5(label.encode()).hexdigest()[:8]}"
     
     st.markdown(
         f"""
-        <style>
-            #{card_id} {{
-                position: relative;
-                background-color: #161616; 
-                padding: 15px; 
-                border-radius: 8px; 
-                border: 1px solid {border_color}; 
-                text-align: center; 
-                margin-bottom: 10px;
-                height: 100px; 
-                display: flex; 
-                flex-direction: column; 
-                justify-content: center;
-                overflow: visible;
-            }}
-            #{card_id} .tt-icon {{
-                font-size: 10px;
-                color: #555;
-                cursor: help;
-                margin-left: 3px;
-            }}
-            #{card_id} .tt-icon:hover {{
-                color: #00FF88;
-            }}
-            #{card_id} .tt-icon:hover + .tt-box {{
-                display: block;
-            }}
-            #{card_id} .tt-box {{
-                display: none;
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background-color: #000;
-                color: #fff;
-                padding: 12px 15px;
-                border-radius: 8px;
-                font-size: 11px;
-                font-weight: normal;
-                text-transform: none;
-                line-height: 1.5;
-                width: 90%;
-                max-width: 250px;
-                text-align: center;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.8);
-                border: 1px solid #00FF88;
-                z-index: 9999;
-            }}
-        </style>
-        <div id="{card_id}">
+        <div id="{card_id}" style="
+            position: relative;
+            background-color: #161616; 
+            padding: 15px; 
+            border-radius: 8px; 
+            border: 1px solid {border_color}; 
+            text-align: center; 
+            margin-bottom: 10px;
+            height: 100px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center;
+        ">
             <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
                 {label}
-                <span class="tt-icon">ⓘ</span>
-                <div class="tt-box">{tooltip_text}</div>
+                <span 
+                    style="
+                        font-size: 10px;
+                        color: #555;
+                        cursor: help;
+                        margin-left: 3px;
+                    "
+                    onmouseover="document.getElementById('tt_{card_id}').style.display='block'"
+                    onmouseout="document.getElementById('tt_{card_id}').style.display='none'"
+                >ⓘ</span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
+            
+            <!-- Tooltip box -->
+            <div id="tt_{card_id}" style="
+                display: none;
+                position: absolute;
+                top: 5px;
+                left: 5px;
+                right: 5px;
+                bottom: 5px;
+                background-color: rgba(0, 0, 0, 0.95);
+                color: #fff;
+                padding: 10px;
+                border-radius: 6px;
+                font-size: 11px;
+                line-height: 1.4;
+                text-align: center;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                z-index: 100;
+                border: 1px solid #00FF88;
+            ">{tooltip_text}</div>
         </div>
         """,
         unsafe_allow_html=True
