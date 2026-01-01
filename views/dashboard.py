@@ -126,9 +126,12 @@ def show(user, role):
     
     if hwm_updated_flag: st.toast("🚀 Novo Topo Histórico Salvo!", icon="💾")
 
-    results_list_full = trades_full_risk['resultado'].tolist() if not trades_full_risk.empty else []
+    # --- CORREÇÃO ITEM 5: USAR TRADES FILTRADOS PARA CÁLCULO DE RUÍNA ---
+    # Antes: results_list_full = trades_full_risk['resultado'].tolist()
+    # Agora: Usa o período selecionado pelo usuário
+    results_list_filtered = trades_filtered_view['resultado'].tolist() if not trades_filtered_view.empty else []
 
-    # --- CORREÇÃO: INICIALIZAÇÃO SEGURA DAS VARIÁVEIS ---
+    # --- INICIALIZAÇÃO SEGURA DAS VARIÁVEIS ---
     # Isso garante que elas existam mesmo se o banco estiver vazio
     net_profit = 0.0
     gross_profit = 0.0
@@ -147,7 +150,6 @@ def show(user, role):
     wins = pd.DataFrame()
     losses = pd.DataFrame()
     ativo_ref = "MNQ" # Padrão seguro
-    # ---------------------------------------------------
 
     if not trades_filtered_view.empty:
         wins = trades_filtered_view[trades_filtered_view['resultado'] > 0]
@@ -158,7 +160,8 @@ def show(user, role):
         pf = gross_profit / gross_loss if gross_loss > 0 else 99.99
         total_trades = len(trades_filtered_view)
         win_rate = (len(wins) / total_trades * 100)
-        avg_win = wins['resultado'].mean(); avg_loss = abs(losses['resultado'].mean())
+        avg_win = wins['resultado'].mean() if not wins.empty else 0.0
+        avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0.0
         payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
         expectancy = ((win_rate/100) * avg_win) - ((1 - (win_rate/100)) * avg_loss)
         avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0 
@@ -176,7 +179,10 @@ def show(user, role):
 
     custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
-    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list_full)
+    
+    # --- CORREÇÃO ITEM 5: Ruína agora usa trades FILTRADOS ---
+    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list_filtered)
+    
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
     lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao)
@@ -208,9 +214,9 @@ def show(user, role):
     st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
     k1, k2, k3, k4 = st.columns(4)
     
-    # 1. LOGICA Z-SCORE SERIAL
-    num_trades_risco = len(results_list_full)
-    z_serial = RiskEngine.calculate_z_score_serial(results_list_full)
+    # --- CORREÇÃO ITEM 5: Z-Score também usa trades filtrados ---
+    num_trades_risco = len(results_list_filtered)
+    z_serial = RiskEngine.calculate_z_score_serial(results_list_filtered)
     
     if num_trades_risco < 15:
         cor_zs = "#888888"; val_zs = "---"; sub_zs = "Amostra Insuficiente"
