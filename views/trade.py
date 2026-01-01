@@ -198,7 +198,9 @@ def show(user, role):
                     "pts_medio": pts_total_pond,
                     "grupo_vinculo": grupo_sel,
                     "prints": img_url,
-                    "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt)
+                    "risco_fin": (stp * MULTIPLIERS.get(atv, 2) * lt),
+                    "stop_pts": stp,  # ← CORREÇÃO: Agora salva o stop em PONTOS
+                    "parciais": saidas  # ← BÔNUS: Salva as parciais também
                 }).execute()
                 
                 st.balloons()
