@@ -25,6 +25,8 @@ def load_plano(user):
             "id": str(uuid.uuid4()),
             "usuario": user,
             "notas_diarias": "",
+            "documento_plano": "",
+            "documento_imagens": json.dumps([]),
             "fase_atual": "Fase 1 - Evaluation",
             "fases_config": json.dumps([
                 {"nome": "Fase 1 - Evaluation", "micros": 30, "meta_diaria": 1000, "stop_diario": 2000, "perda_max": 1000, "parcial1_pts": "10-15", "parcial1_cts": 18, "parcial2_pts": "20-30", "parcial2_cts": 7},
@@ -33,12 +35,10 @@ def load_plano(user):
                 {"nome": "Fase 4 - Prop 10k+", "micros": 25, "meta_diaria": 800, "stop_diario": 1500, "perda_max": 800, "parcial1_pts": "10-15", "parcial1_cts": 15, "parcial2_pts": "20-30", "parcial2_cts": 5}
             ]),
             "contextos": json.dumps([
-                {"letra": "A", "nome": "Inversão de Fluxo", "descricao": "A operação de contexto A refere-se a inversão de fluxo nos vácuos de liquidez."},
-                {"letra": "B", "nome": "Rompimento", "descricao": "A operação de contexto B você irá pegar o rompimento quando houver clareza e alta probabilidade com: Volume, IFR, Saldo e BOP estiverem a favor da sua entrada; a chance de ir ao 161,8 de fibo é de 90% e o seu stop ter q ser rápido, curto e bem posicionado pois você está operando rompimento (70% são falsos)."},
-                {"letra": "C", "nome": "Bipolaridade", "descricao": "A operação de contexto C, estamos operando uma Bipolaridade 'desenhada' em um mercado já direcional."}
-            ]),
-            "img_contextos_url": "",
-            "img_looping_url": ""
+                {"letra": "A", "nome": "Inversão de Fluxo", "descricao": "A operação de contexto A refere-se a inversão de fluxo nos vácuos de liquidez.", "img_modelo": ""},
+                {"letra": "B", "nome": "Rompimento", "descricao": "A operação de contexto B você irá pegar o rompimento quando houver clareza e alta probabilidade com: Volume, IFR, Saldo e BOP estiverem a favor da sua entrada; a chance de ir ao 161,8 de fibo é de 90% e o seu stop ter q ser rápido, curto e bem posicionado pois você está operando rompimento (70% são falsos).", "img_modelo": ""},
+                {"letra": "C", "nome": "Bipolaridade", "descricao": "A operação de contexto C, estamos operando uma Bipolaridade 'desenhada' em um mercado já direcional.", "img_modelo": ""}
+            ])
         }
         sb.table("plano_trading").insert(novo_plano).execute()
         return novo_plano
@@ -83,12 +83,12 @@ def load_styles():
             padding: 20px;
         }
         
-        /* Contexto Cards */
+        /* Contexto Cards CLICÁVEIS */
         .contexto-card {
             background: linear-gradient(135deg, #161616 0%, #1a1a1a 100%);
             border: 1px solid #333;
             border-radius: 12px;
-            padding: 20px;
+            padding: 25px 20px;
             text-align: center;
             transition: all 0.3s ease;
             cursor: pointer;
@@ -97,21 +97,28 @@ def load_styles():
         
         .contexto-card:hover {
             border-color: #B20000;
-            transform: translateY(-2px);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(178, 0, 0, 0.3);
         }
         
         .contexto-letra {
-            font-size: 48px;
+            font-size: 52px;
             font-weight: 800;
             color: #B20000;
             margin-bottom: 5px;
         }
         
         .contexto-nome {
-            font-size: 14px;
-            color: #888;
+            font-size: 12px;
+            color: #666;
             text-transform: uppercase;
             letter-spacing: 1px;
+        }
+        
+        .contexto-hint {
+            font-size: 10px;
+            color: #444;
+            margin-top: 10px;
         }
         
         /* Disciplina */
@@ -223,6 +230,36 @@ def load_styles():
             font-size: 13px;
             padding: 8px 0;
         }
+        
+        /* Documento */
+        .doc-content {
+            background-color: #0d0d0d;
+            border: 1px solid #1a1a1a;
+            border-radius: 12px;
+            padding: 30px;
+            line-height: 1.8;
+            color: #ccc;
+            font-size: 14px;
+        }
+        
+        .doc-content h1, .doc-content h2, .doc-content h3 {
+            color: #fff;
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+        
+        .doc-content img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        /* Operação Modelo */
+        .modelo-img {
+            border: 2px solid #00FF88;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -236,12 +273,19 @@ def show():
     # Parse JSONs
     fases = json.loads(plano["fases_config"]) if isinstance(plano["fases_config"], str) else plano["fases_config"]
     contextos = json.loads(plano["contextos"]) if isinstance(plano["contextos"], str) else plano["contextos"]
+    doc_imagens = json.loads(plano.get("documento_imagens", "[]")) if isinstance(plano.get("documento_imagens", "[]"), str) else plano.get("documento_imagens", [])
     
     # --- HEADER ---
     st.markdown("## 📋 Plano de Trading")
     
     # --- TABS ---
-    tab_visao, tab_contextos, tab_fases, tab_config = st.tabs(["📊 Visão Geral", "🎯 Contextos", "📈 Fases & Gestão", "⚙️ Configurar"])
+    tab_visao, tab_contextos, tab_documento, tab_fases, tab_config = st.tabs([
+        "📊 Visão Geral", 
+        "🎯 Contextos", 
+        "📖 Meu Plano",
+        "📈 Fases & Gestão", 
+        "⚙️ Configurar"
+    ])
     
     # ==========================================
     # TAB 1: VISÃO GERAL
@@ -369,27 +413,37 @@ def show():
             st.toast("✅ Notas salvas!", icon="💾")
     
     # ==========================================
-    # TAB 2: CONTEXTOS
+    # TAB 2: CONTEXTOS (CLICÁVEIS)
     # ==========================================
     with tab_contextos:
         
         st.markdown('<div class="section-title">🎯 Contextos de Operação</div>', unsafe_allow_html=True)
+        st.caption("Clique em um contexto para ver as operações no Histórico")
         
-        # Cards dos contextos
+        # Cards dos contextos CLICÁVEIS
         cols = st.columns(3)
         
         for i, ctx in enumerate(contextos):
             with cols[i]:
+                # Card visual
                 st.markdown(f"""
                     <div class="contexto-card">
                         <div class="contexto-letra">{ctx['letra']}</div>
                         <div class="contexto-nome">{ctx['nome']}</div>
+                        <div class="contexto-hint">🔍 Clique para ver histórico</div>
                     </div>
                 """, unsafe_allow_html=True)
+                
+                # Botão invisível pra capturar o clique
+                if st.button(f"Ver Contexto {ctx['letra']}", key=f"btn_ctx_{ctx['letra']}", use_container_width=True):
+                    # Seta o filtro no session_state
+                    st.session_state["filtro_contexto_historico"] = f"Contexto {ctx['letra']}"
+                    st.session_state["navegar_para"] = "Histórico"
+                    st.rerun()
         
         st.markdown("---")
         
-        # Descrições expandidas
+        # Descrições expandidas com operação modelo
         for ctx in contextos:
             with st.expander(f"📖 Contexto {ctx['letra']} - {ctx['nome']}", expanded=False):
                 st.markdown(f"""
@@ -397,17 +451,100 @@ def show():
                         {ctx['descricao']}
                     </div>
                 """, unsafe_allow_html=True)
-        
-        # Imagem dos contextos
-        st.markdown('<div class="section-title">📊 Mapa Visual dos Contextos</div>', unsafe_allow_html=True)
-        
-        if plano.get("img_contextos_url"):
-            st.image(plano["img_contextos_url"], use_container_width=True)
-        else:
-            st.info("📷 Nenhuma imagem configurada. Vá na aba 'Configurar' para adicionar.")
+                
+                # Operação modelo
+                if ctx.get('img_modelo'):
+                    st.markdown("##### 📸 Operação Modelo (Trade de Livro)")
+                    st.image(ctx['img_modelo'], use_container_width=True)
+                else:
+                    st.info("📷 Nenhuma operação modelo configurada. Vá em 'Configurar' para adicionar.")
     
     # ==========================================
-    # TAB 3: FASES & GESTÃO
+    # TAB 3: DOCUMENTO (MEU PLANO)
+    # ==========================================
+    with tab_documento:
+        
+        st.markdown('<div class="section-title">📖 Meu Plano de Trading</div>', unsafe_allow_html=True)
+        st.caption("Escreva aqui seu plano completo com texto e imagens")
+        
+        # Toggle entre visualizar e editar
+        modo = st.radio("Modo", ["📄 Visualizar", "✏️ Editar"], horizontal=True, label_visibility="collapsed")
+        
+        st.markdown("---")
+        
+        if modo == "✏️ Editar":
+            # Editor
+            st.markdown("#### ✏️ Editor do Plano")
+            st.caption("Use Markdown para formatar: **negrito**, *itálico*, # Título, ## Subtítulo, - lista")
+            
+            documento = st.text_area(
+                "Conteúdo do Plano",
+                value=plano.get("documento_plano", ""),
+                height=400,
+                placeholder="""# Meu Plano de Trading
+
+## 1. Análise de Contexto
+Primeiro, identifico o contexto do mercado...
+
+## 2. Entrada
+Aguardo o setup se formar...
+
+## 3. Gestão
+Parcial 1 em X pontos...
+""",
+                key="doc_editor"
+            )
+            
+            st.markdown("---")
+            
+            # Upload de imagens
+            st.markdown("#### 📷 Adicionar Imagens ao Documento")
+            st.caption("Faça upload das imagens e copie o código para inserir no texto")
+            
+            img_up = st.file_uploader("Upload imagem", type=["png", "jpg", "jpeg"], key="doc_img_up")
+            
+            if img_up:
+                if st.button("📤 Fazer Upload"):
+                    url = upload_image(img_up, f"{user}_doc_{uuid.uuid4().hex[:8]}.png")
+                    
+                    # Adiciona na lista
+                    doc_imagens.append(url)
+                    save_plano(plano["id"], {"documento_imagens": json.dumps(doc_imagens)})
+                    
+                    st.toast("✅ Imagem enviada!", icon="📷")
+                    st.rerun()
+            
+            # Lista de imagens disponíveis
+            if doc_imagens:
+                st.markdown("**Imagens disponíveis:**")
+                for idx, img_url in enumerate(doc_imagens):
+                    col_img, col_code = st.columns([1, 2])
+                    with col_img:
+                        st.image(img_url, width=100)
+                    with col_code:
+                        st.code(f"![Imagem {idx+1}]({img_url})", language="markdown")
+                        st.caption("Copie e cole no texto acima")
+            
+            st.markdown("---")
+            
+            if st.button("💾 Salvar Plano", use_container_width=True, type="primary"):
+                save_plano(plano["id"], {"documento_plano": documento})
+                st.toast("✅ Plano salvo!", icon="💾")
+                st.rerun()
+        
+        else:
+            # Visualização
+            documento = plano.get("documento_plano", "")
+            
+            if documento:
+                st.markdown(f'<div class="doc-content">', unsafe_allow_html=True)
+                st.markdown(documento)
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("📝 Seu plano está vazio. Clique em 'Editar' para começar a escrever.")
+    
+    # ==========================================
+    # TAB 4: FASES & GESTÃO
     # ==========================================
     with tab_fases:
         
@@ -480,47 +617,41 @@ def show():
         st.caption("💡 O encerramento da posição deve ser de acordo com o contexto, fazendo trailing ou alvo de acordo com o contexto.")
     
     # ==========================================
-    # TAB 4: CONFIGURAR
+    # TAB 5: CONFIGURAR
     # ==========================================
     with tab_config:
         
         st.markdown('<div class="section-title">⚙️ Configurações do Plano</div>', unsafe_allow_html=True)
         
-        # Upload de imagens
-        st.markdown("#### 📷 Imagens do Plano")
+        # --- OPERAÇÕES MODELO ---
+        st.markdown("#### 📸 Operações Modelo (Trade de Livro)")
+        st.caption("Adicione uma imagem de operação perfeita para cada contexto")
         
-        col_img1, col_img2 = st.columns(2)
-        
-        with col_img1:
-            st.markdown("**Mapa dos Contextos (A/B/C)**")
-            img_ctx = st.file_uploader("Upload imagem contextos", type=["png", "jpg", "jpeg"], key="img_ctx")
-            if img_ctx:
-                if st.button("Salvar Imagem Contextos"):
-                    url = upload_image(img_ctx, f"{user}_contextos.png")
-                    save_plano(plano["id"], {"img_contextos_url": url})
-                    st.toast("✅ Imagem salva!", icon="📷")
-                    st.rerun()
-            
-            if plano.get("img_contextos_url"):
-                st.image(plano["img_contextos_url"], width=300)
-        
-        with col_img2:
-            st.markdown("**Diagrama Looping Negativo**")
-            img_loop = st.file_uploader("Upload imagem looping", type=["png", "jpg", "jpeg"], key="img_loop")
-            if img_loop:
-                if st.button("Salvar Imagem Looping"):
-                    url = upload_image(img_loop, f"{user}_looping.png")
-                    save_plano(plano["id"], {"img_looping_url": url})
-                    st.toast("✅ Imagem salva!", icon="📷")
-                    st.rerun()
-            
-            if plano.get("img_looping_url"):
-                st.image(plano["img_looping_url"], width=300)
+        for i, ctx in enumerate(contextos):
+            with st.expander(f"Contexto {ctx['letra']} - {ctx['nome']}"):
+                
+                if ctx.get('img_modelo'):
+                    st.image(ctx['img_modelo'], width=400)
+                    if st.button(f"🗑️ Remover imagem", key=f"rm_modelo_{i}"):
+                        contextos[i]['img_modelo'] = ""
+                        save_plano(plano["id"], {"contextos": json.dumps(contextos)})
+                        st.toast("✅ Imagem removida!", icon="🗑️")
+                        st.rerun()
+                
+                img_modelo = st.file_uploader(f"Upload operação modelo", type=["png", "jpg", "jpeg"], key=f"modelo_{i}")
+                
+                if img_modelo:
+                    if st.button(f"💾 Salvar Operação Modelo {ctx['letra']}", key=f"save_modelo_{i}"):
+                        url = upload_image(img_modelo, f"{user}_modelo_{ctx['letra']}.png")
+                        contextos[i]['img_modelo'] = url
+                        save_plano(plano["id"], {"contextos": json.dumps(contextos)})
+                        st.toast("✅ Operação modelo salva!", icon="📸")
+                        st.rerun()
         
         st.markdown("---")
         
-        # Editar Contextos
-        st.markdown("#### ✏️ Editar Contextos")
+        # --- EDITAR CONTEXTOS ---
+        st.markdown("#### ✏️ Editar Descrição dos Contextos")
         
         contextos_editados = []
         for i, ctx in enumerate(contextos):
@@ -530,7 +661,8 @@ def show():
                 contextos_editados.append({
                     "letra": ctx['letra'],
                     "nome": nome,
-                    "descricao": desc
+                    "descricao": desc,
+                    "img_modelo": ctx.get('img_modelo', '')
                 })
         
         if st.button("💾 Salvar Contextos", use_container_width=True):
@@ -540,7 +672,7 @@ def show():
         
         st.markdown("---")
         
-        # Editar Fases
+        # --- EDITAR FASES ---
         st.markdown("#### ✏️ Editar Fases")
         
         fases_editadas = []
