@@ -76,59 +76,37 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip que cobre o card inteiro"""
-    import hashlib
-    card_id = f"c{hashlib.md5(label.encode()).hexdigest()[:8]}"
+    """Card com tooltip usando popover do Streamlit"""
     
-    html = f'''
-        <div id="{card_id}" style="
-            position: relative;
-            background-color: #161616; 
-            padding: 15px; 
-            border-radius: 8px; 
-            border: 1px solid {border_color}; 
-            text-align: center; 
-            margin-bottom: 10px;
-            height: 100px; 
-            display: flex; 
-            flex-direction: column; 
-            justify-content: center;
-        ">
-            <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
-                {label}
-                <span 
-                    style="font-size: 10px; color: #555; cursor: help; margin-left: 3px;"
-                    onmouseover="this.nextElementSibling.style.opacity='1'"
-                    onmouseout="this.nextElementSibling.style.opacity='0'"
-                >ⓘ</span>
-                <span style="
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background-color: #0a0a0a;
-                    color: #fff;
-                    padding: 15px;
-                    border-radius: 8px;
-                    font-size: 11px;
-                    line-height: 1.5;
-                    text-align: center;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    opacity: 0;
-                    transition: opacity 0.15s ease;
-                    pointer-events: none;
-                    z-index: 10;
-                    border: 1px solid #00FF88;
-                ">{tooltip_text}</span>
+    # Container principal com colunas
+    col_card, col_info = st.columns([20, 1])
+    
+    with col_card:
+        html = f'''
+            <div style="
+                background-color: #161616; 
+                padding: 15px; 
+                border-radius: 8px; 
+                border: 1px solid {border_color}; 
+                text-align: center; 
+                height: 100px; 
+                display: flex; 
+                flex-direction: column; 
+                justify-content: center;
+            ">
+                <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
+                    {label}
+                </div>
+                <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
+                <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
             </div>
-            <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
-            <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
-        </div>
-    '''
-    st.markdown(html, unsafe_allow_html=True)
+        '''
+        st.markdown(html, unsafe_allow_html=True)
+    
+    with col_info:
+        with st.popover("ⓘ"):
+            st.markdown(f"**{label}**")
+            st.caption(tooltip_text)
 
 def show(user, role):
     df_trades_all = load_trades_db()
