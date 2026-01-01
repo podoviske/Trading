@@ -37,6 +37,45 @@ def load_contas(user):
 def show(user, role):
     st.title("⚡ Registro de Operações")
     
+    # ============================================================
+    # VERIFICAÇÃO ANTI-TILT
+    # ============================================================
+    try:
+        from views.antitilt import usuario_pode_operar, get_checkin_hoje, registrar_stop, registrar_gain
+        
+        status = usuario_pode_operar(user)
+        
+        if not status['pode']:
+            if status['motivo'] == 'checkin_pendente':
+                st.warning("🌅 **Você precisa fazer o Check-in Pré-Mercado antes de operar.**")
+                if st.button("Ir para Check-in", type="primary"):
+                    st.session_state["navegar_para"] = "Anti-Tilt"
+                    st.rerun()
+                st.stop()
+            
+            elif status['motivo'] == 'score_baixo':
+                st.error(f"🚫 **Score muito baixo ({status['score']}). Não é recomendado operar hoje.**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Ir para Anti-Tilt"):
+                        st.session_state["navegar_para"] = "Anti-Tilt"
+                        st.rerun()
+                with col2:
+                    if st.button("⚠️ Operar mesmo assim"):
+                        from views.antitilt import ignorar_recomendacao
+                        ignorar_recomendacao(user)
+                        st.rerun()
+                st.stop()
+            
+            elif status['motivo'] == 'bloqueado':
+                st.error(f"🔴 **Você está bloqueado até {status['ate'][:16]}**")
+                st.info("Respira. Levanta. Bebe água. Amanhã tem mais.")
+                st.stop()
+        
+        antitilt_ativo = True
+    except:
+        antitilt_ativo = False
+    
     # Carrega dados
     atm_db = load_atms()
     df_grupos = load_grupos(user)
@@ -242,6 +281,17 @@ def show(user, role):
                 }
                 
                 sb.table("trades").insert(trade_data).execute()
+                
+                # Integração Anti-Tilt
+                if antitilt_ativo:
+                    if btn_stop:
+                        stop_info = registrar_stop(user)
+                        if stop_info['alerta_vermelho']:
+                            st.error("🔴 3 stops no dia! Você foi bloqueado por 1 hora.")
+                        elif stop_info['alerta_amarelo']:
+                            st.warning("⚠️ 2 stops consecutivos! Considere parar por hoje.")
+                    else:
+                        registrar_gain(user)
                 
                 st.balloons()
                 tipo_msg = "Stop" if btn_stop else "Gain"
