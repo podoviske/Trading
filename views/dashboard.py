@@ -76,22 +76,68 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card simples com tooltip via HTML title (hover nativo)"""
+    """Card com tooltip CSS customizado que aparece sobre o card"""
     st.markdown(
         f"""
-        <div title="{tooltip_text}" style="
-            background-color: #161616; 
-            padding: 15px; 
-            border-radius: 8px; 
-            border: 1px solid {border_color}; 
-            text-align: center; 
-            margin-bottom: 10px;
-            height: 100px; 
-            display: flex; flex-direction: column; justify-content: center;
-            cursor: help;
-        ">
+        <style>
+            .card-tooltip {{
+                position: relative;
+                background-color: #161616; 
+                padding: 15px; 
+                border-radius: 8px; 
+                border: 1px solid {border_color}; 
+                text-align: center; 
+                margin-bottom: 10px;
+                height: 100px; 
+                display: flex; 
+                flex-direction: column; 
+                justify-content: center;
+            }}
+            .card-tooltip .tooltip-icon {{
+                font-size: 9px;
+                color: #555;
+                cursor: help;
+                margin-left: 4px;
+            }}
+            .card-tooltip .tooltip-box {{
+                visibility: hidden;
+                opacity: 0;
+                position: absolute;
+                bottom: 105%;
+                left: 50%;
+                transform: translateX(-50%);
+                background-color: #1a1a1a;
+                color: #ccc;
+                padding: 10px 12px;
+                border-radius: 6px;
+                font-size: 11px;
+                line-height: 1.4;
+                width: 220px;
+                text-align: left;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                border: 1px solid #333;
+                z-index: 1000;
+                transition: opacity 0.2s, visibility 0.2s;
+            }}
+            .card-tooltip .tooltip-box::after {{
+                content: "";
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                margin-left: -6px;
+                border-width: 6px;
+                border-style: solid;
+                border-color: #1a1a1a transparent transparent transparent;
+            }}
+            .card-tooltip:hover .tooltip-box {{
+                visibility: visible;
+                opacity: 1;
+            }}
+        </style>
+        <div class="card-tooltip">
+            <div class="tooltip-box">{tooltip_text}</div>
             <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
-                {label} <span style="font-size:9px; color:#555;">ⓘ</span>
+                {label} <span class="tooltip-icon">ⓘ</span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
