@@ -76,7 +76,7 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip CSS customizado - CSS isolado por ID único"""
+    """Card com tooltip que aparece só no hover do ícone ⓘ"""
     import random
     card_id = f"card_{random.randint(10000, 99999)}"
     
@@ -84,7 +84,6 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
         f"""
         <style>
             #{card_id} {{
-                position: relative;
                 background-color: #161616; 
                 padding: 15px; 
                 border-radius: 8px; 
@@ -96,51 +95,66 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
                 flex-direction: column; 
                 justify-content: center;
             }}
+            #{card_id} .tt-wrapper {{
+                position: relative;
+                display: inline-block;
+            }}
             #{card_id} .tt-icon {{
-                font-size: 9px;
+                font-size: 10px;
                 color: #555;
                 cursor: help;
-                margin-left: 4px;
+                margin-left: 3px;
+                padding: 2px 4px;
+                border-radius: 50%;
+                transition: color 0.2s;
+            }}
+            #{card_id} .tt-icon:hover {{
+                color: #00FF88;
             }}
             #{card_id} .tt-box {{
                 visibility: hidden;
                 opacity: 0;
                 position: absolute;
-                bottom: 105%;
+                top: 20px;
                 left: 50%;
                 transform: translateX(-50%);
-                background-color: #1a1a1a;
+                background-color: #0d0d0d;
                 color: #ccc;
                 padding: 10px 12px;
                 border-radius: 6px;
                 font-size: 11px;
+                font-weight: normal;
+                text-transform: none;
                 line-height: 1.4;
-                width: 220px;
+                width: 200px;
                 text-align: left;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                box-shadow: 0 4px 15px rgba(0,0,0,0.5);
                 border: 1px solid #333;
-                z-index: 1000;
-                transition: opacity 0.2s, visibility 0.2s;
+                z-index: 9999;
+                transition: opacity 0.15s, visibility 0.15s;
             }}
-            #{card_id} .tt-box::after {{
+            #{card_id} .tt-box::before {{
                 content: "";
                 position: absolute;
-                top: 100%;
+                bottom: 100%;
                 left: 50%;
-                margin-left: -6px;
-                border-width: 6px;
+                margin-left: -5px;
+                border-width: 5px;
                 border-style: solid;
-                border-color: #1a1a1a transparent transparent transparent;
+                border-color: transparent transparent #0d0d0d transparent;
             }}
-            #{card_id}:hover .tt-box {{
+            #{card_id} .tt-wrapper:hover .tt-box {{
                 visibility: visible;
                 opacity: 1;
             }}
         </style>
         <div id="{card_id}">
-            <div class="tt-box">{tooltip_text}</div>
             <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
-                {label} <span class="tt-icon">ⓘ</span>
+                {label}
+                <span class="tt-wrapper">
+                    <span class="tt-icon">ⓘ</span>
+                    <span class="tt-box">{tooltip_text}</span>
+                </span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
