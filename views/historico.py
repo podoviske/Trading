@@ -139,18 +139,17 @@ def show_trade_details(row, user, role):
 
 # --- 3. TELA PRINCIPAL (GALERIA) ---
 def show(user, role):
-    # [IMPORTANTE] O CSS AGORA ESTÁ DENTRO DO SHOW PARA GARANTIR O CARREGAMENTO
+    # CSS
     st.markdown("""
         <style>
-        /* 1. Card com Altura Fixa (BLINDAGEM) */
         .trade-card {
-            background-color: #161616 !important; /* Força cor de fundo */
+            background-color: #161616 !important;
             border-radius: 8px;
             padding: 12px;
             margin-bottom: 15px;
             border: 1px solid #333;
             transition: transform 0.2s, border-color 0.2s;
-            height: 300px !important;  /* Altura FIXA para alinhar tudo */
+            height: 300px !important;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -161,11 +160,10 @@ def show(user, role):
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
         
-        /* 2. Container da Imagem Fixo */
         .card-img-container {
             width: 100%; 
-            height: 160px !important; /* Altura fixa da área da foto */
-            background-color: #111; /* Fundo escuro caso não tenha foto */
+            height: 160px !important;
+            background-color: #111;
             border-radius: 5px; 
             overflow: hidden; 
             display: flex;
@@ -178,12 +176,11 @@ def show(user, role):
         
         .card-img { 
             width: 100%; height: 100%; 
-            object-fit: cover; /* Cobre a área sem distorcer (Zoom/Crop) */
+            object-fit: cover;
             object-position: center; 
             display: block; 
         }
         
-        /* 3. Textos Seguros */
         .card-title { 
             font-size: 14px; font-weight: 700; color: white; margin-bottom: 4px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -195,7 +192,6 @@ def show(user, role):
         .card-res-win { font-size: 18px; font-weight: 800; color: #00FF88; text-align: right; } 
         .card-res-loss { font-size: 18px; font-weight: 800; color: #FF4B4B; text-align: right; }
         
-        /* Box de Detalhes (Modal) */
         .tech-box {
             background-color: #111;
             border: 1px solid #333;
@@ -209,6 +205,17 @@ def show(user, role):
             display: flex; justify-content: space-between; 
             border-bottom: 1px solid #222; padding: 4px 0; font-size: 12px; color: #ccc;
         }
+        
+        .filtro-ativo {
+            background-color: #1a0a0a;
+            border: 1px solid #B20000;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -217,8 +224,23 @@ def show(user, role):
     dfh = load_trades_db()
     if not dfh.empty: dfh = dfh[dfh['usuario'] == user]
     
+    # --- VERIFICA FILTRO VINDO DO PLANO ---
+    filtro_contexto_externo = st.session_state.pop("filtro_contexto_historico", None)
+    
+    if filtro_contexto_externo:
+        st.markdown(f"""
+            <div class="filtro-ativo">
+                <span>🎯 Filtro ativo: <b>{filtro_contexto_externo}</b></span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col_clear, _ = st.columns([1, 4])
+        with col_clear:
+            if st.button("❌ Limpar filtro"):
+                st.rerun()
+    
     if not dfh.empty:
-        with st.expander("🔍 Filtros", expanded=True):
+        with st.expander("🔍 Filtros", expanded=not bool(filtro_contexto_externo)):
             c1, c2, c3, c4 = st.columns(4)
             all_assets = sorted(list(dfh['ativo'].unique())) if 'ativo' in dfh.columns else ["NQ", "MNQ"]
             all_contexts = sorted(list(dfh['contexto'].unique())) if 'contexto' in dfh.columns else []
@@ -226,7 +248,11 @@ def show(user, role):
             
             fa = c1.multiselect("Ativo", all_assets)
             fr = c2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
-            fc = c3.multiselect("Contexto", all_contexts)
+            
+            # Se veio filtro externo, pré-seleciona
+            default_ctx = [filtro_contexto_externo] if filtro_contexto_externo and filtro_contexto_externo in all_contexts else []
+            fc = c3.multiselect("Contexto", all_contexts, default=default_ctx)
+            
             fg = c4.multiselect("Grupo", all_groups)
             
             if fa: dfh = dfh[dfh['ativo'].isin(fa)]
