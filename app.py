@@ -283,21 +283,32 @@ if check_password():
             </div>
         ''', unsafe_allow_html=True)
         
-        # Seção: OPERACIONAL
-        st.markdown('<div class="menu-section">Operacional</div>', unsafe_allow_html=True)
-        
-        # Monta lista de opções baseado no role
+        # Monta menu baseado no role
         from streamlit_option_menu import option_menu
         
-        options_op = ["Dashboard", "Registrar Trade", "Histórico"]
-        icons_op = ["grid-1x2-fill", "lightning-charge-fill", "clock-history"]
+        # Lista base de opções
+        options = ["Dashboard", "Registrar Trade", "Histórico"]
+        icons = ["grid-1x2-fill", "lightning-charge-fill", "clock-history"]
         
-        selected_op = option_menu(
+        # Adiciona opções de gestão para admin/master
+        if role in ['master', 'admin']:
+            options.extend(["─", "Contas", "Configurar ATM", "Plano de Trading"])
+            icons.extend(["", "wallet2", "gear-fill", "file-earmark-text"])
+            
+        # Adiciona Admin só para admin
+        if role == 'admin':
+            options.extend(["──", "Admin"])
+            icons.extend(["", "person-badge"])
+        
+        # Seção label
+        st.markdown('<div class="menu-section">Menu</div>', unsafe_allow_html=True)
+        
+        selected = option_menu(
             menu_title=None,
-            options=options_op,
-            icons=icons_op,
+            options=options,
+            icons=icons,
             default_index=0,
-            key="menu_op",
+            key="main_menu",
             styles={
                 "container": {"padding": "0", "background-color": "transparent"},
                 "icon": {"color": "#666", "font-size": "14px"}, 
@@ -314,73 +325,9 @@ if check_password():
                     "color": "white", 
                     "font-weight": "600"
                 },
+                "separator": {"margin": "10px 0"}
             }
         )
-        
-        # Seção: GESTÃO (só para admin/master)
-        if role in ['master', 'admin']:
-            st.markdown('<div class="menu-section">Gestão</div>', unsafe_allow_html=True)
-            
-            options_gest = ["Contas", "Configurar ATM", "Plano de Trading"]
-            icons_gest = ["wallet2", "gear-fill", "file-earmark-text"]
-            
-            selected_gest = option_menu(
-                menu_title=None,
-                options=options_gest,
-                icons=icons_gest,
-                default_index=0 if selected_op is None else -1,
-                key="menu_gest",
-                styles={
-                    "container": {"padding": "0", "background-color": "transparent"},
-                    "icon": {"color": "#666", "font-size": "14px"}, 
-                    "nav-link": {
-                        "font-size": "14px", 
-                        "text-align": "left", 
-                        "margin": "3px 10px",
-                        "padding": "12px 15px",
-                        "border-radius": "10px",
-                        "--hover-color": "#1a1a1a"
-                    },
-                    "nav-link-selected": {
-                        "background-color": "#B20000", 
-                        "color": "white", 
-                        "font-weight": "600"
-                    },
-                }
-            )
-        else:
-            selected_gest = None
-            
-        # Seção: ADMIN (só para admin)
-        if role == 'admin':
-            st.markdown('<div class="menu-section">Administração</div>', unsafe_allow_html=True)
-            
-            selected_admin = option_menu(
-                menu_title=None,
-                options=["Admin"],
-                icons=["person-badge"],
-                default_index=-1,
-                key="menu_admin",
-                styles={
-                    "container": {"padding": "0", "background-color": "transparent"},
-                    "icon": {"color": "#666", "font-size": "14px"}, 
-                    "nav-link": {
-                        "font-size": "14px", 
-                        "text-align": "left", 
-                        "margin": "3px 10px",
-                        "padding": "12px 15px",
-                        "border-radius": "10px",
-                        "--hover-color": "#1a1a1a"
-                    },
-                    "nav-link-selected": {
-                        "background-color": "#B20000", 
-                        "color": "white", 
-                        "font-weight": "600"
-                    },
-                }
-            )
-        else:
-            selected_admin = None
         
         # Divider
         st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
@@ -391,15 +338,6 @@ if check_password():
             st.session_state.clear()
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- DETERMINA PÁGINA SELECIONADA ---
-    # Prioridade: Admin > Gestão > Operacional
-    if selected_admin and selected_admin != "":
-        selected = selected_admin
-    elif selected_gest and selected_gest != "":
-        selected = selected_gest
-    else:
-        selected = selected_op if selected_op else "Dashboard"
 
     # --- ROTEAMENTO DE PÁGINAS ---
     if selected == "Dashboard":
@@ -422,3 +360,7 @@ if check_password():
         
     elif selected == "Admin":
         admin.show(user, role)
+        
+    # Ignora separadores
+    elif selected in ["─", "──"]:
+        dashboard.show(user, role)
