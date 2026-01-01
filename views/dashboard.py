@@ -76,37 +76,65 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip usando popover do Streamlit"""
+    """Card com tooltip interno via CSS"""
+    import hashlib
+    uid = hashlib.md5(label.encode()).hexdigest()[:6]
     
-    # Container principal com colunas
-    col_card, col_info = st.columns([20, 1])
-    
-    with col_card:
-        html = f'''
-            <div style="
+    html = f'''
+        <style>
+            .card-{uid} {{
                 background-color: #161616; 
                 padding: 15px; 
                 border-radius: 8px; 
                 border: 1px solid {border_color}; 
                 text-align: center; 
+                margin-bottom: 10px;
                 height: 100px; 
                 display: flex; 
                 flex-direction: column; 
                 justify-content: center;
-            ">
-                <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
-                    {label}
-                </div>
-                <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
-                <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
+                position: relative;
+            }}
+            .card-{uid} .info-icon {{
+                color: #444;
+                cursor: help;
+                font-size: 10px;
+                margin-left: 4px;
+            }}
+            .card-{uid} .info-icon:hover {{
+                color: #888;
+            }}
+            .card-{uid} .tooltip-text {{
+                visibility: hidden;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: #000;
+                color: #fff;
+                padding: 12px 15px;
+                border-radius: 8px;
+                font-size: 11px;
+                width: 85%;
+                text-align: center;
+                z-index: 999;
+                border: 1px solid #B20000;
+                line-height: 1.4;
+            }}
+            .card-{uid}:hover .tooltip-text {{
+                visibility: visible;
+            }}
+        </style>
+        <div class="card-{uid}">
+            <div class="tooltip-text">{tooltip_text}</div>
+            <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
+                {label} <span class="info-icon">ⓘ</span>
             </div>
-        '''
-        st.markdown(html, unsafe_allow_html=True)
-    
-    with col_info:
-        with st.popover("ⓘ"):
-            st.markdown(f"**{label}**")
-            st.caption(tooltip_text)
+            <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
+            <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
+        </div>
+    '''
+    st.markdown(html, unsafe_allow_html=True)
 
 def show(user, role):
     df_trades_all = load_trades_db()
