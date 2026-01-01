@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_option_menu import option_menu
 from supabase import create_client
 
 # Importação das Views (Telas)
@@ -13,57 +12,225 @@ import views.admin as admin
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="EvoTrade Empire v300",
+    page_title="Apex Shield",
     layout="wide",
-    page_icon="🦅",
+    page_icon="🛡️",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. CSS ORIGINAL (RESTAURADO DA v201) ---
+# --- 2. CSS CUSTOMIZADO ---
 st.markdown("""
     <style>
-    /* Fundo Geral (Cinza Chumbo da v201) */
-    .stApp { background-color: #0F0F0F; }
+    /* === RESET E BASE === */
+    .stApp { 
+        background-color: #0a0a0a; 
+    }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] { background-color: #0F0F0F !important; border-right: 1px solid #1E1E1E; }
+    /* === SIDEBAR === */
+    [data-testid="stSidebar"] { 
+        background-color: #0d0d0d !important; 
+        border-right: 1px solid #1a1a1a;
+    }
     
-    /* Estilo do Login Antigo */
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: 0;
+    }
+    
+    /* === LOGO === */
+    .sidebar-logo {
+        padding: 25px 20px;
+        border-bottom: 1px solid #1a1a1a;
+        margin-bottom: 10px;
+    }
+    
+    .sidebar-logo h1 {
+        font-size: 26px;
+        font-weight: 800;
+        margin: 0;
+        letter-spacing: -1px;
+    }
+    
+    .sidebar-logo .red {
+        color: #B20000;
+    }
+    
+    .sidebar-logo .white {
+        color: #fff;
+        font-weight: 400;
+    }
+    
+    /* === SEÇÕES DO MENU === */
+    .menu-section {
+        padding: 20px 20px 8px 20px;
+        font-size: 10px;
+        font-weight: 600;
+        color: #444;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+    }
+    
+    /* === PERFIL DO USUÁRIO === */
+    .user-profile {
+        padding: 15px 20px;
+        margin: 10px;
+        background-color: #111;
+        border-radius: 10px;
+        border: 1px solid #1a1a1a;
+    }
+    
+    .user-info {
+        display: flex;
+        align-items: center;
+    }
+    
+    .user-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #B20000, #800000);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 700;
+        font-size: 14px;
+        margin-right: 12px;
+    }
+    
+    .user-name {
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    
+    .user-role {
+        color: #555;
+        font-size: 11px;
+        text-transform: capitalize;
+    }
+    
+    /* === INPUTS E BOTÕES === */
+    .stTextInput > div > div > input { 
+        color: white !important; 
+        background-color: #0a0a0a !important; 
+        border: 1px solid #222 !important;
+        border-radius: 10px !important;
+        padding: 12px 15px !important;
+    }
+    
+    .stTextInput > div > div > input:focus { 
+        border-color: #B20000 !important;
+        box-shadow: 0 0 0 1px #B20000 !important;
+    }
+    
+    .stButton > button { 
+        border-radius: 10px !important; 
+        font-weight: 600 !important;
+        padding: 12px 20px !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(178, 0, 0, 0.3);
+    }
+    
+    /* === LOGIN === */
     .login-container {
-        max-width: 400px;
-        margin: 50px auto; 
-        padding: 30px;
-        background-color: #161616; 
-        border-radius: 15px;
-        border: 1px solid #B20000; 
+        max-width: 380px;
+        margin: 60px auto 20px auto; 
+        padding: 40px;
+        background-color: #0d0d0d; 
+        border-radius: 16px;
+        border: 1px solid #1a1a1a;
         text-align: center;
     }
-    .logo-main { color: #B20000; font-size: 50px; font-weight: 900; line-height: 1; }
-    .logo-sub { color: white; font-size: 35px; font-weight: 700; margin-top: -10px; margin-bottom: 20px; }
     
-    /* Inputs e Botões */
-    .stTextInput>div>div>input { color: white; background-color: #111; border: 1px solid #333; }
-    .stButton>button { border-radius: 6px; font-weight: 600; }
+    .login-logo {
+        font-size: 38px;
+        font-weight: 800;
+        margin-bottom: 5px;
+        letter-spacing: -1px;
+    }
+    
+    .login-logo .red {
+        color: #B20000;
+    }
+    
+    .login-logo .white {
+        color: #fff;
+        font-weight: 400;
+    }
+    
+    .login-subtitle {
+        color: #444;
+        font-size: 12px;
+        margin-bottom: 30px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+    
+    /* === ESCONDER ELEMENTOS PADRÃO DO STREAMLIT === */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* === ESTILO DO MENU OPTION_MENU === */
+    .nav-link {
+        border-radius: 10px !important;
+        margin: 3px 10px !important;
+    }
+    
+    /* === DIVIDER === */
+    .sidebar-divider {
+        height: 1px;
+        background-color: #1a1a1a;
+        margin: 15px 20px;
+    }
+    
+    /* === BOTÃO SAIR === */
+    .logout-btn button {
+        background-color: transparent !important;
+        border: 1px solid #222 !important;
+        color: #666 !important;
+    }
+    
+    .logout-btn button:hover {
+        background-color: #1a1a1a !important;
+        border-color: #333 !important;
+        color: #fff !important;
+        transform: none !important;
+        box-shadow: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. SISTEMA DE LOGIN (DESIGN ANTIGO) ---
-if "password_correct" not in st.session_state: st.session_state["password_correct"] = False
+# --- 3. SISTEMA DE LOGIN ---
+if "password_correct" not in st.session_state: 
+    st.session_state["password_correct"] = False
 
 def check_password():
-    if st.session_state["password_correct"]: return True
+    if st.session_state["password_correct"]: 
+        return True
 
-    # Layout de Colunas para Centralizar (Estilo v201)
-    _, col_login, _ = st.columns([1, 2, 1])
+    _, col_login, _ = st.columns([1, 1.2, 1])
     
     with col_login:
-        # Abre o Container Estilizado
-        st.markdown('<div class="login-container"><div class="logo-main">EVO</div><div class="logo-sub">TRADE</div>', unsafe_allow_html=True)
+        st.markdown('''
+            <div class="login-container">
+                <div class="login-logo">
+                    <span class="red">EVO</span><span class="white">TRADE</span>
+                </div>
+                <div class="login-subtitle">Terminal de Operações</div>
+            </div>
+        ''', unsafe_allow_html=True)
         
-        user = st.text_input("Usuário", key="login_user")
-        pwd = st.text_input("Senha", type="password", key="login_pwd")
+        user = st.text_input("Usuário", key="login_user", placeholder="Digite seu usuário", label_visibility="collapsed")
+        pwd = st.text_input("Senha", type="password", key="login_pwd", placeholder="Digite sua senha", label_visibility="collapsed")
         
-        if st.button("ACESSAR TERMINAL", use_container_width=True):
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if st.button("ACESSAR", use_container_width=True, type="primary"):
             try:
                 url = st.secrets["SUPABASE_URL"]
                 key = st.secrets["SUPABASE_KEY"]
@@ -78,12 +245,9 @@ def check_password():
                     st.session_state["supabase"] = supabase
                     st.rerun()
                 else:
-                    st.error("Credenciais Incorretas")
+                    st.error("Credenciais incorretas")
             except Exception as e:
                 st.error(f"Erro de conexão: {e}")
-        
-        # Fecha o Container
-        st.markdown('</div>', unsafe_allow_html=True)
                 
     return False
 
@@ -91,42 +255,151 @@ def check_password():
 if check_password():
     user = st.session_state["logged_user"]
     role = st.session_state.get("user_role", "user")
+    
+    # Pega inicial do usuário para o avatar
+    user_initial = user[0].upper() if user else "U"
 
-    # --- MENU LATERAL ---
+    # --- SIDEBAR REDESENHADA ---
     with st.sidebar:
-        st.markdown('<h1 style="color:#B20000; font-weight:900; margin-bottom:0;">EVO</h1><h2 style="color:white; margin-top:-15px;">TRADE</h2>', unsafe_allow_html=True)
-        st.write(f"👤 **{user}**")
         
-        options = ["Dashboard", "Registrar Trade", "Histórico", "Plano de Trading"]
-        icons = ["grid", "lightning-charge", "clock-history", "file-text"]
+        # Logo
+        st.markdown('''
+            <div class="sidebar-logo">
+                <h1><span class="red">EVO</span><span class="white">TRADE</span></h1>
+            </div>
+        ''', unsafe_allow_html=True)
         
-        if role in ['master', 'admin']:
-            options.insert(2, "Contas")
-            icons.insert(2, "wallet2")
-            options.insert(3, "Configurar ATM")
-            icons.insert(3, "gear")
-            
-        if role == 'admin':
-            options.append("Admin")
-            icons.append("person-badge")
-
-        selected = option_menu(
+        # Perfil do usuário
+        role_display = "Administrador" if role == "admin" else ("Master" if role == "master" else "Trader")
+        st.markdown(f'''
+            <div class="user-profile">
+                <div class="user-info">
+                    <div class="user-avatar">{user_initial}</div>
+                    <div>
+                        <div class="user-name">{user}</div>
+                        <div class="user-role">{role_display}</div>
+                    </div>
+                </div>
+            </div>
+        ''', unsafe_allow_html=True)
+        
+        # Seção: OPERACIONAL
+        st.markdown('<div class="menu-section">Operacional</div>', unsafe_allow_html=True)
+        
+        # Monta lista de opções baseado no role
+        from streamlit_option_menu import option_menu
+        
+        options_op = ["Dashboard", "Registrar Trade", "Histórico"]
+        icons_op = ["grid-1x2-fill", "lightning-charge-fill", "clock-history"]
+        
+        selected_op = option_menu(
             menu_title=None,
-            options=options,
-            icons=icons,
+            options=options_op,
+            icons=icons_op,
             default_index=0,
+            key="menu_op",
             styles={
-                "container": {"padding": "0!important", "background-color": "transparent"},
-                "icon": {"color": "#888", "font-size": "14px"}, 
-                "nav-link": {"font-size": "14px", "text-align": "left", "margin":"5px", "--hover-color": "#222"},
-                "nav-link-selected": {"background-color": "#B20000", "color": "white", "font-weight": "bold"},
+                "container": {"padding": "0", "background-color": "transparent"},
+                "icon": {"color": "#666", "font-size": "14px"}, 
+                "nav-link": {
+                    "font-size": "14px", 
+                    "text-align": "left", 
+                    "margin": "3px 10px",
+                    "padding": "12px 15px",
+                    "border-radius": "10px",
+                    "--hover-color": "#1a1a1a"
+                },
+                "nav-link-selected": {
+                    "background-color": "#B20000", 
+                    "color": "white", 
+                    "font-weight": "600"
+                },
             }
         )
         
-        st.write("---")
-        if st.button("Sair", use_container_width=True):
+        # Seção: GESTÃO (só para admin/master)
+        if role in ['master', 'admin']:
+            st.markdown('<div class="menu-section">Gestão</div>', unsafe_allow_html=True)
+            
+            options_gest = ["Contas", "Configurar ATM", "Plano de Trading"]
+            icons_gest = ["wallet2", "gear-fill", "file-earmark-text"]
+            
+            selected_gest = option_menu(
+                menu_title=None,
+                options=options_gest,
+                icons=icons_gest,
+                default_index=0 if selected_op is None else -1,
+                key="menu_gest",
+                styles={
+                    "container": {"padding": "0", "background-color": "transparent"},
+                    "icon": {"color": "#666", "font-size": "14px"}, 
+                    "nav-link": {
+                        "font-size": "14px", 
+                        "text-align": "left", 
+                        "margin": "3px 10px",
+                        "padding": "12px 15px",
+                        "border-radius": "10px",
+                        "--hover-color": "#1a1a1a"
+                    },
+                    "nav-link-selected": {
+                        "background-color": "#B20000", 
+                        "color": "white", 
+                        "font-weight": "600"
+                    },
+                }
+            )
+        else:
+            selected_gest = None
+            
+        # Seção: ADMIN (só para admin)
+        if role == 'admin':
+            st.markdown('<div class="menu-section">Administração</div>', unsafe_allow_html=True)
+            
+            selected_admin = option_menu(
+                menu_title=None,
+                options=["Admin"],
+                icons=["person-badge"],
+                default_index=-1,
+                key="menu_admin",
+                styles={
+                    "container": {"padding": "0", "background-color": "transparent"},
+                    "icon": {"color": "#666", "font-size": "14px"}, 
+                    "nav-link": {
+                        "font-size": "14px", 
+                        "text-align": "left", 
+                        "margin": "3px 10px",
+                        "padding": "12px 15px",
+                        "border-radius": "10px",
+                        "--hover-color": "#1a1a1a"
+                    },
+                    "nav-link-selected": {
+                        "background-color": "#B20000", 
+                        "color": "white", 
+                        "font-weight": "600"
+                    },
+                }
+            )
+        else:
+            selected_admin = None
+        
+        # Divider
+        st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+        
+        # Botão Sair
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        if st.button("🚪 Sair", use_container_width=True):
             st.session_state.clear()
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- DETERMINA PÁGINA SELECIONADA ---
+    # Prioridade: Admin > Gestão > Operacional
+    if selected_admin and selected_admin != "":
+        selected = selected_admin
+    elif selected_gest and selected_gest != "":
+        selected = selected_gest
+    else:
+        selected = selected_op if selected_op else "Dashboard"
 
     # --- ROTEAMENTO DE PÁGINAS ---
     if selected == "Dashboard":
