@@ -78,11 +78,9 @@ def load_contas_config(user):
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
     """Card com tooltip usando abordagem inline consistente"""
     import hashlib
-    # ID único baseado no label pra ser consistente
     card_id = f"c{hashlib.md5(label.encode()).hexdigest()[:8]}"
     
-    st.markdown(
-        f"""
+    html = f'''
         <div id="{card_id}" style="
             position: relative;
             background-color: #161616; 
@@ -99,20 +97,13 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
             <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
                 {label}
                 <span 
-                    style="
-                        font-size: 10px;
-                        color: #555;
-                        cursor: help;
-                        margin-left: 3px;
-                    "
-                    onmouseover="document.getElementById('tt_{card_id}').style.display='block'"
+                    style="font-size: 10px; color: #555; cursor: help; margin-left: 3px;"
+                    onmouseover="document.getElementById('tt_{card_id}').style.display='flex'"
                     onmouseout="document.getElementById('tt_{card_id}').style.display='none'"
                 >ⓘ</span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
-            
-            <!-- Tooltip box -->
             <div id="tt_{card_id}" style="
                 display: none;
                 position: absolute;
@@ -127,16 +118,14 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
                 font-size: 11px;
                 line-height: 1.4;
                 text-align: center;
-                display: none;
                 align-items: center;
                 justify-content: center;
                 z-index: 100;
                 border: 1px solid #00FF88;
             ">{tooltip_text}</div>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    '''
+    st.markdown(html, unsafe_allow_html=True)
 
 def show(user, role):
     df_trades_all = load_trades_db()
