@@ -181,6 +181,19 @@ st.markdown("""
         margin: 3px 10px !important;
     }
     
+    /* Remove fundo claro do option_menu */
+    div[data-testid="stSidebar"] .st-emotion-cache-1gwvy71,
+    div[data-testid="stSidebar"] .st-emotion-cache-ue6h4q,
+    div[data-testid="stSidebar"] nav,
+    div[data-testid="stSidebar"] ul {
+        background-color: #0d0d0d !important;
+    }
+    
+    /* Garante fundo escuro em todo container do menu */
+    .st-emotion-cache-1gwvy71 {
+        background-color: #0d0d0d !important;
+    }
+    
     /* === DIVIDER === */
     .sidebar-divider {
         height: 1px;
@@ -310,7 +323,8 @@ if check_password():
             default_index=0,
             key="main_menu",
             styles={
-                "container": {"padding": "0", "background-color": "transparent"},
+                "container": {"padding": "0", "background-color": "#0d0d0d"},
+                "menu-container": {"background-color": "#0d0d0d"},
                 "icon": {"color": "#666", "font-size": "14px"}, 
                 "nav-link": {
                     "font-size": "14px", 
@@ -318,7 +332,8 @@ if check_password():
                     "margin": "3px 10px",
                     "padding": "12px 15px",
                     "border-radius": "10px",
-                    "background-color": "transparent",
+                    "background-color": "#0d0d0d",
+                    "color": "#888",
                     "--hover-color": "#1a1a1a"
                 },
                 "nav-link-selected": {
