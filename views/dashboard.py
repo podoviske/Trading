@@ -76,7 +76,7 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip usando abordagem inline consistente"""
+    """Card com tooltip que cobre o card inteiro"""
     import hashlib
     card_id = f"c{hashlib.md5(label.encode()).hexdigest()[:8]}"
     
@@ -98,31 +98,34 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
                 {label}
                 <span 
                     style="font-size: 10px; color: #555; cursor: help; margin-left: 3px;"
-                    onmouseover="document.getElementById('tt_{card_id}').style.display='flex'"
-                    onmouseout="document.getElementById('tt_{card_id}').style.display='none'"
+                    onmouseover="this.nextElementSibling.style.opacity='1'"
+                    onmouseout="this.nextElementSibling.style.opacity='0'"
                 >ⓘ</span>
+                <span style="
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: #0a0a0a;
+                    color: #fff;
+                    padding: 15px;
+                    border-radius: 8px;
+                    font-size: 11px;
+                    line-height: 1.5;
+                    text-align: center;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    opacity: 0;
+                    transition: opacity 0.15s ease;
+                    pointer-events: none;
+                    z-index: 10;
+                    border: 1px solid #00FF88;
+                ">{tooltip_text}</span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
-            <div id="tt_{card_id}" style="
-                display: none;
-                position: absolute;
-                top: 5px;
-                left: 5px;
-                right: 5px;
-                bottom: 5px;
-                background-color: rgba(0, 0, 0, 0.95);
-                color: #fff;
-                padding: 10px;
-                border-radius: 6px;
-                font-size: 11px;
-                line-height: 1.4;
-                text-align: center;
-                align-items: center;
-                justify-content: center;
-                z-index: 100;
-                border: 1px solid #00FF88;
-            ">{tooltip_text}</div>
         </div>
     '''
     st.markdown(html, unsafe_allow_html=True)
