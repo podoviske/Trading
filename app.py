@@ -292,13 +292,13 @@ if check_password():
         
         # Adiciona opções de gestão para admin/master
         if role in ['master', 'admin']:
-            options.extend(["─", "Contas", "Configurar ATM", "Plano de Trading"])
-            icons.extend(["", "wallet2", "gear-fill", "file-earmark-text"])
+            options.extend(["Contas", "Configurar ATM", "Plano de Trading"])
+            icons.extend(["wallet2", "gear-fill", "file-earmark-text"])
             
         # Adiciona Admin só para admin
         if role == 'admin':
-            options.extend(["──", "Admin"])
-            icons.extend(["", "person-badge"])
+            options.append("Admin")
+            icons.append("person-badge")
         
         # Seção label
         st.markdown('<div class="menu-section">Menu</div>', unsafe_allow_html=True)
@@ -318,6 +318,7 @@ if check_password():
                     "margin": "3px 10px",
                     "padding": "12px 15px",
                     "border-radius": "10px",
+                    "background-color": "transparent",
                     "--hover-color": "#1a1a1a"
                 },
                 "nav-link-selected": {
@@ -325,7 +326,6 @@ if check_password():
                     "color": "white", 
                     "font-weight": "600"
                 },
-                "separator": {"margin": "10px 0"}
             }
         )
         
@@ -360,7 +360,3 @@ if check_password():
         
     elif selected == "Admin":
         admin.show(user, role)
-        
-    # Ignora separadores
-    elif selected in ["─", "──"]:
-        dashboard.show(user, role)
