@@ -76,11 +76,14 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip CSS customizado que aparece sobre o card"""
+    """Card com tooltip CSS customizado - CSS isolado por ID único"""
+    import random
+    card_id = f"card_{random.randint(10000, 99999)}"
+    
     st.markdown(
         f"""
         <style>
-            .card-tooltip {{
+            #{card_id} {{
                 position: relative;
                 background-color: #161616; 
                 padding: 15px; 
@@ -93,13 +96,13 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
                 flex-direction: column; 
                 justify-content: center;
             }}
-            .card-tooltip .tooltip-icon {{
+            #{card_id} .tt-icon {{
                 font-size: 9px;
                 color: #555;
                 cursor: help;
                 margin-left: 4px;
             }}
-            .card-tooltip .tooltip-box {{
+            #{card_id} .tt-box {{
                 visibility: hidden;
                 opacity: 0;
                 position: absolute;
@@ -119,7 +122,7 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
                 z-index: 1000;
                 transition: opacity 0.2s, visibility 0.2s;
             }}
-            .card-tooltip .tooltip-box::after {{
+            #{card_id} .tt-box::after {{
                 content: "";
                 position: absolute;
                 top: 100%;
@@ -129,15 +132,15 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
                 border-style: solid;
                 border-color: #1a1a1a transparent transparent transparent;
             }}
-            .card-tooltip:hover .tooltip-box {{
+            #{card_id}:hover .tt-box {{
                 visibility: visible;
                 opacity: 1;
             }}
         </style>
-        <div class="card-tooltip">
-            <div class="tooltip-box">{tooltip_text}</div>
+        <div id="{card_id}">
+            <div class="tt-box">{tooltip_text}</div>
             <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
-                {label} <span class="tooltip-icon">ⓘ</span>
+                {label} <span class="tt-icon">ⓘ</span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
