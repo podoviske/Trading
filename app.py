@@ -354,24 +354,30 @@ if check_password():
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # --- VERIFICA NAVEGAÇÃO EXTERNA (do Plano de Trading) ---
+    navegar_para = st.session_state.pop("navegar_para", None)
+
     # --- ROTEAMENTO DE PÁGINAS ---
-    if selected == "Dashboard":
+    # Se veio navegação externa, sobrescreve a seleção
+    pagina_atual = navegar_para if navegar_para else selected
+    
+    if pagina_atual == "Dashboard":
         dashboard.show(user, role)
         
-    elif selected == "Registrar Trade":
+    elif pagina_atual == "Registrar Trade":
         trade.show(user, role)
         
-    elif selected == "Contas":
+    elif pagina_atual == "Contas":
         contas.show(user, role)
         
-    elif selected == "Configurar ATM":
+    elif pagina_atual == "Configurar ATM":
         atm.show(user, role)
         
-    elif selected == "Histórico":
+    elif pagina_atual == "Histórico":
         historico.show(user, role)
         
-    elif selected == "Plano de Trading":
+    elif pagina_atual == "Plano de Trading":
         plano.show()
         
-    elif selected == "Admin":
+    elif pagina_atual == "Admin":
         admin.show(user, role)
