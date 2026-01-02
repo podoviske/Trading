@@ -40,10 +40,13 @@ def show(user, role):
     # ============================================================
     # VERIFICAÇÃO ANTI-TILT
     # ============================================================
+    antitilt_ativo = False
+    
     try:
         from views.antitilt import usuario_pode_operar, get_checkin_hoje, registrar_stop, registrar_gain
         
         status = usuario_pode_operar(user)
+        antitilt_ativo = True
         
         if not status['pode']:
             if status['motivo'] == 'checkin_pendente':
@@ -51,7 +54,7 @@ def show(user, role):
                 if st.button("Ir para Check-in", type="primary"):
                     st.session_state["navegar_para"] = "Anti-Tilt"
                     st.rerun()
-                st.stop()
+                return  # Para a execução aqui
             
             elif status['motivo'] == 'score_baixo':
                 st.error(f"🚫 **Score muito baixo ({status['score']}). Não é recomendado operar hoje.**")
@@ -65,15 +68,14 @@ def show(user, role):
                         from views.antitilt import ignorar_recomendacao
                         ignorar_recomendacao(user)
                         st.rerun()
-                st.stop()
+                return  # Para a execução aqui
             
             elif status['motivo'] == 'bloqueado':
                 st.error(f"🔴 **Você está bloqueado até {status['ate'][:16]}**")
                 st.info("Respira. Levanta. Bebe água. Amanhã tem mais.")
-                st.stop()
+                return  # Para a execução aqui
         
-        antitilt_ativo = True
-    except:
+    except Exception as e:
         antitilt_ativo = False
     
     # Carrega dados
