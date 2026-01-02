@@ -512,6 +512,21 @@ def show(user, role):
     
     st.markdown("## Anti-Tilt System")
     
+    # Frase de mindset
+    st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #0a0a0a 0%, #111 100%);
+            border-left: 3px solid #B20000;
+            padding: 15px 20px;
+            margin-bottom: 25px;
+            border-radius: 0 8px 8px 0;
+        ">
+            <span style="color: #666; font-size: 13px; font-style: italic;">
+                "Foque em nao ser idiota. E mais facil do que tentar ser genial."
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
+    
     tab_hoje, tab_stats, tab_config = st.tabs(["Hoje", "Estatisticas", "Configuracoes"])
     
     with tab_hoje:
