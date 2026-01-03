@@ -460,88 +460,143 @@ def show():
                     st.info("📷 Nenhuma operação modelo configurada. Vá em 'Configurar' para adicionar.")
     
     # ==========================================
-    # TAB 3: DOCUMENTO (MEU PLANO)
+    # TAB 3: DOCUMENTO (MEU PLANO) - SISTEMA DE BLOCOS
     # ==========================================
     with tab_documento:
         
-        st.markdown('<div class="section-title">📖 Meu Plano de Trading</div>', unsafe_allow_html=True)
-        st.caption("Escreva aqui seu plano completo com texto e imagens")
+        st.markdown('<div class="section-title">Meu Plano de Trading</div>', unsafe_allow_html=True)
+        
+        # Carrega blocos do documento (ou cria estrutura vazia)
+        try:
+            blocos = json.loads(plano.get("documento_plano", "[]"))
+            if not isinstance(blocos, list):
+                blocos = []
+        except:
+            blocos = []
         
         # Toggle entre visualizar e editar
-        modo = st.radio("Modo", ["📄 Visualizar", "✏️ Editar"], horizontal=True, label_visibility="collapsed")
+        modo = st.radio("Modo", ["Visualizar", "Editar"], horizontal=True, label_visibility="collapsed")
         
         st.markdown("---")
         
-        if modo == "✏️ Editar":
-            # Editor
-            st.markdown("#### ✏️ Editor do Plano")
-            st.caption("Use Markdown para formatar: **negrito**, *itálico*, # Título, ## Subtítulo, - lista")
+        if modo == "Editar":
             
-            documento = st.text_area(
-                "Conteúdo do Plano",
-                value=plano.get("documento_plano", ""),
-                height=400,
-                placeholder="""# Meu Plano de Trading
-
-## 1. Análise de Contexto
-Primeiro, identifico o contexto do mercado...
-
-## 2. Entrada
-Aguardo o setup se formar...
-
-## 3. Gestão
-Parcial 1 em X pontos...
-""",
-                key="doc_editor"
-            )
+            st.markdown("#### Editor do Plano")
+            st.caption("Adicione blocos de texto e imagem para construir seu plano")
             
-            st.markdown("---")
+            # Inicializa blocos no session_state se necessario
+            if "plano_blocos" not in st.session_state:
+                st.session_state["plano_blocos"] = blocos.copy() if blocos else []
             
-            # Upload de imagens
-            st.markdown("#### 📷 Adicionar Imagens ao Documento")
-            st.caption("Faça upload das imagens e copie o código para inserir no texto")
+            blocos_editados = st.session_state["plano_blocos"]
             
-            img_up = st.file_uploader("Upload imagem", type=["png", "jpg", "jpeg"], key="doc_img_up")
+            # Renderiza cada bloco existente
+            blocos_para_remover = []
             
-            if img_up:
-                if st.button("📤 Fazer Upload"):
-                    url = upload_image(img_up, f"{user}_doc_{uuid.uuid4().hex[:8]}.png")
+            for i, bloco in enumerate(blocos_editados):
+                with st.container():
+                    col_content, col_actions = st.columns([10, 1])
                     
-                    # Adiciona na lista
-                    doc_imagens.append(url)
-                    save_plano(plano["id"], {"documento_imagens": json.dumps(doc_imagens)})
+                    with col_content:
+                        if bloco["tipo"] == "texto":
+                            # Bloco de texto
+                            novo_texto = st.text_area(
+                                f"Bloco {i+1} (Texto)",
+                                value=bloco["conteudo"],
+                                height=150,
+                                key=f"bloco_texto_{i}",
+                                label_visibility="collapsed"
+                            )
+                            blocos_editados[i]["conteudo"] = novo_texto
+                            
+                        elif bloco["tipo"] == "imagem":
+                            # Bloco de imagem
+                            st.image(bloco["conteudo"], use_container_width=True)
+                            if bloco.get("legenda"):
+                                st.caption(bloco["legenda"])
                     
-                    st.toast("✅ Imagem enviada!", icon="📷")
+                    with col_actions:
+                        if st.button("X", key=f"del_bloco_{i}", help="Remover bloco"):
+                            blocos_para_remover.append(i)
+                
+                st.markdown("---")
+            
+            # Remove blocos marcados
+            for idx in sorted(blocos_para_remover, reverse=True):
+                blocos_editados.pop(idx)
+                st.rerun()
+            
+            # Botoes para adicionar blocos
+            st.markdown("#### Adicionar Conteudo")
+            
+            col_add_texto, col_add_img = st.columns(2)
+            
+            with col_add_texto:
+                if st.button("+ Adicionar Texto", use_container_width=True):
+                    blocos_editados.append({"tipo": "texto", "conteudo": ""})
+                    st.session_state["plano_blocos"] = blocos_editados
                     st.rerun()
             
-            # Lista de imagens disponíveis
-            if doc_imagens:
-                st.markdown("**Imagens disponíveis:**")
-                for idx, img_url in enumerate(doc_imagens):
-                    col_img, col_code = st.columns([1, 2])
-                    with col_img:
-                        st.image(img_url, width=100)
-                    with col_code:
-                        st.code(f"![Imagem {idx+1}]({img_url})", language="markdown")
-                        st.caption("Copie e cole no texto acima")
+            with col_add_img:
+                img_upload = st.file_uploader("Adicionar Imagem", type=["png", "jpg", "jpeg"], key="img_bloco_upload", label_visibility="collapsed")
+                
+                if img_upload:
+                    if st.button("Inserir Imagem", use_container_width=True):
+                        # Upload da imagem
+                        url = upload_image(img_upload, f"{user}_doc_{uuid.uuid4().hex[:8]}.png")
+                        blocos_editados.append({"tipo": "imagem", "conteudo": url, "legenda": ""})
+                        st.session_state["plano_blocos"] = blocos_editados
+                        st.toast("Imagem adicionada!")
+                        st.rerun()
             
             st.markdown("---")
             
-            if st.button("💾 Salvar Plano", use_container_width=True, type="primary"):
-                save_plano(plano["id"], {"documento_plano": documento})
-                st.toast("✅ Plano salvo!", icon="💾")
+            # Botao salvar
+            if st.button("Salvar Plano", use_container_width=True, type="primary"):
+                save_plano(plano["id"], {"documento_plano": json.dumps(blocos_editados)})
+                st.session_state["plano_blocos"] = blocos_editados
+                st.toast("Plano salvo!")
                 st.rerun()
         
         else:
-            # Visualização
-            documento = plano.get("documento_plano", "")
-            
-            if documento:
-                st.markdown(f'<div class="doc-content">', unsafe_allow_html=True)
-                st.markdown(documento)
-                st.markdown('</div>', unsafe_allow_html=True)
+            # MODO VISUALIZACAO
+            if not blocos:
+                st.info("Seu plano esta vazio. Clique em 'Editar' para comecar a escrever.")
             else:
-                st.info("📝 Seu plano está vazio. Clique em 'Editar' para começar a escrever.")
+                for i, bloco in enumerate(blocos):
+                    if bloco["tipo"] == "texto":
+                        # Renderiza texto como markdown
+                        st.markdown(f"""
+                            <div style="
+                                color: #ccc;
+                                font-size: 15px;
+                                line-height: 1.8;
+                                margin-bottom: 20px;
+                            ">
+                                {bloco['conteudo'].replace(chr(10), '<br>')}
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                    elif bloco["tipo"] == "imagem":
+                        # Imagem clicavel para expandir
+                        col_space1, col_img, col_space2 = st.columns([1, 6, 1])
+                        with col_img:
+                            st.image(bloco["conteudo"], use_container_width=True)
+                            if st.button("Expandir", key=f"expand_img_{i}", use_container_width=True):
+                                st.session_state["img_expandida"] = bloco["conteudo"]
+                            if bloco.get("legenda"):
+                                st.caption(bloco["legenda"])
+        
+        # Modal para imagem expandida (fora do loop)
+        if st.session_state.get("img_expandida"):
+            @st.dialog("Imagem Expandida", width="large")
+            def mostrar_imagem_expandida():
+                st.image(st.session_state["img_expandida"], use_container_width=True)
+                if st.button("Fechar", use_container_width=True):
+                    del st.session_state["img_expandida"]
+                    st.rerun()
+            
+            mostrar_imagem_expandida()
     
     # ==========================================
     # TAB 4: FASES & GESTÃO
