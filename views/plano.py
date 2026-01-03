@@ -578,14 +578,17 @@ def show():
                         """, unsafe_allow_html=True)
                         
                     elif bloco["tipo"] == "imagem":
-                        # Imagem clicavel para expandir
-                        col_space1, col_img, col_space2 = st.columns([1, 6, 1])
+                        # Imagem menor com opcao de expandir
+                        col_space1, col_img, col_space2 = st.columns([2, 4, 2])
                         with col_img:
                             st.image(bloco["conteudo"], use_container_width=True)
-                            if st.button("Expandir", key=f"expand_img_{i}", use_container_width=True):
-                                st.session_state["img_expandida"] = bloco["conteudo"]
-                            if bloco.get("legenda"):
-                                st.caption(bloco["legenda"])
+                            col_leg, col_exp = st.columns([3, 1])
+                            with col_leg:
+                                if bloco.get("legenda"):
+                                    st.caption(bloco["legenda"])
+                            with col_exp:
+                                if st.button("🔍", key=f"expand_img_{i}", help="Expandir imagem"):
+                                    st.session_state["img_expandida"] = bloco["conteudo"]
         
         # Modal para imagem expandida (fora do loop)
         if st.session_state.get("img_expandida"):
