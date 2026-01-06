@@ -139,6 +139,40 @@ def show(user, role):
         vinculo_sel = st.selectbox("📂 Vincular a", opcoes_vinculo)
         vinculo_info = mapa_vinculo[vinculo_sel]
         
+        # Verificacao de meta semanal batida
+        try:
+            from views.dashboard import verificar_meta_batida
+            meta_info = verificar_meta_batida(user, vinculo_info["nome"])
+            
+            if meta_info["batida"]:
+                st.markdown(f"""
+                    <div style="
+                        background: linear-gradient(135deg, #1a0a0a 0%, #0a1a0a 100%);
+                        border: 2px solid #00FF88;
+                        border-radius: 10px;
+                        padding: 15px;
+                        margin: 10px 0;
+                        text-align: center;
+                    ">
+                        <div style="color: #00FF88; font-size: 14px; font-weight: 700;">
+                            ✅ META SEMANAL BATIDA!
+                        </div>
+                        <div style="color: #888; font-size: 12px; margin-top: 5px;">
+                            {vinculo_info["nome"]}: ${meta_info["resultado"]:,.0f} / ${meta_info["meta"]:,.0f}
+                        </div>
+                        <div style="color: #FFD700; font-size: 13px; margin-top: 10px; font-weight: 600;">
+                            🛑 Considere parar de operar este grupo esta semana
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                if meta_info["bloquear"]:
+                    st.error("⛔ Este grupo está configurado para BLOQUEAR após bater a meta.")
+                    st.info("Vá no Dashboard → Configurar Metas para desbloquear.")
+                    return
+        except Exception as e:
+            pass  # Se falhar, continua normal
+        
         # Ativo + Direção
         c1, c2 = st.columns(2)
         atv = c1.selectbox("Ativo", ["MNQ", "NQ", "ES", "MES"])
