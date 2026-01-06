@@ -91,10 +91,23 @@ def get_meta_grupo(user, grupo_nome, metas_dict):
     return 500.0
 
 def get_semana_atual():
-    """Retorna inicio e fim da semana atual (segunda a domingo)"""
+    """Retorna inicio e fim da semana de trading (domingo a sexta)"""
     hoje = datetime.now().date()
-    inicio_semana = hoje - timedelta(days=hoje.weekday())  # Segunda
-    fim_semana = inicio_semana + timedelta(days=6)  # Domingo
+    
+    # weekday(): seg=0, ter=1, qua=2, qui=3, sex=4, sab=5, dom=6
+    dia_semana = hoje.weekday()
+    
+    if dia_semana == 5:  # Sabado - mostra semana que acabou
+        inicio_semana = hoje - timedelta(days=6)  # Domingo anterior
+        fim_semana = hoje - timedelta(days=1)     # Sexta anterior
+    elif dia_semana == 6:  # Domingo - nova semana comeca hoje
+        inicio_semana = hoje
+        fim_semana = hoje + timedelta(days=5)     # Sexta
+    else:  # Segunda a Sexta
+        dias_desde_domingo = dia_semana + 1
+        inicio_semana = hoje - timedelta(days=dias_desde_domingo)
+        fim_semana = inicio_semana + timedelta(days=5)  # Sexta
+    
     return inicio_semana, fim_semana
 
 def calcular_resultado_semana(df_trades, grupo_nome, inicio_semana, fim_semana):
