@@ -256,12 +256,17 @@ def show(user, role):
         
         with st.spinner("Gravando..."):
             try:
-                img_url = ""
+                # Salva todos os prints como JSON array
+                lista_prints = []
                 if up:
-                    arquivo = up[0]
-                    file_name = f"{uuid.uuid4()}.png"
-                    sb.storage.from_("prints").upload(file_name, arquivo.getvalue())
-                    img_url = sb.storage.from_("prints").get_public_url(file_name)
+                    for arquivo in up:
+                        file_name = f"{uuid.uuid4()}.png"
+                        sb.storage.from_("prints").upload(file_name, arquivo.getvalue())
+                        url = sb.storage.from_("prints").get_public_url(file_name)
+                        lista_prints.append(url)
+                
+                # Se tiver prints, salva como JSON, senao string vazia
+                prints_json = json.dumps(lista_prints) if lista_prints else ""
                 
                 trade_data = {
                     "id": str(uuid.uuid4()),
@@ -275,7 +280,7 @@ def show(user, role):
                     "resultado": total_trade,
                     "pts_medio": pts_medio,
                     "grupo_vinculo": vinculo_info["nome"],
-                    "prints": img_url,
+                    "prints": prints_json,
                     "risco_fin": stp * MULTIPLIERS.get(atv, 2) * lt,
                     "stop_pts": stp,
                     "parciais": saidas,
