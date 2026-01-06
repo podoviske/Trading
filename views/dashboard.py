@@ -76,7 +76,7 @@ def load_contas_config(user):
     except: return pd.DataFrame()
 
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip interno via CSS"""
+    """Card com tooltip apenas no icone de informacao"""
     import hashlib
     uid = hashlib.md5(label.encode()).hexdigest()[:6]
     
@@ -95,40 +95,64 @@ def card_simples(label, value, sub_text, tooltip_text, color="white", border_col
                 justify-content: center;
                 position: relative;
             }}
+            .card-{uid} .info-wrapper {{
+                display: inline-block;
+                position: relative;
+            }}
             .card-{uid} .info-icon {{
-                color: #444;
+                color: #555;
                 cursor: help;
-                font-size: 10px;
+                font-size: 11px;
                 margin-left: 4px;
+                padding: 2px 5px;
+                border-radius: 50%;
+                background: #222;
             }}
             .card-{uid} .info-icon:hover {{
-                color: #888;
+                color: #fff;
+                background: #B20000;
             }}
             .card-{uid} .tooltip-text {{
                 visibility: hidden;
+                opacity: 0;
                 position: absolute;
-                top: 50%;
+                bottom: 120%;
                 left: 50%;
-                transform: translate(-50%, -50%);
+                transform: translateX(-50%);
                 background: #000;
                 color: #fff;
-                padding: 12px 15px;
-                border-radius: 8px;
+                padding: 10px 12px;
+                border-radius: 6px;
                 font-size: 11px;
-                width: 85%;
+                width: 200px;
                 text-align: center;
-                z-index: 999;
+                z-index: 9999;
                 border: 1px solid #B20000;
                 line-height: 1.4;
+                transition: opacity 0.2s;
             }}
-            .card-{uid}:hover .tooltip-text {{
+            .card-{uid} .tooltip-text::after {{
+                content: "";
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                margin-left: -5px;
+                border-width: 5px;
+                border-style: solid;
+                border-color: #B20000 transparent transparent transparent;
+            }}
+            .card-{uid} .info-wrapper:hover .tooltip-text {{
                 visibility: visible;
+                opacity: 1;
             }}
         </style>
         <div class="card-{uid}">
-            <div class="tooltip-text">{tooltip_text}</div>
             <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
-                {label} <span class="info-icon">ⓘ</span>
+                {label}
+                <span class="info-wrapper">
+                    <span class="info-icon">?</span>
+                    <span class="tooltip-text">{tooltip_text}</span>
+                </span>
             </div>
             <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
             <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
