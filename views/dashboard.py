@@ -75,6 +75,249 @@ def load_contas_config(user):
         return df
     except: return pd.DataFrame()
 
+def load_metas_config(user):
+    """Carrega configuracao de metas por grupo"""
+    try:
+        sb = get_supabase()
+        res = sb.table("metas_config").select("*").eq("usuario", user).execute()
+        return {m['grupo_nome']: m for m in res.data} if res.data else {}
+    except:
+        return {}
+
+def get_meta_grupo(user, grupo_nome, metas_dict):
+    """Retorna meta do grupo ou default 500"""
+    if grupo_nome in metas_dict:
+        return float(metas_dict[grupo_nome].get('meta_semanal', 500))
+    return 500.0
+
+def get_semana_atual():
+    """Retorna inicio e fim da semana atual (segunda a domingo)"""
+    hoje = datetime.now().date()
+    inicio_semana = hoje - timedelta(days=hoje.weekday())  # Segunda
+    fim_semana = inicio_semana + timedelta(days=6)  # Domingo
+    return inicio_semana, fim_semana
+
+def calcular_resultado_semana(df_trades, grupo_nome, inicio_semana, fim_semana):
+    """Calcula resultado da semana para um grupo"""
+    if df_trades.empty:
+        return 0.0
+    
+    df_grupo = df_trades[df_trades['grupo_vinculo'] == grupo_nome]
+    if df_grupo.empty:
+        return 0.0
+    
+    df_semana = df_grupo[(df_grupo['data'] >= inicio_semana) & (df_grupo['data'] <= fim_semana)]
+    return df_semana['resultado'].sum()
+
+def salvar_meta_grupo(user, grupo_nome, meta_valor, bloquear):
+    """Salva configuracao de meta para um grupo"""
+    sb = get_supabase()
+    dados = {
+        "usuario": user,
+        "grupo_nome": grupo_nome,
+        "meta_semanal": meta_valor,
+        "bloquear_ao_bater": bloquear
+    }
+    sb.table("metas_config").upsert(dados).execute()
+
+def verificar_meta_batida(user, grupo_nome):
+    """Verifica se a meta semanal do grupo foi batida - usado pelo trade.py"""
+    try:
+        df_trades = load_trades_db()
+        if not df_trades.empty:
+            df_trades = df_trades[df_trades['usuario'] == user]
+        
+        metas = load_metas_config(user)
+        meta = get_meta_grupo(user, grupo_nome, metas)
+        
+        inicio, fim = get_semana_atual()
+        resultado = calcular_resultado_semana(df_trades, grupo_nome, inicio, fim)
+        
+        bloquear = metas.get(grupo_nome, {}).get('bloquear_ao_bater', False)
+        
+        return {
+            "batida": resultado >= meta,
+            "resultado": resultado,
+            "meta": meta,
+            "bloquear": bloquear,
+            "faltam": max(0, meta - resultado)
+        }
+    except:
+        return {"batida": False, "resultado": 0, "meta": 500, "bloquear": False, "faltam": 500}
+
+def render_metas_semanais(user, df_trades, grupos_lista):
+    """Renderiza a secao de metas semanais"""
+    
+    inicio_semana, fim_semana = get_semana_atual()
+    metas_dict = load_metas_config(user)
+    
+    # CSS para os cards de meta
+    st.markdown("""
+        <style>
+        .meta-container {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .meta-card {
+            background-color: #111;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            flex: 1;
+            min-width: 200px;
+            position: relative;
+        }
+        .meta-card.batida {
+            border-color: #00FF88;
+            background: linear-gradient(135deg, #0a1a0a 0%, #111 100%);
+        }
+        .meta-card.batida::after {
+            content: "META BATIDA";
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #00FF88;
+            color: #000;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .meta-grupo {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .meta-valores {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .meta-barra-bg {
+            background-color: #222;
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .meta-barra-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .meta-status {
+            font-size: 11px;
+            margin-top: 8px;
+        }
+        .meta-pare {
+            background-color: #B20000;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Header da secao
+    col_header, col_config = st.columns([3, 1])
+    with col_header:
+        st.markdown(f"### 🎯 Metas Semanais ({inicio_semana.strftime('%d/%m')} - {fim_semana.strftime('%d/%m')})")
+    with col_config:
+        if st.button("⚙️ Configurar Metas", use_container_width=True):
+            st.session_state["show_config_metas"] = True
+    
+    # Modal de configuracao
+    if st.session_state.get("show_config_metas", False):
+        with st.expander("Configurar Metas por Grupo", expanded=True):
+            for grupo in grupos_lista:
+                if grupo == "Todos":
+                    continue
+                col_g, col_m, col_b = st.columns([2, 1.5, 1])
+                meta_atual = get_meta_grupo(user, grupo, metas_dict)
+                bloquear_atual = metas_dict.get(grupo, {}).get('bloquear_ao_bater', False)
+                
+                with col_g:
+                    st.markdown(f"**{grupo}**")
+                with col_m:
+                    nova_meta = st.number_input(f"Meta {grupo}", value=meta_atual, min_value=100.0, step=100.0, label_visibility="collapsed", key=f"meta_{grupo}")
+                with col_b:
+                    bloquear = st.checkbox("Bloquear", value=bloquear_atual, key=f"bloq_{grupo}", help="Bloquear trades quando bater")
+                
+                if nova_meta != meta_atual or bloquear != bloquear_atual:
+                    salvar_meta_grupo(user, grupo, nova_meta, bloquear)
+            
+            if st.button("Fechar"):
+                st.session_state["show_config_metas"] = False
+                st.rerun()
+    
+    # Cards de cada grupo
+    grupos_validos = [g for g in grupos_lista if g != "Todos"]
+    
+    if not grupos_validos:
+        st.info("Nenhum grupo configurado ainda.")
+        return
+    
+    # Calcula dados de cada grupo
+    dados_grupos = []
+    for grupo in grupos_validos:
+        resultado = calcular_resultado_semana(df_trades, grupo, inicio_semana, fim_semana)
+        meta = get_meta_grupo(user, grupo, metas_dict)
+        batida = resultado >= meta
+        progresso = min(100, (resultado / meta * 100)) if meta > 0 else 0
+        faltam = max(0, meta - resultado)
+        
+        dados_grupos.append({
+            "grupo": grupo,
+            "resultado": resultado,
+            "meta": meta,
+            "batida": batida,
+            "progresso": progresso,
+            "faltam": faltam
+        })
+    
+    # Renderiza cards
+    cols = st.columns(len(dados_grupos))
+    
+    for i, dados in enumerate(dados_grupos):
+        with cols[i]:
+            classe_batida = "batida" if dados['batida'] else ""
+            cor_valor = "#00FF88" if dados['resultado'] >= 0 else "#FF4B4B"
+            cor_barra = "#00FF88" if dados['batida'] else ("#FFD700" if dados['progresso'] >= 50 else "#666")
+            
+            html_card = f"""
+                <div class="meta-card {classe_batida}">
+                    <div class="meta-grupo">{dados['grupo']}</div>
+                    <div class="meta-valores">
+                        <span style="color: {cor_valor};">${dados['resultado']:,.0f}</span>
+                        <span style="color: #444;"> / </span>
+                        <span style="color: #888;">${dados['meta']:,.0f}</span>
+                    </div>
+                    <div class="meta-barra-bg">
+                        <div class="meta-barra-fill" style="width: {dados['progresso']:.0f}%; background-color: {cor_barra};"></div>
+                    </div>
+            """
+            
+            if dados['batida']:
+                html_card += """
+                    <div class="meta-pare">🛑 PARE DE OPERAR ESTE GRUPO</div>
+                """
+            else:
+                html_card += f"""
+                    <div class="meta-status" style="color: #888;">Faltam <b style="color: #FFD700;">${dados['faltam']:,.0f}</b></div>
+                """
+            
+            html_card += "</div>"
+            
+            st.markdown(html_card, unsafe_allow_html=True)
+    
+    st.markdown("---")
+
 def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
     """Card com tooltip apenas no icone de informacao"""
     import hashlib
@@ -167,10 +410,15 @@ def show(user, role):
     if not df_trades_all.empty:
         df_trades_all = df_trades_all[df_trades_all['usuario'] == user]
 
-    st.markdown("### 🔭 Visão do Operacional")
+    # --- SECAO DE METAS SEMANAIS ---
     grupos_disponiveis = ["Todos"]
     if not df_contas_all.empty:
         grupos_disponiveis += sorted(list(df_contas_all['grupo_nome'].unique()))
+    
+    render_metas_semanais(user, df_trades_all, grupos_disponiveis)
+    
+    # --- VISAO DO OPERACIONAL ---
+    st.markdown("### 🔭 Visão do Operacional")
     
     c_sel1, c_sel2, c_date1, c_date2 = st.columns([1.5, 1.5, 1, 1])
     with c_sel1: grupo_sel = st.selectbox("📂 Grupo", grupos_disponiveis)
