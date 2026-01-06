@@ -290,29 +290,13 @@ def render_metas_semanais(user, df_trades, grupos_lista):
             cor_valor = "#00FF88" if dados['resultado'] >= 0 else "#FF4B4B"
             cor_barra = "#00FF88" if dados['batida'] else ("#FFD700" if dados['progresso'] >= 50 else "#666")
             
-            html_card = f"""
-                <div class="meta-card {classe_batida}">
-                    <div class="meta-grupo">{dados['grupo']}</div>
-                    <div class="meta-valores">
-                        <span style="color: {cor_valor};">${dados['resultado']:,.0f}</span>
-                        <span style="color: #444;"> / </span>
-                        <span style="color: #888;">${dados['meta']:,.0f}</span>
-                    </div>
-                    <div class="meta-barra-bg">
-                        <div class="meta-barra-fill" style="width: {dados['progresso']:.0f}%; background-color: {cor_barra};"></div>
-                    </div>
-            """
-            
+            # Status text
             if dados['batida']:
-                html_card += """
-                    <div class="meta-pare">🛑 PARE DE OPERAR ESTE GRUPO</div>
-                """
+                status_html = '<div class="meta-pare">PARE DE OPERAR ESTE GRUPO</div>'
             else:
-                html_card += f"""
-                    <div class="meta-status" style="color: #888;">Faltam <b style="color: #FFD700;">${dados['faltam']:,.0f}</b></div>
-                """
+                status_html = f'<div class="meta-status" style="color: #888;">Faltam <b style="color: #FFD700;">${dados["faltam"]:,.0f}</b></div>'
             
-            html_card += "</div>"
+            html_card = f'<div class="meta-card {classe_batida}"><div class="meta-grupo">{dados["grupo"]}</div><div class="meta-valores"><span style="color: {cor_valor};">${dados["resultado"]:,.0f}</span><span style="color: #444;"> / </span><span style="color: #888;">${dados["meta"]:,.0f}</span></div><div class="meta-barra-bg"><div class="meta-barra-fill" style="width: {dados["progresso"]:.0f}%; background-color: {cor_barra};"></div></div>{status_html}</div>'
             
             st.markdown(html_card, unsafe_allow_html=True)
     
