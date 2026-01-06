@@ -317,6 +317,13 @@ if check_password():
         # Seção label
         st.markdown('<div class="menu-section">Menu</div>', unsafe_allow_html=True)
         
+        # Verifica se tem navegação forçada pendente
+        navegacao_forcada = False
+        if "navegar_para" in st.session_state:
+            # Limpa navegação forçada e seta a página
+            st.session_state["pagina_ativa"] = st.session_state.pop("navegar_para")
+            navegacao_forcada = True
+        
         selected = option_menu(
             menu_title=None,
             options=options,
@@ -345,6 +352,10 @@ if check_password():
             }
         )
         
+        # Se usuário clicou no menu (e não foi navegação forçada), atualiza página ativa
+        if not navegacao_forcada and selected != st.session_state.get("pagina_ativa"):
+            st.session_state["pagina_ativa"] = selected
+        
         # Divider
         st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
         
@@ -355,12 +366,9 @@ if check_password():
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- VERIFICA NAVEGAÇÃO EXTERNA (do Plano de Trading) ---
-    navegar_para = st.session_state.pop("navegar_para", None)
-
     # --- ROTEAMENTO DE PÁGINAS ---
-    # Se veio navegação externa, sobrescreve a seleção
-    pagina_atual = navegar_para if navegar_para else selected
+    # Usa página ativa (navegação forçada) ou seleção do menu
+    pagina_atual = st.session_state.get("pagina_ativa", selected)
     
     if pagina_atual == "Dashboard":
         dashboard.show(user, role)
