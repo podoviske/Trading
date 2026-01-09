@@ -60,6 +60,13 @@ st.markdown("""
         font-weight: 400;
     }
     
+    /* === BOTÃO EXPANDIR SIDEBAR === */
+    [data-testid="collapsedControl"] {
+        background-color: #B20000 !important;
+        color: white !important;
+        border-radius: 0 8px 8px 0 !important;
+    }
+    
     /* === SEÇÕES DO MENU === */
     .menu-section {
         padding: 20px 20px 8px 20px;
