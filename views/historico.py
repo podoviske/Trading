@@ -237,10 +237,52 @@ def show_trade_details(row, user, role):
     
     if st.button("DELETAR REGISTRO PERMANENTEMENTE", type="primary", use_container_width=True):
         sb = get_supabase()
+        
+        # Guarda info do trade antes de deletar
+        grupo_do_trade = row.get('grupo_vinculo', '')
+        usuario_do_trade = row.get('usuario', user)
+        
+        # Deleta o trade
         sb.table("trades").delete().eq("id", row['id']).execute()
-        st.toast("Registro deletado!")
+        
+        # Recalcula HWM do grupo afetado
+        if grupo_do_trade:
+            recalcular_hwm_grupo(sb, usuario_do_trade, grupo_do_trade)
+        
+        st.toast("Registro deletado e HWM recalculado!")
         time.sleep(1)
         st.rerun()
+
+def recalcular_hwm_grupo(sb, usuario, grupo_nome):
+    """Recalcula o HWM de todas as contas de um grupo baseado nos trades existentes"""
+    try:
+        # Busca todas as contas do grupo
+        contas = sb.table("contas_config").select("*").eq("usuario", usuario).eq("grupo_nome", grupo_nome).execute()
+        
+        if not contas.data:
+            return
+        
+        # Busca todos os trades do grupo
+        trades = sb.table("trades").select("resultado, grupo_vinculo").eq("usuario", usuario).eq("grupo_vinculo", grupo_nome).execute()
+        
+        # Calcula lucro total do grupo
+        lucro_total = sum([t['resultado'] for t in trades.data]) if trades.data else 0
+        
+        # Atualiza HWM de cada conta
+        for conta in contas.data:
+            saldo_inicial = float(conta['saldo_inicial'])
+            saldo_atual = saldo_inicial + lucro_total
+            
+            # HWM deve ser o maior entre saldo_inicial e saldo_atual
+            novo_hwm = max(saldo_inicial, saldo_atual)
+            
+            sb.table("contas_config").update({
+                "hwm": novo_hwm,
+                "pico_previo": novo_hwm
+            }).eq("id", conta['id']).execute()
+            
+    except Exception as e:
+        print(f"Erro ao recalcular HWM: {e}")
 
 # --- 3. TELA PRINCIPAL (GALERIA) ---
 def show(user, role):
