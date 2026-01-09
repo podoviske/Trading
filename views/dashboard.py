@@ -444,19 +444,11 @@ def show(user, role):
 
     # Função para calcular lucro real por conta
     def calcular_lucro_conta(conta_id, grupo_nome, df_trades):
+        """Cada conta tem seus próprios trades (não há mais trades replicados com conta_id NULL)"""
         lucro_total = 0.0
-        if not df_trades.empty:
-            if 'conta_id' in df_trades.columns:
-                trades_individuais = df_trades[df_trades['conta_id'] == conta_id]
-                lucro_total += trades_individuais['resultado'].sum()
-                trades_replicados = df_trades[
-                    (df_trades['grupo_vinculo'] == grupo_nome) & 
-                    (df_trades['conta_id'].isna())
-                ]
-                lucro_total += trades_replicados['resultado'].sum()
-            else:
-                trades_grupo = df_trades[df_trades['grupo_vinculo'] == grupo_nome]
-                lucro_total = trades_grupo['resultado'].sum()
+        if not df_trades.empty and 'conta_id' in df_trades.columns:
+            trades_conta = df_trades[df_trades['conta_id'] == conta_id]
+            lucro_total = trades_conta['resultado'].sum()
         return lucro_total
 
     total_buffer = 0.0; contas_ativas = 0; hwm_updated_flag = False
