@@ -27,6 +27,31 @@ st.markdown("""
         background-color: #0a0a0a; 
     }
     
+    /* === BOTÃO EXPANDIR SIDEBAR (FORÇADO) === */
+    [data-testid="collapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        position: fixed !important;
+        left: 0 !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        z-index: 999999 !important;
+        background-color: #B20000 !important;
+        color: white !important;
+        border-radius: 0 10px 10px 0 !important;
+        padding: 15px 8px !important;
+        min-width: 30px !important;
+        min-height: 60px !important;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.5) !important;
+    }
+    
+    [data-testid="collapsedControl"] svg {
+        width: 20px !important;
+        height: 20px !important;
+        stroke: white !important;
+    }
+    
     /* === SIDEBAR === */
     [data-testid="stSidebar"] { 
         background-color: #0d0d0d !important; 
@@ -58,13 +83,6 @@ st.markdown("""
     .sidebar-logo .white {
         color: #fff;
         font-weight: 400;
-    }
-    
-    /* === BOTÃO EXPANDIR SIDEBAR === */
-    [data-testid="collapsedControl"] {
-        background-color: #B20000 !important;
-        color: white !important;
-        border-radius: 0 8px 8px 0 !important;
     }
     
     /* === SEÇÕES DO MENU === */
