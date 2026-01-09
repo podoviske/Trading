@@ -494,16 +494,22 @@ def show(user, role):
         
         # Para contar OPERACOES (nao registros), agrupa por operacao_id ou cria chave unica
         df_temp = trades_filtered_view.copy()
-        if 'operacao_id' in df_temp.columns:
-            df_temp['op_key'] = df_temp.apply(
-                lambda x: x['operacao_id'] if pd.notna(x.get('operacao_id')) else f"{x['data']}_{x['ativo']}_{x['resultado']}_{x.get('created_at', '')}",
-                axis=1
-            )
-        else:
-            df_temp['op_key'] = df_temp.apply(
-                lambda x: f"{x['data']}_{x['ativo']}_{x['resultado']}_{x.get('created_at', '')}",
-                axis=1
-            )
+        
+        def criar_chave_operacao(row):
+            # Se tem operacao_id, usa direto
+            if 'operacao_id' in row.index and pd.notna(row.get('operacao_id')):
+                return str(row['operacao_id'])
+            
+            # Para trades antigos, agrupa por data+ativo+resultado+grupo+minuto
+            created = row.get('created_at', '')
+            if pd.notna(created):
+                minuto = str(created)[:16]  # Trunca para o minuto
+            else:
+                minuto = str(row.get('data', ''))
+            
+            return f"{row['data']}_{row['ativo']}_{row['resultado']}_{row.get('grupo_vinculo', '')}_{minuto}"
+        
+        df_temp['op_key'] = df_temp.apply(criar_chave_operacao, axis=1)
         
         # Agrupa por operacao (pega primeiro registro de cada grupo)
         operacoes = df_temp.groupby('op_key').first().reset_index()
