@@ -432,15 +432,24 @@ def show(user, role):
         
         # MODO: Por Operacao (agrupa trades da mesma operacao)
         if modo_view == "Por Operacao":
-            # Agrupa por operacao_id (ou por data+ativo+resultado para trades antigos)
-            if 'operacao_id' in dfh.columns:
-                # Cria chave de agrupamento: operacao_id se existir, senao data+ativo+resultado+created_at
-                dfh['grupo_key'] = dfh.apply(
-                    lambda x: x['operacao_id'] if pd.notna(x.get('operacao_id')) else f"{x['data']}_{x['ativo']}_{x['resultado']}_{x['created_at']}", 
-                    axis=1
-                )
-            else:
-                dfh['grupo_key'] = dfh.apply(lambda x: f"{x['data']}_{x['ativo']}_{x['resultado']}_{x['created_at']}", axis=1)
+            # Agrupa por operacao_id (ou por data+ativo+resultado+minuto para trades antigos)
+            def criar_chave_operacao(row):
+                # Se tem operacao_id, usa direto
+                if 'operacao_id' in row and pd.notna(row.get('operacao_id')):
+                    return str(row['operacao_id'])
+                
+                # Para trades antigos, agrupa por data+ativo+resultado+grupo+minuto
+                # Isso assume que trades replicados foram criados no mesmo minuto
+                created = row.get('created_at', '')
+                if pd.notna(created):
+                    # Trunca para o minuto (remove segundos e milissegundos)
+                    minuto = str(created)[:16]  # "2026-01-09 14:30"
+                else:
+                    minuto = str(row.get('data', ''))
+                
+                return f"{row['data']}_{row['ativo']}_{row['resultado']}_{row['grupo_vinculo']}_{minuto}"
+            
+            dfh['grupo_key'] = dfh.apply(criar_chave_operacao, axis=1)
             
             # Agrupa e pega info
             operacoes = []
