@@ -14,18 +14,18 @@ MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
 
 # --- TOOLTIPS: Explicações claras para cada métrica ---
 TOOLTIPS = {
-    "resultado_liquido": "Soma de todos os seus ganhos menos todas as perdas no período selecionado. É o dinheiro real que você ganhou ou perdeu.",
+    "resultado_liquido": "Soma do resultado de TODAS as contas no período. Se você fez 1 trade replicado em 5 contas que deu +$500 cada, mostra +$2.500.",
     "fator_lucro": "Quanto você ganha para cada $1 que perde. Ex: PF 1.70 = você ganha $1.70 para cada $1 perdido. Ideal: acima de 1.5",
-    "win_rate": "Porcentagem de trades que terminaram em lucro. Ex: 71% = de cada 100 trades, 71 foram gains.",
-    "expectativa": "Quanto você espera ganhar EM MÉDIA por trade. É o valor que, estatisticamente, cada trade deve render.",
-    "media_gain": "Valor médio dos seus trades positivos. Quanto você ganha, em média, quando acerta.",
-    "media_loss": "Valor médio dos seus trades negativos. Quanto você perde, em média, quando erra.",
-    "payoff": "Razão entre ganho médio e perda média. Ex: 1:0.69 significa que seu gain médio é 0.69x seu loss médio.",
+    "win_rate": "Porcentagem de OPERAÇÕES que terminaram em lucro. Trades replicados contam como 1 operação.",
+    "expectativa": "Quanto você espera ganhar EM MÉDIA por operação (não por conta). É o valor que, estatisticamente, cada trade deve render.",
+    "media_gain": "Valor médio das suas OPERAÇÕES positivas (por conta). Quanto você ganha, em média, quando acerta.",
+    "media_loss": "Valor médio das suas OPERAÇÕES negativas (por conta). Quanto você perde, em média, quando erra.",
+    "payoff": "Razão entre ganho médio e perda média. Ex: 1:2.86 significa que seu gain médio é 2.86x seu loss médio.",
     "drawdown": "Maior queda do seu saldo desde um pico até um vale. Mostra o pior momento da sua curva.",
     "pts_gain": "Média de pontos capturados nos trades positivos. Mostra sua eficiência técnica nos gains.",
     "stop_medio": "Média de pontos perdidos nos trades negativos. É a base para calcular seu risco real.",
-    "lote_medio": "Quantidade média de contratos operados por trade.",
-    "total_trades": "Quantidade total de operações realizadas no período filtrado.",
+    "lote_medio": "Quantidade média de contratos operados por operação.",
+    "total_trades": "Quantidade de OPERAÇÕES realizadas. Trades replicados em 5 contas contam como 1 operação.",
     "z_score_serial": "Mede se seus resultados são aleatórios ou têm padrão. Positivo = tendência a alternar W/L. Negativo = tendência a sequências.",
     "z_score_edge": "Mede sua vantagem estatística. Positivo = você tem edge. Negativo = o mercado tem vantagem sobre você.",
     "vidas": "Quantos stops você aguenta antes de zerar o buffer. Ex: 10.1 vidas = você pode tomar 10 stops seguidos.",
@@ -484,37 +484,70 @@ def show(user, role):
     max_dd = 0.0
     wins = pd.DataFrame()
     losses = pd.DataFrame()
+    operacoes = pd.DataFrame()
     ativo_ref = "MNQ"
+    total_operacoes = 0
 
     if not trades_filtered_view.empty:
-        wins = trades_filtered_view[trades_filtered_view['resultado'] > 0]
-        losses = trades_filtered_view[trades_filtered_view['resultado'] < 0]
+        # RESULTADO LIQUIDO: soma de TODAS as contas (valor real ganho/perdido)
         net_profit = trades_filtered_view['resultado'].sum()
-        gross_profit = wins['resultado'].sum()
-        gross_loss = abs(losses['resultado'].sum())
+        
+        # Para contar OPERACOES (nao registros), agrupa por operacao_id ou cria chave unica
+        df_temp = trades_filtered_view.copy()
+        if 'operacao_id' in df_temp.columns:
+            df_temp['op_key'] = df_temp.apply(
+                lambda x: x['operacao_id'] if pd.notna(x.get('operacao_id')) else f"{x['data']}_{x['ativo']}_{x['resultado']}_{x.get('created_at', '')}",
+                axis=1
+            )
+        else:
+            df_temp['op_key'] = df_temp.apply(
+                lambda x: f"{x['data']}_{x['ativo']}_{x['resultado']}_{x.get('created_at', '')}",
+                axis=1
+            )
+        
+        # Agrupa por operacao (pega primeiro registro de cada grupo)
+        operacoes = df_temp.groupby('op_key').first().reset_index()
+        
+        # Metricas baseadas em OPERACOES (nao registros)
+        wins_op = operacoes[operacoes['resultado'] > 0]
+        losses_op = operacoes[operacoes['resultado'] < 0]
+        total_operacoes = len(operacoes)
+        
+        # Gross profit/loss por operacao (valor de UMA conta, nao agregado)
+        gross_profit = wins_op['resultado'].sum()
+        gross_loss = abs(losses_op['resultado'].sum())
         pf = gross_profit / gross_loss if gross_loss > 0 else 99.99
-        total_trades = len(trades_filtered_view)
-        win_rate = (len(wins) / total_trades * 100)
-        avg_win = wins['resultado'].mean() if not wins.empty else 0.0
-        avg_loss = abs(losses['resultado'].mean()) if not losses.empty else 0.0
+        
+        total_trades = total_operacoes  # Card mostra operacoes, nao registros
+        win_rate = (len(wins_op) / total_operacoes * 100) if total_operacoes > 0 else 0
+        avg_win = wins_op['resultado'].mean() if not wins_op.empty else 0.0
+        avg_loss = abs(losses_op['resultado'].mean()) if not losses_op.empty else 0.0
         payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
         expectancy = ((win_rate/100) * avg_win) - ((1 - (win_rate/100)) * avg_loss)
-        avg_pts_gain = wins['pts_medio'].mean() if not wins.empty else 0.0 
-        avg_pts_loss = abs(losses['pts_medio'].mean()) if not losses.empty else 0.0
+        avg_pts_gain = wins_op['pts_medio'].mean() if not wins_op.empty else 0.0 
+        avg_pts_loss = abs(losses_op['pts_medio'].mean()) if not losses_op.empty else 0.0
+        
+        # Guarda wins/losses para uso posterior
+        wins = wins_op
+        losses = losses_op
         
         if avg_pts_loss > 0:
             pts_loss_medio_real = avg_pts_loss
             
-        lote_medio = trades_filtered_view['lote'].mean()
-        if 'ativo' in trades_filtered_view.columns:
-            ativo_ref = trades_filtered_view['ativo'].iloc[-1]
+        lote_medio = operacoes['lote'].mean()
+        if 'ativo' in operacoes.columns:
+            ativo_ref = operacoes['ativo'].iloc[-1]
             
-        equity = trades_filtered_view.sort_values('created_at')['resultado'].cumsum()
+        # Drawdown baseado em operacoes
+        equity = operacoes.sort_values('created_at')['resultado'].cumsum()
         max_dd = (equity - equity.cummax()).min()
 
     custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
     vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
-    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list_filtered)
+    
+    # Para prob ruina, usa lista de resultados por OPERACAO
+    results_list_ops = operacoes['resultado'].tolist() if not operacoes.empty else []
+    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list_ops)
     
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
@@ -532,7 +565,8 @@ def show(user, role):
     st.markdown("### 🏁 Desempenho Geral")
     c1, c2, c3, c4 = st.columns(4)
     with c1: 
-        card_simples("Resultado Líquido", f"${net_profit:,.2f}", f"Bruto: ${gross_profit:,.0f} / -${gross_loss:,.0f}", 
+        sub_resultado = f"{total_trades} ops × {contas_ativas} contas" if contas_ativas > 1 else f"{total_trades} operações"
+        card_simples("Resultado Líquido", f"${net_profit:,.2f}", sub_resultado, 
                      TOOLTIPS["resultado_liquido"], "#00FF88" if net_profit>=0 else "#FF4B4B")
     with c2: 
         card_simples("Fator de Lucro (PF)", f"{pf:.2f}", "Ideal > 1.5", 
@@ -541,7 +575,7 @@ def show(user, role):
         card_simples("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", 
                      TOOLTIPS["win_rate"], "white")
     with c4: 
-        card_simples("Expectativa Mat.", f"${expectancy:.2f}", "Por Trade", 
+        card_simples("Expectativa Mat.", f"${expectancy:.2f}", "Por Operação", 
                      TOOLTIPS["expectativa"], "#00FF88" if expectancy>0 else "#FF4B4B")
 
     st.markdown("### 💲 Médias Financeiras")
