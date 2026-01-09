@@ -328,6 +328,9 @@ def show(user, role):
                     # INDIVIDUAL: so a conta selecionada
                     lista_contas = [{"id": vinculo_info['conta_id'], "conta_identificador": vinculo_info.get('conta_nome', '')}]
                 
+                # ID unico para esta operacao (agrupa trades replicados)
+                operacao_id = str(uuid.uuid4())
+                
                 # Cria um trade para CADA conta
                 trades_criados = 0
                 for conta in lista_contas:
@@ -347,7 +350,8 @@ def show(user, role):
                         "risco_fin": stp * MULTIPLIERS.get(atv, 2) * lt,
                         "stop_pts": stp,
                         "parciais": saidas,
-                        "conta_id": conta['id']
+                        "conta_id": conta['id'],
+                        "operacao_id": operacao_id
                     }
                     
                     sb.table("trades").insert(trade_data).execute()
