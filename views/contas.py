@@ -74,24 +74,18 @@ def calcular_lucro_conta(conta_id, grupo_nome, df_trades, df_ajustes):
     Calcula o lucro real de uma conta específica.
     
     Lógica:
-    1. Trades INDIVIDUAIS (conta_id = esta conta) → soma 100%
-    2. Trades REPLICADOS (conta_id = NULL, grupo = este grupo) → divide pelo número de contas do grupo
-    3. Ajustes manuais desta conta → soma 100%
+    1. Trades desta conta (conta_id = esta conta) → soma 100%
+    2. Ajustes manuais desta conta → soma 100%
+    
+    OBS: Trades replicados agora criam um registro por conta,
+    então não precisa mais de lógica especial.
     """
     lucro_total = 0.0
     
     if not df_trades.empty:
-        # Trades individuais desta conta
-        trades_individuais = df_trades[df_trades['conta_id'] == conta_id]
-        lucro_total += trades_individuais['resultado'].sum()
-        
-        # Trades replicados do grupo (conta_id é NULL)
-        trades_replicados = df_trades[
-            (df_trades['grupo_vinculo'] == grupo_nome) & 
-            (df_trades['conta_id'].isna())
-        ]
-        if not trades_replicados.empty:
-            lucro_total += trades_replicados['resultado'].sum()
+        # Todos os trades desta conta
+        trades_conta = df_trades[df_trades['conta_id'] == conta_id]
+        lucro_total += trades_conta['resultado'].sum()
     
     # Ajustes manuais desta conta
     if not df_ajustes.empty:
@@ -247,7 +241,21 @@ def show(user, role):
                             novo_saldo_ini = st.number_input("Saldo Inicial", value=float(row['saldo_inicial']), key=f"mv_si_{row['id']}")
                             novo_pico = st.number_input("Pico (HWM)", value=float(row['pico_previo']), key=f"mv_pico_{row['id']}")
                             
+                            # Aviso se vai mudar de grupo
+                            if novo_grp != row['grupo_nome']:
+                                st.warning(f"⚠️ Mover para **{novo_grp}** tambem movera o historico de trades.")
+                            
                             if st.button("💾 Salvar", key=f"btn_sv_{row['id']}"):
+                                # Se mudou de grupo, atualiza os trades desta conta
+                                if novo_grp != row['grupo_nome']:
+                                    # Atualiza trades individuais desta conta
+                                    sb.table("trades").update({
+                                        "grupo_vinculo": novo_grp
+                                    }).eq("conta_id", row['id']).execute()
+                                    
+                                    st.toast(f"Trades movidos para {novo_grp}!")
+                                
+                                # Atualiza a conta
                                 sb.table("contas_config").update({
                                     "grupo_nome": novo_grp, 
                                     "status_conta": novo_status, 
@@ -255,7 +263,7 @@ def show(user, role):
                                     "pico_previo": novo_pico,
                                     "fase_entrada": nova_fase
                                 }).eq("id", row['id']).execute()
-                                st.toast("Atualizado!")
+                                st.toast("Conta atualizada!")
                                 time.sleep(1)
                                 st.rerun()
 
