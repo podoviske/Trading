@@ -117,18 +117,26 @@ def show(user, role):
         opcoes_vinculo = []
         mapa_vinculo = {}
         
+        # Primeiro: Grupos (para replicar)
         if not df_grupos.empty:
             for _, g in df_grupos.iterrows():
-                label = f"🔄 {g['nome']}"
-                opcoes_vinculo.append(label)
                 n_ativas = 0
                 if not df_contas.empty:
                     n_ativas = len(df_contas[(df_contas['grupo_nome'] == g['nome']) & (df_contas['status_conta'] == 'Ativa')])
+                label = f"🔄 {g['nome']} ({n_ativas} contas)"
+                opcoes_vinculo.append(label)
                 mapa_vinculo[label] = {"tipo": "grupo", "nome": g['nome'], "conta_id": None, "n_contas": n_ativas}
         
+        # Separador visual
+        if not df_grupos.empty and not df_contas.empty:
+            opcoes_vinculo.append("─── Contas Individuais ───")
+            mapa_vinculo["─── Contas Individuais ───"] = None
+        
+        # Segundo: Contas individuais (só ativas)
         if not df_contas.empty:
-            for _, conta in df_contas.iterrows():
-                label = f"☝️ {conta['conta_identificador']}"
+            contas_ativas = df_contas[df_contas['status_conta'] == 'Ativa']
+            for _, conta in contas_ativas.iterrows():
+                label = f"☝️ {conta['conta_identificador']} ({conta['grupo_nome']})"
                 opcoes_vinculo.append(label)
                 mapa_vinculo[label] = {"tipo": "individual", "nome": conta['grupo_nome'], "conta_id": conta['id'], "conta_nome": conta['conta_identificador']}
         
@@ -137,6 +145,12 @@ def show(user, role):
             st.stop()
         
         vinculo_sel = st.selectbox("📂 Vincular a", opcoes_vinculo)
+        
+        # Se selecionou o separador, pede pra escolher de novo
+        if mapa_vinculo.get(vinculo_sel) is None:
+            st.info("👆 Selecione um grupo ou conta acima")
+            st.stop()
+        
         vinculo_info = mapa_vinculo[vinculo_sel]
         
         # Verificacao de meta semanal batida
@@ -302,26 +316,42 @@ def show(user, role):
                 # Se tiver prints, salva como JSON, senao string vazia
                 prints_json = json.dumps(lista_prints) if lista_prints else ""
                 
-                trade_data = {
-                    "id": str(uuid.uuid4()),
-                    "usuario": user,
-                    "data": str(dt),
-                    "ativo": atv,
-                    "direcao": dr,
-                    "contexto": ctx,
-                    "comportamento": psi,
-                    "lote": lt,
-                    "resultado": total_trade,
-                    "pts_medio": pts_medio,
-                    "grupo_vinculo": vinculo_info["nome"],
-                    "prints": prints_json,
-                    "risco_fin": stp * MULTIPLIERS.get(atv, 2) * lt,
-                    "stop_pts": stp,
-                    "parciais": saidas,
-                    "conta_id": vinculo_info.get("conta_id")
-                }
+                # Determina as contas que vao receber o trade
+                if vinculo_info["tipo"] == "grupo":
+                    # REPLICADO: busca todas as contas ativas do grupo
+                    contas_grupo = df_contas[
+                        (df_contas['grupo_nome'] == vinculo_info['nome']) & 
+                        (df_contas['status_conta'] == 'Ativa')
+                    ]
+                    lista_contas = contas_grupo[['id', 'conta_identificador']].to_dict('records')
+                else:
+                    # INDIVIDUAL: so a conta selecionada
+                    lista_contas = [{"id": vinculo_info['conta_id'], "conta_identificador": vinculo_info.get('conta_nome', '')}]
                 
-                sb.table("trades").insert(trade_data).execute()
+                # Cria um trade para CADA conta
+                trades_criados = 0
+                for conta in lista_contas:
+                    trade_data = {
+                        "id": str(uuid.uuid4()),
+                        "usuario": user,
+                        "data": str(dt),
+                        "ativo": atv,
+                        "direcao": dr,
+                        "contexto": ctx,
+                        "comportamento": psi,
+                        "lote": lt,
+                        "resultado": total_trade,
+                        "pts_medio": pts_medio,
+                        "grupo_vinculo": vinculo_info["nome"],
+                        "prints": prints_json,
+                        "risco_fin": stp * MULTIPLIERS.get(atv, 2) * lt,
+                        "stop_pts": stp,
+                        "parciais": saidas,
+                        "conta_id": conta['id']
+                    }
+                    
+                    sb.table("trades").insert(trade_data).execute()
+                    trades_criados += 1
                 
                 # Integração Anti-Tilt
                 if antitilt_ativo:
@@ -336,7 +366,12 @@ def show(user, role):
                 
                 st.balloons()
                 tipo_msg = "Stop" if btn_stop else "Gain"
-                st.toast(f"{tipo_msg} registrado! ${total_trade:,.2f}", icon="✅")
+                
+                if trades_criados > 1:
+                    st.toast(f"{tipo_msg} registrado em {trades_criados} contas! ${total_trade:,.2f} cada", icon="✅")
+                else:
+                    st.toast(f"{tipo_msg} registrado! ${total_trade:,.2f}", icon="✅")
+                
                 time.sleep(1.5)
                 st.rerun()
                 
