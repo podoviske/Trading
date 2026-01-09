@@ -526,7 +526,12 @@ def show(user, role):
     
     loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
     edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
-    lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, total_buffer, custo_stop_padrao)
+    
+    # Buffer por conta (para calculo de lote em operacoes replicadas)
+    buffer_por_conta = total_buffer / contas_ativas if contas_ativas > 0 else 5000  # Default $5k trailing
+    
+    # Calcula lote baseado no buffer de UMA conta (nao agregado)
+    lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, buffer_por_conta, custo_stop_padrao)
 
     # ============================================================
     # RENDERIZAÇÃO COM TOOLTIPS
@@ -621,17 +626,17 @@ def show(user, role):
     l1, l2, l3, l4 = st.columns(4)
     
     with l1:
-        if total_buffer > 2500: cor_buf_lote = "#00FF88"
-        elif total_buffer > 1000: cor_buf_lote = "#FFFF00"
+        if buffer_por_conta > 2500: cor_buf_lote = "#00FF88"
+        elif buffer_por_conta > 1000: cor_buf_lote = "#FFFF00"
         else: cor_buf_lote = "#FF4B4B"
-        card_simples("Buffer Disponível", f"${total_buffer:,.0f}", "Base p/ Lote", 
+        card_simples("Buffer/Conta", f"${buffer_por_conta:,.0f}", f"Total: ${total_buffer:,.0f}", 
                      TOOLTIPS["buffer"], cor_buf_lote, border_color=cor_buf_lote)
 
     with l2: 
         card_simples("Half-Kelly", f"{kelly_pct*100:.1f}%", "Aproveitamento", 
                      TOOLTIPS["half_kelly"], "#888")
     with l3: 
-        card_simples("Risco Financeiro", f"${total_buffer * kelly_pct:,.0f}", "Alocação Sugerida", 
+        card_simples("Risco Financeiro", f"${buffer_por_conta * kelly_pct:,.0f}", "Por Conta", 
                      TOOLTIPS["risco_financeiro"], "#00FF88")
     with l4: 
         card_simples("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA SEGURA", 
