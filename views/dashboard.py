@@ -120,7 +120,29 @@ def calcular_resultado_semana(df_trades, grupo_nome, inicio_semana, fim_semana):
         return 0.0
     
     df_semana = df_grupo[(df_grupo['data'] >= inicio_semana) & (df_grupo['data'] <= fim_semana)]
-    return df_semana['resultado'].sum()
+    
+    if df_semana.empty:
+        return 0.0
+    
+    # Agrupa por operacao para nao contar trades replicados multiplas vezes
+    # Isso calcula o resultado MEDIO por conta (nao a soma de todas)
+    def criar_chave_operacao(row):
+        if 'operacao_id' in row.index and pd.notna(row.get('operacao_id')):
+            return str(row['operacao_id'])
+        created = row.get('created_at', '')
+        if pd.notna(created):
+            minuto = str(created)[:16]
+        else:
+            minuto = str(row.get('data', ''))
+        return f"{row['data']}_{row['ativo']}_{row['resultado']}_{row.get('grupo_vinculo', '')}_{minuto}"
+    
+    df_semana = df_semana.copy()
+    df_semana['op_key'] = df_semana.apply(criar_chave_operacao, axis=1)
+    
+    # Pega apenas 1 registro de cada operacao
+    operacoes_unicas = df_semana.groupby('op_key').first().reset_index()
+    
+    return operacoes_unicas['resultado'].sum()
 
 def salvar_meta_grupo(user, grupo_nome, meta_valor, bloquear):
     """Salva configuracao de meta para um grupo"""
