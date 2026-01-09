@@ -349,6 +349,14 @@ def show(user, role):
             align-items: center;
             justify-content: space-between;
         }
+        .badge-contas {
+            background: #333;
+            color: #fff;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 5px;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -356,6 +364,11 @@ def show(user, role):
     
     dfh = load_trades_db()
     if not dfh.empty: dfh = dfh[dfh['usuario'] == user]
+    
+    # Carrega contas para filtro
+    sb = get_supabase()
+    contas_res = sb.table("contas_config").select("id, conta_identificador, grupo_nome").eq("usuario", user).execute()
+    df_contas = pd.DataFrame(contas_res.data) if contas_res.data else pd.DataFrame()
     
     # --- VERIFICA FILTRO VINDO DO PLANO ---
     filtro_contexto_externo = st.session_state.pop("filtro_contexto_historico", None)
@@ -374,70 +387,175 @@ def show(user, role):
     
     if not dfh.empty:
         with st.expander("Filtros", expanded=not bool(filtro_contexto_externo)):
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5 = st.columns(5)
             all_assets = sorted(list(dfh['ativo'].unique())) if 'ativo' in dfh.columns else ["NQ", "MNQ"]
             all_contexts = sorted(list(dfh['contexto'].unique())) if 'contexto' in dfh.columns else []
             all_groups = sorted(list(dfh['grupo_vinculo'].unique())) if 'grupo_vinculo' in dfh.columns else []
             
-            fa = c1.multiselect("Ativo", all_assets)
-            fr = c2.selectbox("Resultado", ["Todos", "Wins", "Losses"])
+            # Modo de visualizacao
+            modo_view = c1.selectbox("Visualizar", ["Por Operacao", "Por Conta"])
+            
+            fa = c2.multiselect("Ativo", all_assets)
+            fr = c3.selectbox("Resultado", ["Todos", "Wins", "Losses"])
             
             # Se veio filtro externo, pre-seleciona
             default_ctx = [filtro_contexto_externo] if filtro_contexto_externo and filtro_contexto_externo in all_contexts else []
-            fc = c3.multiselect("Contexto", all_contexts, default=default_ctx)
+            fc = c4.multiselect("Contexto", all_contexts, default=default_ctx)
             
-            fg = c4.multiselect("Grupo", all_groups)
+            # Filtro por grupo ou conta
+            opcoes_vinculo = ["Todos os Grupos"]
+            opcoes_vinculo += [f"Grupo: {g}" for g in all_groups]
+            if not df_contas.empty:
+                opcoes_vinculo += [f"Conta: {c['conta_identificador']}" for _, c in df_contas.iterrows()]
             
+            fv = c5.selectbox("Grupo/Conta", opcoes_vinculo)
+            
+            # Aplica filtros
             if fa: dfh = dfh[dfh['ativo'].isin(fa)]
             if fc: dfh = dfh[dfh['contexto'].isin(fc)]
-            if fg: dfh = dfh[dfh['grupo_vinculo'].isin(fg)]
             if fr == "Wins": dfh = dfh[dfh['resultado'] > 0]
             if fr == "Losses": dfh = dfh[dfh['resultado'] < 0]
             
+            # Filtro de vinculo
+            if fv.startswith("Grupo: "):
+                grupo_nome = fv.replace("Grupo: ", "")
+                dfh = dfh[dfh['grupo_vinculo'] == grupo_nome]
+            elif fv.startswith("Conta: "):
+                conta_nome = fv.replace("Conta: ", "")
+                if not df_contas.empty:
+                    conta_row = df_contas[df_contas['conta_identificador'] == conta_nome]
+                    if not conta_row.empty:
+                        conta_id = conta_row.iloc[0]['id']
+                        dfh = dfh[dfh['conta_id'] == conta_id]
+            
             dfh = dfh.sort_values('created_at', ascending=False)
-
-        st.markdown(f"**Exibindo {len(dfh)} operacoes**")
-        st.markdown("---")
-
-        cols = st.columns(4)
-        for i, (index, row) in enumerate(dfh.iterrows()):
-            with cols[i % 4]:
-                res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
-                res_fmt = f"${row['resultado']:,.2f}"
-                
-                # Pega primeiro print (se for lista)
-                prints_data = row.get('prints', '')
-                if prints_data:
-                    try:
-                        if isinstance(prints_data, str) and prints_data.startswith('['):
-                            lista_prints = json.loads(prints_data)
-                            img_url = lista_prints[0] if lista_prints else ''
-                        elif isinstance(prints_data, list):
-                            img_url = prints_data[0] if prints_data else ''
-                        else:
+        
+        # MODO: Por Operacao (agrupa trades da mesma operacao)
+        if modo_view == "Por Operacao":
+            # Agrupa por operacao_id (ou por data+ativo+resultado para trades antigos)
+            if 'operacao_id' in dfh.columns:
+                # Cria chave de agrupamento: operacao_id se existir, senao data+ativo+resultado+created_at
+                dfh['grupo_key'] = dfh.apply(
+                    lambda x: x['operacao_id'] if pd.notna(x.get('operacao_id')) else f"{x['data']}_{x['ativo']}_{x['resultado']}_{x['created_at']}", 
+                    axis=1
+                )
+            else:
+                dfh['grupo_key'] = dfh.apply(lambda x: f"{x['data']}_{x['ativo']}_{x['resultado']}_{x['created_at']}", axis=1)
+            
+            # Agrupa e pega info
+            operacoes = []
+            for key, grupo in dfh.groupby('grupo_key'):
+                primeiro = grupo.iloc[0]
+                operacoes.append({
+                    **primeiro.to_dict(),
+                    'n_contas': len(grupo),
+                    'contas_list': grupo['conta_id'].tolist()
+                })
+            
+            df_operacoes = pd.DataFrame(operacoes)
+            df_operacoes = df_operacoes.sort_values('created_at', ascending=False)
+            
+            st.markdown(f"**Exibindo {len(df_operacoes)} operacoes**")
+            st.markdown("---")
+            
+            cols = st.columns(4)
+            for i, (index, row) in enumerate(df_operacoes.iterrows()):
+                with cols[i % 4]:
+                    res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
+                    res_fmt = f"${row['resultado']:,.2f}"
+                    
+                    # Badge de contas
+                    n_contas = row.get('n_contas', 1)
+                    badge_contas = f'<span class="badge-contas">{n_contas} contas</span>' if n_contas > 1 else ''
+                    
+                    # Pega primeiro print
+                    prints_data = row.get('prints', '')
+                    if prints_data:
+                        try:
+                            if isinstance(prints_data, str) and prints_data.startswith('['):
+                                lista_prints = json.loads(prints_data)
+                                img_url = lista_prints[0] if lista_prints else ''
+                            elif isinstance(prints_data, list):
+                                img_url = prints_data[0] if prints_data else ''
+                            else:
+                                img_url = prints_data
+                        except:
                             img_url = prints_data
-                    except:
-                        img_url = prints_data
-                else:
-                    img_url = ''
-                
-                if img_url:
-                    img_html = f'<img src="{img_url}" class="card-img">' 
-                else:
-                    img_html = '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
-                
-                st.markdown(f"""
-                    <div class="trade-card">
-                        <div class="card-img-container">{img_html}</div>
-                        <div class="card-content">
-                            <div class="card-title">{row['ativo']} - {row['direcao']}</div>
-                            <div class="card-sub">{row['data']} - {row['grupo_vinculo']}</div>
+                    else:
+                        img_url = ''
+                    
+                    if img_url:
+                        img_html = f'<img src="{img_url}" class="card-img">' 
+                    else:
+                        img_html = '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
+                    
+                    st.markdown(f"""
+                        <div class="trade-card">
+                            <div class="card-img-container">{img_html}</div>
+                            <div class="card-content">
+                                <div class="card-title">{row['ativo']} - {row['direcao']} {badge_contas}</div>
+                                <div class="card-sub">{row['data']} - {row['grupo_vinculo']}</div>
+                            </div>
+                            <div class="{res_class}">{res_fmt}</div>
                         </div>
-                        <div class="{res_class}">{res_fmt}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                if st.button("Detalhes", key=f"btn_{row['id']}", use_container_width=True):
-                    show_trade_details(row, user, role)
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("Detalhes", key=f"btn_{row['id']}", use_container_width=True):
+                        show_trade_details(row, user, role)
+        
+        else:
+            # MODO: Por Conta (mostra todos os registros individuais)
+            st.markdown(f"**Exibindo {len(dfh)} registros**")
+            st.markdown("---")
+
+            cols = st.columns(4)
+            for i, (index, row) in enumerate(dfh.iterrows()):
+                with cols[i % 4]:
+                    res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
+                    res_fmt = f"${row['resultado']:,.2f}"
+                    
+                    # Pega nome da conta
+                    conta_nome = ""
+                    if not df_contas.empty and pd.notna(row.get('conta_id')):
+                        conta_match = df_contas[df_contas['id'] == row['conta_id']]
+                        if not conta_match.empty:
+                            conta_nome = conta_match.iloc[0]['conta_identificador']
+                    
+                    # Pega primeiro print
+                    prints_data = row.get('prints', '')
+                    if prints_data:
+                        try:
+                            if isinstance(prints_data, str) and prints_data.startswith('['):
+                                lista_prints = json.loads(prints_data)
+                                img_url = lista_prints[0] if lista_prints else ''
+                            elif isinstance(prints_data, list):
+                                img_url = prints_data[0] if prints_data else ''
+                            else:
+                                img_url = prints_data
+                        except:
+                            img_url = prints_data
+                    else:
+                        img_url = ''
+                    
+                    if img_url:
+                        img_html = f'<img src="{img_url}" class="card-img">' 
+                    else:
+                        img_html = '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
+                    
+                    sub_text = f"{row['data']} - {conta_nome}" if conta_nome else f"{row['data']} - {row['grupo_vinculo']}"
+                    
+                    st.markdown(f"""
+                        <div class="trade-card">
+                            <div class="card-img-container">{img_html}</div>
+                            <div class="card-content">
+                                <div class="card-title">{row['ativo']} - {row['direcao']}</div>
+                                <div class="card-sub">{sub_text}</div>
+                            </div>
+                            <div class="{res_class}">{res_fmt}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("Detalhes", key=f"btn_{row['id']}", use_container_width=True):
+                        show_trade_details(row, user, role)
     else:
         st.info("Nenhuma operacao registrada ainda.")
