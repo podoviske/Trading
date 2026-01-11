@@ -735,7 +735,8 @@ def show(user, role):
                 x=x_axis, y=trades_plot['lucro_acumulado'],
                 mode='lines', name='Lucro Total',
                 line=dict(color='#00FF88', width=2),
-                fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
+                fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)',
+                hovertemplate='Trade %{x}<br>Lucro: $%{y:,.2f}<extra></extra>'
             ))
             fig.add_hline(y=lucro_inicial, line_dash="dash", line_color="gray", annotation_text="Lucro Inicial")
             fig.add_hline(y=0, line_dash="dot", line_color="#FF4B4B", annotation_text="Break-even")
@@ -749,7 +750,7 @@ def show(user, role):
                 template="plotly_dark",
                 xaxis_title=x_title,
                 yaxis_title="Lucro ($)",
-                yaxis=dict(range=[min_y - padding, max_y + padding]),
+                yaxis=dict(range=[min_y - padding, max_y + padding], tickformat="$,.0f"),
                 height=400,
                 margin=dict(l=10, r=10, t=40, b=10)
             )
