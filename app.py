@@ -370,6 +370,9 @@ if check_password():
             }
         )
         
+        # Guarda seleção no session_state
+        st.session_state["menu_selected"] = selected
+        
         # Divider
         st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
         
@@ -381,7 +384,7 @@ if check_password():
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- ROTEAMENTO DE PÁGINAS ---
-    pagina_atual = selected
+    pagina_atual = st.session_state.get("menu_selected", "Dashboard")
         
     if pagina_atual == "Dashboard":
         dashboard.show(user, role)
@@ -406,3 +409,6 @@ if check_password():
         
     elif pagina_atual == "Admin":
         admin.show(user, role)
+    
+    else:
+        st.error(f"Página não encontrada: '{pagina_atual}'")
