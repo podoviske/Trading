@@ -196,6 +196,8 @@ def show(user, role):
         df_t = load_trades(user)
         df_aj = load_ajustes(user)
         
+        BASE_CONTA = 150000  # Valor base das contas Phase 2
+        
         lista_grupos_existentes = sorted(df_g_list['nome'].unique()) if not df_g_list.empty else []
 
         if not df_c.empty:
@@ -205,13 +207,15 @@ def show(user, role):
                     contas_g = df_c[df_c['grupo_nome'] == grp]
                     
                     for _, row in contas_g.iterrows():
-                        # Calcula lucro REAL desta conta (individual + replicado + ajustes)
-                        lucro_conta = calcular_lucro_conta(row['id'], grp, df_t, df_aj)
+                        # Calcula lucro dos trades/ajustes desta conta
+                        lucro_trades = calcular_lucro_conta(row['id'], grp, df_t, df_aj)
                         
                         st_icon = "🟢" if row['status_conta'] == "Ativa" else "🔴"
-                        saldo_atual = float(row['saldo_inicial']) + lucro_conta
-                        delta = lucro_conta
-                        cor_delta = "#00FF88" if delta >= 0 else "#FF4B4B"
+                        saldo_atual = float(row['saldo_inicial']) + lucro_trades
+                        
+                        # Lucro REAL = saldo atual - base ($150k)
+                        lucro_real = saldo_atual - BASE_CONTA
+                        cor_delta = "#00FF88" if lucro_real >= 0 else "#FF4B4B"
                         
                         c_info, c_edit, c_del = st.columns([3, 0.5, 0.5])
                         
@@ -221,7 +225,7 @@ def show(user, role):
                                     <span>💳 <b>{row['conta_identificador']}</b> <small>({row['fase_entrada']})</small></span>
                                     <span>{st_icon} {row['status_conta']}</span>
                                 </div>
-                                <div style='font-size: 1.1em; margin-top: 5px;'>💰 Saldo: <b>${saldo_atual:,.2f}</b> (<span style='color:{cor_delta}'>${delta:+,.2f}</span>)</div>
+                                <div style='font-size: 1.1em; margin-top: 5px;'>💰 Saldo: <b>${saldo_atual:,.2f}</b> (<span style='color:{cor_delta}'>${lucro_real:+,.2f}</span>)</div>
                             </div>
                         """, unsafe_allow_html=True)
                         
@@ -282,6 +286,8 @@ def show(user, role):
         df_aj = load_ajustes(user)
         df_tr = load_trades(user)
         
+        BASE_CONTA = 150000  # Valor base das contas Phase 2
+        
         if not df_c.empty:
             col_form, col_hist = st.columns([1, 1])
             
@@ -297,8 +303,9 @@ def show(user, role):
                 
                 # Mostra saldo atual da conta selecionada
                 conta_row = df_c[df_c['display'] == conta_display].iloc[0]
-                lucro = calcular_lucro_conta(conta_row['id'], conta_row['grupo_nome'], df_tr, df_aj)
-                saldo_atual = conta_row['saldo_inicial'] + lucro
+                lucro_trades = calcular_lucro_conta(conta_row['id'], conta_row['grupo_nome'], df_tr, df_aj)
+                saldo_atual = conta_row['saldo_inicial'] + lucro_trades
+                lucro_real = saldo_atual - BASE_CONTA  # Lucro real acima de $150k
                 
                 st.markdown(f"""
                     <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 12px; margin: 10px 0;">
@@ -308,8 +315,8 @@ def show(user, role):
                                 <span style="color: #00FF88; font-size: 24px; font-weight: bold;">${saldo_atual:,.2f}</span>
                             </div>
                             <div style="text-align: right;">
-                                <span style="color: #888; font-size: 11px;">Inicial: ${conta_row['saldo_inicial']:,.2f}</span><br>
-                                <span style="color: #888; font-size: 11px;">Lucro: ${lucro:+,.2f}</span>
+                                <span style="color: #888; font-size: 11px;">Base: $150,000.00</span><br>
+                                <span style="color: {'#00FF88' if lucro_real >= 0 else '#FF4B4B'}; font-size: 14px; font-weight: bold;">Lucro: ${lucro_real:+,.2f}</span>
                             </div>
                         </div>
                     </div>
