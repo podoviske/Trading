@@ -488,10 +488,20 @@ def show(user, role):
                 cor_buf = "#00FF88" if saude_final['buffer'] > (2000 * n_contas_calc) else "#FF4B4B"
                 card_monitor("BUFFER (OXIGÊNIO)", f"${saude_final['buffer']:,.2f}", f"Stop: ${saude_final['stop_atual']:,.0f}", cor_buf)
             with k4:
-                falta = saude_final.get('falta_para_trava', 0)
-                lbl_fase = saude_final.get('fase', 'Fase 1')
-                sub_fase = f"Falta: ${falta:,.0f}" if falta > 0 else "Travado ✅"
-                card_monitor("STATUS / FASE", lbl_fase, sub_fase, "#00FF88", "#00FF88")
+                lbl_fase = saude_final.get('fase', 'Fase 2')
+                falta_meta = saude_final.get('falta_para_meta', 0)
+                
+                if lbl_fase == "Fase 4":
+                    sub_fase = "Saque Liberado 🎉"
+                    cor_fase = "#00FF88"
+                elif lbl_fase == "Fase 3":
+                    sub_fase = f"Faltam: ${falta_meta:,.0f}"
+                    cor_fase = "#FFFF00"
+                else:
+                    sub_fase = f"Faltam: ${falta_meta:,.0f}"
+                    cor_fase = "#FF8800"
+                
+                card_monitor("STATUS / FASE", lbl_fase, sub_fase, cor_fase, cor_fase)
 
             st.markdown("<br>", unsafe_allow_html=True)
             
@@ -528,13 +538,15 @@ def show(user, role):
                         x=df_plot['seq'], y=df_plot['saldo_acc'],
                         mode='lines', name='Patrimônio',
                         line=dict(color='#2962FF', width=2),
-                        fill='tozeroy', fillcolor='rgba(41, 98, 255, 0.1)'
+                        fill='tozeroy', fillcolor='rgba(41, 98, 255, 0.1)',
+                        hovertemplate='Trade %{x}<br>Saldo: $%{y:,.2f}<extra></extra>'
                     ))
                     
                     fig.add_trace(go.Scatter(
                         x=df_plot['seq'], y=df_plot['stop_hist'],
                         mode='lines', name='Trailing Stop',
-                        line=dict(color='#FF4B4B', width=2, dash='solid')
+                        line=dict(color='#FF4B4B', width=2, dash='solid'),
+                        hovertemplate='Trade %{x}<br>Stop: $%{y:,.2f}<extra></extra>'
                     ))
 
                     fig.add_hline(y=saldo_inicial_plot, line_dash="dash", line_color="#444", annotation_text="Inicial")
@@ -555,7 +567,7 @@ def show(user, role):
                         height=350,
                         margin=dict(l=10, r=10, t=30, b=10),
                         legend=dict(orientation="h", y=1.1),
-                        yaxis=dict(range=[min_y - padding, max_y + padding])
+                        yaxis=dict(range=[min_y - padding, max_y + padding], tickformat="$,.0f")
                     )
                     st.plotly_chart(fig, use_container_width=True)
                 else:
