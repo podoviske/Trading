@@ -41,7 +41,7 @@ class ApexEngine:
         Args:
             saldo_atual: Saldo atual da conta
             hwm_previo: High Water Mark (pico) anterior registrado
-            fase_informada: Fase atual da conta ("Fase 1", "Fase 2", "Fase 3", "Fase 4")
+            fase_informada: Fase inicial da conta (usada apenas como fallback)
         
         Returns:
             dict: Dicionário com métricas de saúde da conta
@@ -63,8 +63,26 @@ class ApexEngine:
         # 3. Buffer Real (oxigênio disponível)
         buffer = saldo_atual - stop_atual
         
-        # 4. Meta da fase atual
-        meta_proxima = ApexEngine.METAS.get(fase_informada, 155100.0)
+        # 4. Calcula FASE ATUAL baseada no saldo (não na fase informada)
+        # Fase 1 = conta de avaliação (não aplicável para contas PA)
+        # Fase 2 = construindo colchão de $5k (saldo < $155.100)
+        # Fase 3 = colchão construído, indo para $160k (saldo >= $155.100)
+        # Fase 4 = pronto para sacar (saldo >= $160k)
+        if saldo_atual >= 160000.0:
+            fase_atual = "Fase 4"
+            meta_proxima = 161000.0  # Meta para saque mensal
+        elif saldo_atual >= 155100.0:
+            fase_atual = "Fase 3"
+            meta_proxima = 160000.0  # Próxima meta
+        elif fase_informada == "Fase 1":
+            # Conta de avaliação
+            fase_atual = "Fase 1"
+            meta_proxima = 159000.0
+        else:
+            # Conta PA construindo colchão
+            fase_atual = "Fase 2"
+            meta_proxima = 155100.0
+        
         falta_para_meta = max(0.0, meta_proxima - saldo_atual)
         
         # 5. Falta para travar o stop (se ainda não travou)
@@ -81,7 +99,7 @@ class ApexEngine:
             "hwm": hwm_atual,
             "stop_atual": stop_atual,
             "buffer": max(0.0, buffer),
-            "fase": fase_informada,
+            "fase": fase_atual,
             "meta_proxima": meta_proxima,
             "falta_para_meta": falta_para_meta,
             "falta_para_trava": falta_para_trava,
