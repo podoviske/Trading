@@ -124,25 +124,31 @@ def calcular_resultado_semana(df_trades, grupo_nome, inicio_semana, fim_semana):
     if df_semana.empty:
         return 0.0
     
-    # Agrupa por operacao para nao contar trades replicados multiplas vezes
-    # Isso calcula o resultado MEDIO por conta (nao a soma de todas)
-    def criar_chave_operacao(row):
-        if 'operacao_id' in row.index and pd.notna(row.get('operacao_id')):
-            return str(row['operacao_id'])
-        created = row.get('created_at', '')
-        if pd.notna(created):
-            minuto = str(created)[:16]
-        else:
-            minuto = str(row.get('data', ''))
-        return f"{row['data']}_{row['ativo']}_{row['resultado']}_{row.get('grupo_vinculo', '')}_{minuto}"
+    # Busca numero de contas ATIVAS do grupo
+    try:
+        sb = get_supabase()
+        contas = sb.table("contas_config").select("id").eq("grupo_nome", grupo_nome).eq("status_conta", "Ativa").execute()
+        n_contas = len(contas.data) if contas.data else 1
+    except:
+        n_contas = 1
+    n_contas = max(1, n_contas)
     
-    df_semana = df_semana.copy()
-    df_semana['op_key'] = df_semana.apply(criar_chave_operacao, axis=1)
+    # Separa trades com e sem conta_id
+    if 'conta_id' in df_semana.columns:
+        trades_novos = df_semana[df_semana['conta_id'].notna()]
+        trades_antigos = df_semana[df_semana['conta_id'].isna()]
+    else:
+        trades_novos = pd.DataFrame()
+        trades_antigos = df_semana
     
-    # Pega apenas 1 registro de cada operacao
-    operacoes_unicas = df_semana.groupby('op_key').first().reset_index()
+    # Trades NOVOS: soma e divide por numero de contas (cada conta tem seu registro)
+    soma_novos = trades_novos['resultado'].sum() if not trades_novos.empty else 0
+    media_novos = soma_novos / n_contas
     
-    return operacoes_unicas['resultado'].sum()
+    # Trades ANTIGOS: ja sao o valor de 1 conta, soma direto
+    soma_antigos = trades_antigos['resultado'].sum() if not trades_antigos.empty else 0
+    
+    return media_novos + soma_antigos
 
 def salvar_meta_grupo(user, grupo_nome, meta_valor, bloquear):
     """Salva configuracao de meta para um grupo"""
@@ -698,15 +704,23 @@ def show(user, role):
 
     # --- GRÁFICOS ---
     st.markdown("---")
-    st.markdown("### 📈 Evolução Financeira")
+    st.markdown("### 📈 Evolução do Lucro")
     
     g1, g2 = st.columns([2.5, 1])
     
     with g1:
         if not trades_filtered_view.empty:
             trades_plot = trades_filtered_view.sort_values('created_at').copy()
-            saldo_inicial_base = contas_alvo['saldo_inicial'].sum() if not contas_alvo.empty else 0.0
-            trades_plot['saldo_acumulado'] = trades_plot['resultado'].cumsum() + saldo_inicial_base
+            
+            # Calcula lucro inicial (saldo_inicial - 150k de cada conta)
+            BASE_CONTA = 150000
+            if not contas_alvo.empty:
+                lucro_inicial = (contas_alvo['saldo_inicial'] - BASE_CONTA).sum()
+            else:
+                lucro_inicial = 0.0
+            
+            # Lucro acumulado = lucro inicial + soma dos trades
+            trades_plot['lucro_acumulado'] = trades_plot['resultado'].cumsum() + lucro_inicial
             
             view_type = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
             
@@ -718,22 +732,23 @@ def show(user, role):
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=x_axis, y=trades_plot['saldo_acumulado'],
-                mode='lines', name='Patrimônio',
+                x=x_axis, y=trades_plot['lucro_acumulado'],
+                mode='lines', name='Lucro Total',
                 line=dict(color='#00FF88', width=2),
                 fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
             ))
-            fig.add_hline(y=saldo_inicial_base, line_dash="dash", line_color="gray", annotation_text="Inicial")
+            fig.add_hline(y=lucro_inicial, line_dash="dash", line_color="gray", annotation_text="Lucro Inicial")
+            fig.add_hline(y=0, line_dash="dot", line_color="#FF4B4B", annotation_text="Break-even")
             
-            y_vals = trades_plot['saldo_acumulado']
-            min_y = min(y_vals.min(), saldo_inicial_base); max_y = max(y_vals.max(), saldo_inicial_base)
+            y_vals = trades_plot['lucro_acumulado']
+            min_y = min(y_vals.min(), lucro_inicial, 0); max_y = max(y_vals.max(), lucro_inicial)
             diff = max_y - min_y; padding = max(500.0, diff * 0.15)
 
             fig.update_layout(
-                title=f"Curva de Patrimônio",
+                title=f"Lucro Total (acima de $150k/conta)",
                 template="plotly_dark",
                 xaxis_title=x_title,
-                yaxis_title="Patrimônio ($)",
+                yaxis_title="Lucro ($)",
                 yaxis=dict(range=[min_y - padding, max_y + padding]),
                 height=400,
                 margin=dict(l=10, r=10, t=40, b=10)
