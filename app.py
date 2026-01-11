@@ -298,12 +298,6 @@ if check_password():
     # Pega inicial do usuário para o avatar
     user_initial = user[0].upper() if user else "U"
 
-    # Verifica se tem navegação forçada pendente (antes do sidebar)
-    navegacao_forcada = False
-    if "navegar_para" in st.session_state:
-        st.session_state["pagina_ativa"] = st.session_state.pop("navegar_para")
-        navegacao_forcada = True
-
     # --- SIDEBAR REDESENHADA ---
     with st.sidebar:
         
@@ -332,7 +326,7 @@ if check_password():
         from streamlit_option_menu import option_menu
         
         # Lista base de opções
-        options = ["Dashboard", "Registrar Trade", "Histórico", "Anti-Tilt"]
+        options = ["Dashboard", "Registrar Trade", "Historico", "Anti-Tilt"]
         icons = ["grid-1x2-fill", "lightning-charge-fill", "clock-history", "shield-check"]
         
         # Adiciona opções de gestão para admin/master
@@ -348,15 +342,11 @@ if check_password():
         # Seção label
         st.markdown('<div class="menu-section">Menu</div>', unsafe_allow_html=True)
         
-        # Determina o índice padrão baseado na página ativa
-        pagina_ativa = st.session_state.get("pagina_ativa", "Dashboard")
-        default_idx = options.index(pagina_ativa) if pagina_ativa in options else 0
-        
         selected = option_menu(
             menu_title=None,
             options=options,
             icons=icons,
-            default_index=default_idx,
+            default_index=0,
             key="main_menu",
             styles={
                 "container": {"padding": "0", "background-color": "#0d0d0d"},
@@ -380,10 +370,6 @@ if check_password():
             }
         )
         
-        # Se usuário clicou no menu, atualiza página ativa
-        if selected:
-            st.session_state["pagina_ativa"] = selected
-        
         # Divider
         st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
         
@@ -395,8 +381,8 @@ if check_password():
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- ROTEAMENTO DE PÁGINAS ---
-    pagina_atual = st.session_state.get("pagina_ativa", "Dashboard")
-    
+    pagina_atual = selected
+        
     if pagina_atual == "Dashboard":
         dashboard.show(user, role)
         
@@ -409,7 +395,7 @@ if check_password():
     elif pagina_atual == "Configurar ATM":
         atm.show(user, role)
         
-    elif pagina_atual == "Histórico":
+    elif pagina_atual == "Historico":
         historico.show(user, role)
     
     elif pagina_atual == "Anti-Tilt":
