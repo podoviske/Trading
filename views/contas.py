@@ -280,6 +280,7 @@ def show(user, role):
         
         df_c = load_contas(user)
         df_aj = load_ajustes(user)
+        df_tr = load_trades(user)
         
         if not df_c.empty:
             col_form, col_hist = st.columns([1, 1])
@@ -291,9 +292,30 @@ def show(user, role):
                 df_c['display'] = df_c['conta_identificador'] + " (" + df_c['grupo_nome'] + ")"
                 lista_contas = df_c.sort_values('display')['display'].tolist()
                 
+                # Seleção de conta (fora do form para mostrar saldo em tempo real)
+                conta_display = st.selectbox("💳 Conta", lista_contas)
+                
+                # Mostra saldo atual da conta selecionada
+                conta_row = df_c[df_c['display'] == conta_display].iloc[0]
+                lucro = calcular_lucro_conta(conta_row['id'], conta_row['grupo_nome'], df_tr, df_aj)
+                saldo_atual = conta_row['saldo_inicial'] + lucro
+                
+                st.markdown(f"""
+                    <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 12px; margin: 10px 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="color: #888; font-size: 12px;">SALDO ATUAL NA PLATAFORMA</span><br>
+                                <span style="color: #00FF88; font-size: 24px; font-weight: bold;">${saldo_atual:,.2f}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <span style="color: #888; font-size: 11px;">Inicial: ${conta_row['saldo_inicial']:,.2f}</span><br>
+                                <span style="color: #888; font-size: 11px;">Lucro: ${lucro:+,.2f}</span>
+                            </div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
                 with st.form("form_ajuste"):
-                    conta_display = st.selectbox("💳 Conta", lista_contas)
-                    
                     tipo_ajuste = st.selectbox("Tipo", [
                         "Taxa (Comissão)", 
                         "Slippage", 
@@ -314,9 +336,6 @@ def show(user, role):
                     
                     if st.form_submit_button("💾 Registrar Ajuste", use_container_width=True):
                         if valor_ajuste != 0:
-                            # Recupera o ID da conta
-                            conta_row = df_c[df_c['display'] == conta_display].iloc[0]
-                            
                             sb.table("ajustes_manuais").insert({
                                 "id": str(uuid.uuid4()),
                                 "usuario": user,
