@@ -1,40 +1,12 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
 from supabase import create_client
+import time
+import json
 
-# Importando seus motores matemáticos
-from modules.logic import ApexEngine, RiskEngine, PositionSizing
-from modules.database import update_hwm 
-
-# --- 1. CONFIGURAÇÕES E CONEXÃO ---
+# --- 1. CONEXAO ---
 MULTIPLIERS = {"NQ": 20, "MNQ": 2, "ES": 50, "MES": 5}
-
-# --- TOOLTIPS: Explicações claras para cada métrica ---
-TOOLTIPS = {
-    "resultado_liquido": "Soma do resultado de TODAS as contas no período. Se você fez 1 trade replicado em 5 contas que deu +$500 cada, mostra +$2.500.",
-    "fator_lucro": "Quanto você ganha para cada $1 que perde. Ex: PF 1.70 = você ganha $1.70 para cada $1 perdido. Ideal: acima de 1.5",
-    "win_rate": "Porcentagem de OPERAÇÕES que terminaram em lucro. Trades replicados contam como 1 operação.",
-    "expectativa": "Quanto você espera ganhar EM MÉDIA por operação (não por conta). É o valor que, estatisticamente, cada trade deve render.",
-    "media_gain": "Valor médio das suas OPERAÇÕES positivas (por conta). Quanto você ganha, em média, quando acerta.",
-    "media_loss": "Valor médio das suas OPERAÇÕES negativas (por conta). Quanto você perde, em média, quando erra.",
-    "payoff": "Razão entre ganho médio e perda média. Ex: 1:2.86 significa que seu gain médio é 2.86x seu loss médio.",
-    "drawdown": "Maior queda do seu saldo desde um pico até um vale. Mostra o pior momento da sua curva.",
-    "pts_gain": "Média de pontos capturados nos trades positivos. Mostra sua eficiência técnica nos gains.",
-    "stop_medio": "Média de pontos perdidos nos trades negativos. É a base para calcular seu risco real.",
-    "lote_medio": "Quantidade média de contratos operados por operação.",
-    "total_trades": "Quantidade de OPERAÇÕES realizadas. Trades replicados em 5 contas contam como 1 operação.",
-    "z_score_serial": "Mede se seus resultados são aleatórios ou têm padrão. Positivo = tendência a alternar W/L. Negativo = tendência a sequências.",
-    "z_score_edge": "Mede sua vantagem estatística. Positivo = você tem edge. Negativo = o mercado tem vantagem sobre você.",
-    "vidas": "Quantos stops você aguenta antes de zerar o buffer. Ex: 10.1 vidas = você pode tomar 10 stops seguidos.",
-    "prob_ruina": "Probabilidade matemática de você quebrar a conta. Baseado no seu histórico. Ideal: abaixo de 1%.",
-    "buffer": "Dinheiro disponível entre seu saldo atual e o stop da conta. É seu 'oxigênio' para operar.",
-    "half_kelly": "Percentual do buffer que você deveria arriscar por trade, segundo o critério de Kelly (versão conservadora).",
-    "risco_financeiro": "Valor em dólares que você deveria arriscar por trade, baseado no Half-Kelly.",
-    "sugestao_lote": "Faixa de contratos recomendada para operar, baseada no seu buffer e risco calculado."
-}
 
 def get_supabase():
     try:
@@ -55,728 +27,544 @@ def load_trades_db():
             df['created_at'] = pd.to_datetime(df['created_at'])
             if 'grupo_vinculo' not in df.columns: df['grupo_vinculo'] = 'Geral'
             
-            cols_float = ['resultado', 'lote', 'pts_medio']
-            for c in cols_float:
+            cols_num = ['resultado', 'lote', 'pts_medio', 'risco_fin', 'stop_pts']
+            for c in cols_num:
                 if c in df.columns:
                     df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0.0)
+                    
         return df
     except: return pd.DataFrame()
 
-def load_contas_config(user):
-    try:
-        sb = get_supabase()
-        res = sb.table("contas_config").select("*").eq("usuario", user).execute()
-        df = pd.DataFrame(res.data)
-        if not df.empty:
-            if 'pico_previo' not in df.columns: df['pico_previo'] = df['saldo_inicial']
-            if 'status_conta' not in df.columns: df['status_conta'] = 'Ativa'
-            df['saldo_inicial'] = df['saldo_inicial'].astype(float)
-            df['pico_previo'] = df['pico_previo'].astype(float)
-        return df
-    except: return pd.DataFrame()
-
-def load_metas_config(user):
-    """Carrega configuracao de metas por grupo"""
-    try:
-        sb = get_supabase()
-        res = sb.table("metas_config").select("*").eq("usuario", user).execute()
-        return {m['grupo_nome']: m for m in res.data} if res.data else {}
-    except:
-        return {}
-
-def get_meta_grupo(user, grupo_nome, metas_dict):
-    """Retorna meta do grupo ou default 500"""
-    if grupo_nome in metas_dict:
-        return float(metas_dict[grupo_nome].get('meta_semanal', 500))
-    return 500.0
-
-def get_semana_atual():
-    """Retorna inicio e fim da semana de trading (domingo a sexta)"""
-    hoje = datetime.now().date()
-    
-    # weekday(): seg=0, ter=1, qua=2, qui=3, sex=4, sab=5, dom=6
-    dia_semana = hoje.weekday()
-    
-    if dia_semana == 5:  # Sabado - mostra semana que acabou
-        inicio_semana = hoje - timedelta(days=6)  # Domingo anterior
-        fim_semana = hoje - timedelta(days=1)     # Sexta anterior
-    elif dia_semana == 6:  # Domingo - nova semana comeca hoje
-        inicio_semana = hoje
-        fim_semana = hoje + timedelta(days=5)     # Sexta
-    else:  # Segunda a Sexta
-        dias_desde_domingo = dia_semana + 1
-        inicio_semana = hoje - timedelta(days=dias_desde_domingo)
-        fim_semana = inicio_semana + timedelta(days=5)  # Sexta
-    
-    return inicio_semana, fim_semana
-
-def calcular_resultado_semana(df_trades, grupo_nome, inicio_semana, fim_semana):
-    """Calcula resultado da semana para um grupo"""
-    if df_trades.empty:
-        return 0.0
-    
-    df_grupo = df_trades[df_trades['grupo_vinculo'] == grupo_nome]
-    if df_grupo.empty:
-        return 0.0
-    
-    df_semana = df_grupo[(df_grupo['data'] >= inicio_semana) & (df_grupo['data'] <= fim_semana)]
-    
-    if df_semana.empty:
-        return 0.0
-    
-    # Busca numero de contas ATIVAS do grupo
-    try:
-        sb = get_supabase()
-        contas = sb.table("contas_config").select("id").eq("grupo_nome", grupo_nome).eq("status_conta", "Ativa").execute()
-        n_contas = len(contas.data) if contas.data else 1
-    except:
-        n_contas = 1
-    n_contas = max(1, n_contas)
-    
-    # Separa trades com e sem conta_id
-    if 'conta_id' in df_semana.columns:
-        trades_novos = df_semana[df_semana['conta_id'].notna()]
-        trades_antigos = df_semana[df_semana['conta_id'].isna()]
-    else:
-        trades_novos = pd.DataFrame()
-        trades_antigos = df_semana
-    
-    # Trades NOVOS: soma e divide por numero de contas (cada conta tem seu registro)
-    soma_novos = trades_novos['resultado'].sum() if not trades_novos.empty else 0
-    media_novos = soma_novos / n_contas
-    
-    # Trades ANTIGOS: ja sao o valor de 1 conta, soma direto
-    soma_antigos = trades_antigos['resultado'].sum() if not trades_antigos.empty else 0
-    
-    return media_novos + soma_antigos
-
-def salvar_meta_grupo(user, grupo_nome, meta_valor, bloquear):
-    """Salva configuracao de meta para um grupo"""
-    sb = get_supabase()
-    dados = {
-        "usuario": user,
-        "grupo_nome": grupo_nome,
-        "meta_semanal": meta_valor,
-        "bloquear_ao_bater": bloquear
-    }
-    sb.table("metas_config").upsert(dados).execute()
-
-def verificar_meta_batida(user, grupo_nome):
-    """Verifica se a meta semanal do grupo foi batida - usado pelo trade.py"""
-    try:
-        df_trades = load_trades_db()
-        if not df_trades.empty:
-            df_trades = df_trades[df_trades['usuario'] == user]
-        
-        metas = load_metas_config(user)
-        meta = get_meta_grupo(user, grupo_nome, metas)
-        
-        inicio, fim = get_semana_atual()
-        resultado = calcular_resultado_semana(df_trades, grupo_nome, inicio, fim)
-        
-        bloquear = metas.get(grupo_nome, {}).get('bloquear_ao_bater', False)
-        
-        return {
-            "batida": resultado >= meta,
-            "resultado": resultado,
-            "meta": meta,
-            "bloquear": bloquear,
-            "faltam": max(0, meta - resultado)
-        }
-    except:
-        return {"batida": False, "resultado": 0, "meta": 500, "bloquear": False, "faltam": 500}
-
-def render_metas_semanais(user, df_trades, grupos_lista):
-    """Renderiza a secao de metas semanais"""
-    
-    inicio_semana, fim_semana = get_semana_atual()
-    metas_dict = load_metas_config(user)
-    
-    # CSS para os cards de meta
+# --- 2. POP-UP DE DETALHES ---
+@st.dialog("Detalhes da Operacao", width="large")
+def show_trade_details(row, user, role):
+    # CSS dentro do dialog
     st.markdown("""
         <style>
-        .meta-container {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        .meta-card {
+        .detail-box {
             background-color: #111;
             border: 1px solid #333;
-            border-radius: 10px;
-            padding: 15px;
-            flex: 1;
-            min-width: 200px;
-            position: relative;
-        }
-        .meta-card.batida {
-            border-color: #00FF88;
-            background: linear-gradient(135deg, #0a1a0a 0%, #111 100%);
-        }
-        .meta-card.batida::after {
-            content: "META BATIDA";
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: #00FF88;
-            color: #000;
-            font-size: 9px;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-        .meta-grupo {
-            font-size: 12px;
-            color: #888;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-        .meta-valores {
-            font-size: 18px;
-            font-weight: 700;
+            border-radius: 8px;
+            padding: 12px;
             margin-bottom: 10px;
         }
-        .meta-barra-bg {
-            background-color: #222;
-            border-radius: 4px;
-            height: 8px;
-            overflow: hidden;
+        .detail-label {
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
         }
-        .meta-barra-fill {
-            height: 100%;
-            border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-        .meta-status {
-            font-size: 11px;
-            margin-top: 8px;
-        }
-        .meta-pare {
-            background-color: #B20000;
-            color: white;
-            font-size: 11px;
+        .detail-value {
+            font-size: 18px;
             font-weight: 700;
-            padding: 5px 10px;
-            border-radius: 4px;
-            margin-top: 10px;
-            text-align: center;
+        }
+        .partial-card {
+            background-color: #0d0d0d;
+            border: 1px solid #222;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+        }
+        .partial-label {
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        .obs-box {
+            background-color: #0d0d0d;
+            border: 1px solid #222;
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 200px;
         }
         </style>
     """, unsafe_allow_html=True)
     
-    # Header da secao
-    col_header, col_config = st.columns([3, 1])
-    with col_header:
-        st.markdown(f"### 🎯 Metas Semanais ({inicio_semana.strftime('%d/%m')} - {fim_semana.strftime('%d/%m')})")
-    with col_config:
-        if st.button("⚙️ Configurar Metas", use_container_width=True):
-            st.session_state["show_config_metas"] = True
+    # PRINTS (suporte a multiplos)
+    prints_data = row.get('prints', '')
     
-    # Modal de configuracao
-    if st.session_state.get("show_config_metas", False):
-        with st.expander("Configurar Metas por Grupo", expanded=True):
-            for grupo in grupos_lista:
-                if grupo == "Todos":
-                    continue
-                col_g, col_m, col_b = st.columns([2, 1.5, 1])
-                meta_atual = get_meta_grupo(user, grupo, metas_dict)
-                bloquear_atual = metas_dict.get(grupo, {}).get('bloquear_ao_bater', False)
-                
-                with col_g:
-                    st.markdown(f"**{grupo}**")
-                with col_m:
-                    nova_meta = st.number_input(f"Meta {grupo}", value=meta_atual, min_value=100.0, step=100.0, label_visibility="collapsed", key=f"meta_{grupo}")
-                with col_b:
-                    bloquear = st.checkbox("Bloquear", value=bloquear_atual, key=f"bloq_{grupo}", help="Bloquear trades quando bater")
-                
-                if nova_meta != meta_atual or bloquear != bloquear_atual:
-                    salvar_meta_grupo(user, grupo, nova_meta, bloquear)
-            
+    if prints_data:
+        st.markdown("### Evidencias")
+        
+        # Tenta parsear como JSON (lista de URLs)
+        try:
+            if isinstance(prints_data, str) and prints_data.startswith('['):
+                lista_prints = json.loads(prints_data)
+            elif isinstance(prints_data, list):
+                lista_prints = prints_data
+            else:
+                lista_prints = [prints_data]
+        except:
+            lista_prints = [prints_data]
+        
+        # Mostra todos os prints
+        if len(lista_prints) == 1:
+            st.image(lista_prints[0], use_container_width=True)
+        else:
+            cols_prints = st.columns(len(lista_prints))
+            for idx, img_url in enumerate(lista_prints):
+                with cols_prints[idx]:
+                    st.image(img_url, use_container_width=True)
+                    if st.button(f"Expandir {idx+1}", key=f"exp_print_{idx}"):
+                        st.session_state["print_expandido"] = img_url
+        
+        # Modal para print expandido
+        if st.session_state.get("print_expandido"):
+            st.image(st.session_state["print_expandido"], use_container_width=True)
             if st.button("Fechar"):
-                st.session_state["show_config_metas"] = False
+                del st.session_state["print_expandido"]
                 st.rerun()
     
-    # Cards de cada grupo
-    grupos_validos = [g for g in grupos_lista if g != "Todos"]
+    st.markdown("---")
     
-    if not grupos_validos:
-        st.info("Nenhum grupo configurado ainda.")
-        return
+    # Dados Gerais
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"**Data:** {row['data']}")
+    c1.markdown(f"**Ativo:** {row['ativo']}")
+    c1.markdown(f"**Grupo:** {row['grupo_vinculo']}")
     
-    # Calcula dados de cada grupo
-    dados_grupos = []
-    for grupo in grupos_validos:
-        resultado = calcular_resultado_semana(df_trades, grupo, inicio_semana, fim_semana)
-        meta = get_meta_grupo(user, grupo, metas_dict)
-        batida = resultado >= meta
-        progresso = min(100, (resultado / meta * 100)) if meta > 0 else 0
-        faltam = max(0, meta - resultado)
-        
-        dados_grupos.append({
-            "grupo": grupo,
-            "resultado": resultado,
-            "meta": meta,
-            "batida": batida,
-            "progresso": progresso,
-            "faltam": faltam
-        })
+    c2.markdown(f"**Direcao:** {row['direcao']}")
+    c2.markdown(f"**Contexto:** {row['contexto']}")
+    c2.markdown(f"**Estado:** {row.get('comportamento', '-')}")
     
-    # Renderiza cards
-    cols = st.columns(len(dados_grupos))
-    
-    for i, dados in enumerate(dados_grupos):
-        with cols[i]:
-            classe_batida = "batida" if dados['batida'] else ""
-            cor_valor = "#00FF88" if dados['resultado'] >= 0 else "#FF4B4B"
-            cor_barra = "#00FF88" if dados['batida'] else ("#FFD700" if dados['progresso'] >= 50 else "#666")
-            
-            # Status text
-            if dados['batida']:
-                status_html = '<div class="meta-pare">PARE DE OPERAR ESTE GRUPO</div>'
-            else:
-                status_html = f'<div class="meta-status" style="color: #888;">Faltam <b style="color: #FFD700;">${dados["faltam"]:,.0f}</b></div>'
-            
-            html_card = f'<div class="meta-card {classe_batida}"><div class="meta-grupo">{dados["grupo"]}</div><div class="meta-valores"><span style="color: {cor_valor};">${dados["resultado"]:,.0f}</span><span style="color: #444;"> / </span><span style="color: #888;">${dados["meta"]:,.0f}</span></div><div class="meta-barra-bg"><div class="meta-barra-fill" style="width: {dados["progresso"]:.0f}%; background-color: {cor_barra};"></div></div>{status_html}</div>'
-            
-            st.markdown(html_card, unsafe_allow_html=True)
+    c3.markdown(f"**Lote Total:** {row['lote']}")
     
     st.markdown("---")
-
-def card_simples(label, value, sub_text, tooltip_text, color="white", border_color="#333333"):
-    """Card com tooltip apenas no icone de informacao"""
-    import hashlib
-    uid = hashlib.md5(label.encode()).hexdigest()[:6]
     
-    html = f'''
-        <style>
-            .card-{uid} {{
-                background-color: #161616; 
-                padding: 15px; 
-                border-radius: 8px; 
-                border: 1px solid {border_color}; 
-                text-align: center; 
-                margin-bottom: 10px;
-                height: 100px; 
-                display: flex; 
-                flex-direction: column; 
-                justify-content: center;
-                position: relative;
-            }}
-            .card-{uid} .info-wrapper {{
-                display: inline-block;
-                position: relative;
-            }}
-            .card-{uid} .info-icon {{
-                color: #555;
-                cursor: help;
-                font-size: 11px;
-                margin-left: 4px;
-                padding: 2px 5px;
-                border-radius: 50%;
-                background: #222;
-            }}
-            .card-{uid} .info-icon:hover {{
-                color: #fff;
-                background: #B20000;
-            }}
-            .card-{uid} .tooltip-text {{
-                visibility: hidden;
-                opacity: 0;
-                position: absolute;
-                bottom: 120%;
-                left: 50%;
-                transform: translateX(-50%);
-                background: #000;
-                color: #fff;
-                padding: 10px 12px;
-                border-radius: 6px;
-                font-size: 11px;
-                width: 200px;
-                text-align: center;
-                z-index: 9999;
-                border: 1px solid #B20000;
-                line-height: 1.4;
-                transition: opacity 0.2s;
-            }}
-            .card-{uid} .tooltip-text::after {{
-                content: "";
-                position: absolute;
-                top: 100%;
-                left: 50%;
-                margin-left: -5px;
-                border-width: 5px;
-                border-style: solid;
-                border-color: #B20000 transparent transparent transparent;
-            }}
-            .card-{uid} .info-wrapper:hover .tooltip-text {{
-                visibility: visible;
-                opacity: 1;
-            }}
-        </style>
-        <div class="card-{uid}">
-            <div style="color: #888; font-size: 10px; text-transform: uppercase; margin-bottom: 4px;">
-                {label}
-                <span class="info-wrapper">
-                    <span class="info-icon">?</span>
-                    <span class="tooltip-text">{tooltip_text}</span>
-                </span>
+    # AREA TECNICA - NOVO LAYOUT
+    st.subheader("Raio-X Tecnico")
+    
+    col_esq, col_dir = st.columns([1, 1.5])
+    
+    with col_esq:
+        # Card do Risco
+        stop_real = row.get('stop_pts', 0.0)
+        risco_usd = row.get('risco_fin', 0.0)
+        
+        if stop_real == 0 and risco_usd > 0:
+            mult = MULTIPLIERS.get(row['ativo'], 0)
+            if mult > 0 and row['lote'] > 0:
+                stop_real = risco_usd / (row['lote'] * mult)
+        
+        st.markdown(f"""
+            <div class="detail-box">
+                <div class="detail-label">Stop Tecnico</div>
+                <div class="detail-value" style="color: #FF4B4B;">-{stop_real:.2f} pts</div>
+                <div style="color: #FF4B4B; font-size: 14px;">-${risco_usd:,.2f}</div>
             </div>
-            <h2 style="color: {color}; margin: 0; font-size: 20px; font-weight: 600;">{value}</h2>
-            <p style="color: #666; font-size: 10px; margin-top: 4px;">{sub_text}</p>
-        </div>
-    '''
-    st.markdown(html, unsafe_allow_html=True)
-
-def show(user, role):
-    df_trades_all = load_trades_db()
-    df_contas_all = load_contas_config(user)
-    
-    if not df_trades_all.empty:
-        df_trades_all = df_trades_all[df_trades_all['usuario'] == user]
-
-    # --- SECAO DE METAS SEMANAIS ---
-    grupos_disponiveis = ["Todos"]
-    if not df_contas_all.empty:
-        grupos_disponiveis += sorted(list(df_contas_all['grupo_nome'].unique()))
-    
-    render_metas_semanais(user, df_trades_all, grupos_disponiveis)
-    
-    # --- VISAO DO OPERACIONAL ---
-    st.markdown("### 🔭 Visão do Operacional")
-    
-    c_sel1, c_sel2, c_date1, c_date2 = st.columns([1.5, 1.5, 1, 1])
-    with c_sel1: grupo_sel = st.selectbox("📂 Grupo", grupos_disponiveis)
-    
-    contas_do_grupo = pd.DataFrame()
-    if not df_contas_all.empty:
-        contas_do_grupo = df_contas_all[df_contas_all['grupo_nome'] == grupo_sel] if grupo_sel != "Todos" else df_contas_all
-            
-    lista_contas_view = ["📊 VISÃO GERAL (Agregado)"] + sorted(list(contas_do_grupo['conta_identificador'].unique())) if not contas_do_grupo.empty else ["📊 VISÃO GERAL (Agregado)"]
-    with c_sel2: view_mode = st.selectbox("🔎 Detalhe", lista_contas_view)
-    with c_date1: d_inicio = st.date_input("De", datetime.now().date() - timedelta(days=30))
-    with c_date2: d_fim = st.date_input("Até", datetime.now().date())
-
-    st.markdown("---")
-
-    trades_filtered_view = pd.DataFrame()
-    trades_full_risk = pd.DataFrame()
-
-    if not df_trades_all.empty:
-        base_df = df_trades_all[df_trades_all['grupo_vinculo'] == grupo_sel] if grupo_sel != "Todos" else df_trades_all.copy()
-        trades_full_risk = base_df.copy()
-        if 'data' in base_df.columns:
-            trades_filtered_view = base_df[(base_df['data'] >= d_inicio) & (base_df['data'] <= d_fim)]
-    
-    contas_alvo = contas_do_grupo if "VISÃO GERAL" in view_mode else contas_do_grupo[contas_do_grupo['conta_identificador'] == view_mode]
-
-    # Função para calcular lucro real por conta
-    def calcular_lucro_conta(conta_id, grupo_nome, df_trades):
-        """Cada conta tem seus próprios trades (não há mais trades replicados com conta_id NULL)"""
-        lucro_total = 0.0
-        if not df_trades.empty and 'conta_id' in df_trades.columns:
-            trades_conta = df_trades[df_trades['conta_id'] == conta_id]
-            lucro_total = trades_conta['resultado'].sum()
-        return lucro_total
-
-    total_buffer = 0.0; contas_ativas = 0; hwm_updated_flag = False
-    if not contas_alvo.empty:
-        for _, conta in contas_alvo.iterrows():
-            if conta['status_conta'] == 'Ativa':
-                lucro_conta = calcular_lucro_conta(conta['id'], conta['grupo_nome'], trades_full_risk)
-                saldo_atual_est = float(conta['saldo_inicial']) + lucro_conta
-                hwm_dinamico = max(float(conta['pico_previo']), saldo_atual_est)
-                if hwm_dinamico > float(conta['pico_previo']):
-                    update_hwm(conta['id'], hwm_dinamico); hwm_updated_flag = True
-                saude = ApexEngine.calculate_health(saldo_atual_est, hwm_dinamico, conta.get('fase_entrada', 'Fase 1'))
-                total_buffer += saude['buffer']; contas_ativas += 1
-    
-    if hwm_updated_flag: st.toast("🚀 Novo Topo Histórico Salvo!", icon="💾")
-
-    results_list_filtered = trades_filtered_view['resultado'].tolist() if not trades_filtered_view.empty else []
-
-    # Inicialização segura
-    net_profit = 0.0
-    gross_profit = 0.0
-    gross_loss = 0.0
-    pf = 0.0
-    win_rate = 0.0
-    total_trades = 0
-    avg_win = 0.0
-    avg_loss = 0.0
-    payoff = 0.0
-    expectancy = 0.0
-    avg_pts_gain = 0.0
-    pts_loss_medio_real = 15.0
-    lote_medio = 0.0
-    max_dd = 0.0
-    wins = pd.DataFrame()
-    losses = pd.DataFrame()
-    operacoes = pd.DataFrame()
-    ativo_ref = "MNQ"
-    total_operacoes = 0
-
-    if not trades_filtered_view.empty:
-        # RESULTADO LIQUIDO: soma de TODAS as contas (valor real ganho/perdido)
-        net_profit = trades_filtered_view['resultado'].sum()
+        """, unsafe_allow_html=True)
         
-        # Para contar OPERACOES (nao registros), agrupa por operacao_id ou cria chave unica
-        df_temp = trades_filtered_view.copy()
+        # Cards das Parciais
+        raw_partials = row.get('parciais', None)
         
-        def criar_chave_operacao(row):
-            # Se tem operacao_id, usa direto
-            if 'operacao_id' in row.index and pd.notna(row.get('operacao_id')):
-                return str(row['operacao_id'])
+        if raw_partials:
+            if isinstance(raw_partials, str):
+                try: lista_parciais = json.loads(raw_partials)
+                except: lista_parciais = []
+            elif isinstance(raw_partials, list):
+                lista_parciais = raw_partials
+            else: lista_parciais = []
             
-            # Para trades antigos, agrupa por data+ativo+resultado+grupo+minuto
-            created = row.get('created_at', '')
-            if pd.notna(created):
-                minuto = str(created)[:16]  # Trunca para o minuto
+            if lista_parciais:
+                for idx, p in enumerate(lista_parciais):
+                    pts = float(p.get('pts', 0))
+                    qtd = int(p.get('qtd', 0))
+                    mult = MULTIPLIERS.get(row['ativo'], 2)
+                    valor = pts * qtd * mult
+                    cor = "#00FF88" if pts > 0 else "#FF4B4B"
+                    
+                    st.markdown(f"""
+                        <div class="partial-card">
+                            <div class="partial-label">Saida {idx+1}</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: {cor}; font-size: 16px; font-weight: 600;">{pts:+.2f} pts</span>
+                                <span style="color: #888; font-size: 12px;">{qtd} cts</span>
+                            </div>
+                            <div style="color: {cor}; font-size: 14px; font-weight: 500;">${valor:+,.2f}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
             else:
-                minuto = str(row.get('data', ''))
-            
-            return f"{row['data']}_{row['ativo']}_{row['resultado']}_{row.get('grupo_vinculo', '')}_{minuto}"
-        
-        df_temp['op_key'] = df_temp.apply(criar_chave_operacao, axis=1)
-        
-        # Agrupa por operacao (pega primeiro registro de cada grupo)
-        operacoes = df_temp.groupby('op_key').first().reset_index()
-        
-        # Metricas baseadas em OPERACOES (nao registros)
-        wins_op = operacoes[operacoes['resultado'] > 0]
-        losses_op = operacoes[operacoes['resultado'] < 0]
-        total_operacoes = len(operacoes)
-        
-        # Gross profit/loss por operacao (valor de UMA conta, nao agregado)
-        gross_profit = wins_op['resultado'].sum()
-        gross_loss = abs(losses_op['resultado'].sum())
-        pf = gross_profit / gross_loss if gross_loss > 0 else 99.99
-        
-        total_trades = total_operacoes  # Card mostra operacoes, nao registros
-        win_rate = (len(wins_op) / total_operacoes * 100) if total_operacoes > 0 else 0
-        avg_win = wins_op['resultado'].mean() if not wins_op.empty else 0.0
-        avg_loss = abs(losses_op['resultado'].mean()) if not losses_op.empty else 0.0
-        payoff = avg_win / avg_loss if avg_loss > 0 else 0.0
-        expectancy = ((win_rate/100) * avg_win) - ((1 - (win_rate/100)) * avg_loss)
-        avg_pts_gain = wins_op['pts_medio'].mean() if not wins_op.empty else 0.0 
-        avg_pts_loss = abs(losses_op['pts_medio'].mean()) if not losses_op.empty else 0.0
-        
-        # Guarda wins/losses para uso posterior
-        wins = wins_op
-        losses = losses_op
-        
-        if avg_pts_loss > 0:
-            pts_loss_medio_real = avg_pts_loss
-            
-        lote_medio = operacoes['lote'].mean()
-        if 'ativo' in operacoes.columns:
-            ativo_ref = operacoes['ativo'].iloc[-1]
-            
-        # Drawdown baseado em operacoes
-        equity = operacoes.sort_values('created_at')['resultado'].cumsum()
-        max_dd = (equity - equity.cummax()).min()
-
-    custo_stop_padrao = pts_loss_medio_real * (lote_medio if lote_medio > 0 else 1) * MULTIPLIERS.get(ativo_ref, 2)
-    vidas_u = RiskEngine.calculate_lives(total_buffer, custo_stop_padrao, contas_ativas)
-    
-    # Para prob ruina, usa lista de resultados por OPERACAO
-    results_list_ops = operacoes['resultado'].tolist() if not operacoes.empty else []
-    prob_ruina = RiskEngine.calculate_ruin(win_rate, avg_win, avg_loss, total_buffer, trades_results=results_list_ops)
-    
-    loss_rate_dec = (len(losses)/total_trades) if total_trades > 0 else 0
-    edge_calc = ((win_rate/100) * payoff) - loss_rate_dec
-    
-    # Buffer por conta (para calculo de lote em operacoes replicadas)
-    buffer_por_conta = total_buffer / contas_ativas if contas_ativas > 0 else 5000  # Default $5k trailing
-    
-    # Calcula lote baseado no buffer de UMA conta (nao agregado)
-    lote_min, lote_max, kelly_pct = PositionSizing.calculate_limits(win_rate, payoff, buffer_por_conta, custo_stop_padrao)
-
-    # ============================================================
-    # RENDERIZAÇÃO COM TOOLTIPS
-    # ============================================================
-    
-    st.markdown("### 🏁 Desempenho Geral")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: 
-        sub_resultado = f"{total_trades} ops × {contas_ativas} contas" if contas_ativas > 1 else f"{total_trades} operações"
-        card_simples("Resultado Líquido", f"${net_profit:,.2f}", sub_resultado, 
-                     TOOLTIPS["resultado_liquido"], "#00FF88" if net_profit>=0 else "#FF4B4B")
-    with c2: 
-        card_simples("Fator de Lucro (PF)", f"{pf:.2f}", "Ideal > 1.5", 
-                     TOOLTIPS["fator_lucro"], "#FF4B4B" if pf < 1.5 else "#00FF88")
-    with c3: 
-        card_simples("Win Rate", f"{win_rate:.1f}%", f"{len(wins)}W / {len(losses)}L", 
-                     TOOLTIPS["win_rate"], "white")
-    with c4: 
-        card_simples("Expectativa Mat.", f"${expectancy:.2f}", "Por Operação", 
-                     TOOLTIPS["expectativa"], "#00FF88" if expectancy>0 else "#FF4B4B")
-
-    st.markdown("### 💲 Médias Financeiras")
-    m1, m2, m3, m4 = st.columns(4)
-    with m1: 
-        card_simples("Média Gain ($)", f"${avg_win:,.2f}", "", 
-                     TOOLTIPS["media_gain"], "#00FF88")
-    with m2: 
-        card_simples("Média Loss ($)", f"-${avg_loss:,.2f}", "", 
-                     TOOLTIPS["media_loss"], "#FF4B4B")
-    with m3: 
-        card_simples("Risco : Retorno", f"1 : {payoff:.2f}", "Payoff Real", 
-                     TOOLTIPS["payoff"], "white")
-    with m4: 
-        card_simples("Drawdown Máximo", f"${max_dd:,.2f}", "Pior Queda", 
-                     TOOLTIPS["drawdown"], "#FF4B4B")
-    
-    st.markdown("### 🎯 Performance Técnica")
-    t1, t2, t3, t4 = st.columns(4)
-    with t1: 
-        card_simples("Pts Médios (Gain)", f"{avg_pts_gain:.2f} pts", "", 
-                     TOOLTIPS["pts_gain"], "#00FF88")
-    with t2: 
-        card_simples("Stop Médio (Real)", f"{pts_loss_medio_real:.2f} pts", "Base do Risco", 
-                     TOOLTIPS["stop_medio"], "#FF4B4B")
-    with t3: 
-        card_simples("Lote Médio", f"{lote_medio:.1f}", "Contratos", 
-                     TOOLTIPS["lote_medio"], "white")
-    with t4: 
-        card_simples("Total Trades", f"{total_trades}", "Executados", 
-                     TOOLTIPS["total_trades"], "white")
-
-    st.markdown("---")
-
-    st.markdown(f"### 🛡️ Análise de Sobrevivência ({view_mode})")
-    k1, k2, k3, k4 = st.columns(4)
-    
-    num_trades_risco = len(results_list_filtered)
-    z_serial = RiskEngine.calculate_z_score_serial(results_list_filtered)
-    
-    if num_trades_risco < 15:
-        cor_zs = "#888888"; val_zs = "---"; sub_zs = "Mín. 15 trades"
-    elif num_trades_risco < 30:
-        cor_zs = "#FFFF00"; val_zs = f"{z_serial:.2f}"; sub_zs = f"Calibrando ({num_trades_risco}/30)"
-    else:
-        cor_zs = "#00FF88" if z_serial > 0 else "#FF4B4B"
-        val_zs = f"{z_serial:.2f}"; sub_zs = "Consistência OK"
-
-    with k1: 
-        card_simples("Z-Score (Sequência)", val_zs, sub_zs, 
-                     TOOLTIPS["z_score_serial"], cor_zs, border_color=cor_zs)
-
-    if num_trades_risco < 15:
-        cor_ze = "#888888"; val_ze = "---"; sub_ze = "Mín. 15 trades"
-    else:
-        cor_ze = "#00FF88" if edge_calc > 0 else "#FF4B4B"
-        val_ze = f"{edge_calc:.4f}"; sub_ze = "Vantagem" if edge_calc > 0 else "Sem Edge"
-
-    with k2: 
-        card_simples("Z-Score (Edge)", val_ze, sub_ze, 
-                     TOOLTIPS["z_score_edge"], cor_ze, border_color=cor_ze)
-    
-    cor_v = "#FF4B4B" if vidas_u < 10 else ("#FFFF00" if vidas_u < 20 else "#00FF88")
-    with k3: 
-        card_simples("Vidas Reais (U)", f"{vidas_u:.1f}", f"Risco: ${custo_stop_padrao:,.0f}", 
-                     TOOLTIPS["vidas"], cor_v)
-    
-    cor_r = "#00FF88" if prob_ruina < 1 else ("#FF4B4B" if prob_ruina > 5 else "#FFFF00")
-    with k4: 
-        card_simples("Prob. Ruína", f"{prob_ruina:.4f}%", "Risco de Quebra", 
-                     TOOLTIPS["prob_ruina"], cor_r, border_color=cor_r)
-
-    st.markdown("### 🧠 Inteligência de Lote (Faixa de Operação)")
-    l1, l2, l3, l4 = st.columns(4)
-    
-    with l1:
-        if buffer_por_conta > 2500: cor_buf_lote = "#00FF88"
-        elif buffer_por_conta > 1000: cor_buf_lote = "#FFFF00"
-        else: cor_buf_lote = "#FF4B4B"
-        card_simples("Buffer/Conta", f"${buffer_por_conta:,.0f}", f"Total: ${total_buffer:,.0f}", 
-                     TOOLTIPS["buffer"], cor_buf_lote, border_color=cor_buf_lote)
-
-    with l2: 
-        card_simples("Half-Kelly", f"{kelly_pct*100:.1f}%", "Aproveitamento", 
-                     TOOLTIPS["half_kelly"], "#888")
-    with l3: 
-        card_simples("Risco Financeiro", f"${buffer_por_conta * kelly_pct:,.0f}", "Por Conta", 
-                     TOOLTIPS["risco_financeiro"], "#00FF88")
-    with l4: 
-        card_simples("Sugestão de Lote", f"{lote_min} a {lote_max} ctrs", "ZONA SEGURA", 
-                     TOOLTIPS["sugestao_lote"], "#00FF88", border_color="#00FF88")
-
-    # --- GRÁFICOS ---
-    st.markdown("---")
-    st.markdown("### 📈 Evolução Financeira")
-    
-    g1, g2 = st.columns([2.5, 1])
-    
-    with g1:
-        if not trades_filtered_view.empty:
-            trades_plot = trades_filtered_view.sort_values('created_at').copy()
-            saldo_inicial_base = contas_alvo['saldo_inicial'].sum() if not contas_alvo.empty else 0.0
-            trades_plot['saldo_acumulado'] = trades_plot['resultado'].cumsum() + saldo_inicial_base
-            
-            view_type = st.radio("Visualizar Curva por:", ["Sequência de Trades", "Data (Tempo)"], horizontal=True, label_visibility="collapsed")
-            
-            if view_type == "Sequência de Trades":
-                trades_plot['seq'] = range(1, len(trades_plot) + 1)
-                x_axis = trades_plot['seq']; x_title = "Quantidade de Trades"
-            else:
-                x_axis = trades_plot['created_at']; x_title = "Data / Hora"
-
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=x_axis, y=trades_plot['saldo_acumulado'],
-                mode='lines', name='Patrimônio',
-                line=dict(color='#00FF88', width=2),
-                fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
-            ))
-            fig.add_hline(y=saldo_inicial_base, line_dash="dash", line_color="gray", annotation_text="Inicial")
-            
-            y_vals = trades_plot['saldo_acumulado']
-            min_y = min(y_vals.min(), saldo_inicial_base); max_y = max(y_vals.max(), saldo_inicial_base)
-            diff = max_y - min_y; padding = max(500.0, diff * 0.15)
-
-            fig.update_layout(
-                title=f"Curva de Patrimônio",
-                template="plotly_dark",
-                xaxis_title=x_title,
-                yaxis_title="Patrimônio ($)",
-                yaxis=dict(range=[min_y - padding, max_y + padding]),
-                height=400,
-                margin=dict(l=10, r=10, t=40, b=10)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                pts_medio = row.get('pts_medio', 0)
+                st.markdown(f"""
+                    <div class="partial-card">
+                        <div class="partial-label">Preco Medio</div>
+                        <div style="color: #fff; font-size: 18px; font-weight: 600;">{pts_medio:.2f} pts</div>
+                    </div>
+                """, unsafe_allow_html=True)
         else:
-            st.info("Sem dados para exibir gráfico.")
-            
-    with g2:
-        if not trades_filtered_view.empty:
-            st.write(""); st.write("") 
-            if 'contexto' in trades_filtered_view.columns:
-                 ctx_perf = trades_filtered_view.groupby('contexto')['resultado'].sum().reset_index()
-                 colors = ['#00FF88' if x >= 0 else '#FF4B4B' for x in ctx_perf['resultado']]
-                 fig_pie = go.Figure(data=[go.Pie(
-                    labels=ctx_perf['contexto'], 
-                    values=abs(ctx_perf['resultado']),
-                    hole=.5, textinfo='label+percent',
-                    marker=dict(colors=colors, line=dict(color='#161616', width=3))
-                 )])
-                 fig_pie.update_layout(title="Resultado por Contexto", template="plotly_dark", showlegend=False)
-                 st.plotly_chart(fig_pie, use_container_width=True)
+            pts_medio = row.get('pts_medio', 0)
+            st.markdown(f"""
+                <div class="partial-card">
+                    <div class="partial-label">Preco Medio</div>
+                    <div style="color: #fff; font-size: 18px; font-weight: 600;">{pts_medio:.2f} pts</div>
+                </div>
+            """, unsafe_allow_html=True)
+    
+    with col_dir:
+        # Area de Observacoes
+        st.markdown("""
+            <div class="detail-label" style="margin-bottom: 10px;">Observacoes do Trade</div>
+        """, unsafe_allow_html=True)
+        
+        obs_atual = row.get('observacoes', '')
+        nova_obs = st.text_area(
+            "Observacoes",
+            value=obs_atual,
+            height=200,
+            placeholder="Anote aqui suas observacoes sobre este trade...",
+            label_visibility="collapsed"
+        )
+        
+        if nova_obs != obs_atual:
+            if st.button("Salvar Observacoes", use_container_width=True):
+                sb = get_supabase()
+                sb.table("trades").update({"observacoes": nova_obs}).eq("id", row['id']).execute()
+                st.toast("Observacoes salvas!")
+                st.rerun()
+    
+    st.markdown("---")
+    
+    # Resultado Final
+    res_c = "#00FF88" if row['resultado'] >= 0 else "#FF4B4B"
+    st.markdown(f"""
+        <h1 style='color:{res_c}; text-align:center; font-size:50px; margin:0;'>
+            ${row['resultado']:,.2f}
+        </h1>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    if st.button("DELETAR REGISTRO PERMANENTEMENTE", type="primary", use_container_width=True):
+        sb = get_supabase()
+        
+        # Guarda info do trade antes de deletar
+        grupo_do_trade = row.get('grupo_vinculo', '')
+        usuario_do_trade = row.get('usuario', user)
+        
+        # Deleta o trade
+        sb.table("trades").delete().eq("id", row['id']).execute()
+        
+        # Recalcula HWM do grupo afetado
+        if grupo_do_trade:
+            recalcular_hwm_grupo(sb, usuario_do_trade, grupo_do_trade)
+        
+        st.toast("Registro deletado e HWM recalculado!")
+        time.sleep(1)
+        st.rerun()
 
-    st.markdown("### 📅 Performance Temporal")
-    if not trades_filtered_view.empty:
-        t1, t2 = st.columns(2)
-        with t1:
-            daily_perf = trades_filtered_view.groupby('data')['resultado'].sum().reset_index()
-            fig_daily = px.bar(daily_perf, x='data', y='resultado', title="Resultado Diário (Timeline)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-            fig_daily.update_layout(showlegend=False, xaxis_title="Data", yaxis_title="Resultado ($)")
-            st.plotly_chart(fig_daily, use_container_width=True)
-        with t2:
-            trades_filtered_view['dia_semana'] = pd.to_datetime(trades_filtered_view['data']).dt.day_name()
-            dias_pt = {'Monday': 'Seg', 'Tuesday': 'Ter', 'Wednesday': 'Qua', 'Thursday': 'Qui', 'Friday': 'Sex', 'Saturday': 'Sab', 'Sunday': 'Dom'}
-            trades_filtered_view['dia_pt'] = trades_filtered_view['dia_semana'].map(dias_pt)
-            week_order = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']
-            week_perf = trades_filtered_view.groupby('dia_pt')['resultado'].sum().reindex(week_order).reset_index()
-            fig_week = px.bar(week_perf, x='dia_pt', y='resultado', title="Dia da Semana (Estatístico)", template="plotly_dark", color='resultado', color_continuous_scale=["#FF4B4B", "#00FF88"])
-            fig_week.update_layout(showlegend=False, xaxis_title="Dia", yaxis_title="Resultado ($)")
-            st.plotly_chart(fig_week, use_container_width=True)
+def recalcular_hwm_grupo(sb, usuario, grupo_nome):
+    """Recalcula o HWM de todas as contas de um grupo baseado nos trades existentes"""
+    try:
+        # Busca todas as contas do grupo
+        contas = sb.table("contas_config").select("*").eq("usuario", usuario).eq("grupo_nome", grupo_nome).execute()
+        
+        if not contas.data:
+            return
+        
+        # Busca todos os trades do grupo
+        trades = sb.table("trades").select("resultado, grupo_vinculo").eq("usuario", usuario).eq("grupo_vinculo", grupo_nome).execute()
+        
+        # Calcula lucro total do grupo
+        lucro_total = sum([t['resultado'] for t in trades.data]) if trades.data else 0
+        
+        # Atualiza HWM de cada conta
+        for conta in contas.data:
+            saldo_inicial = float(conta['saldo_inicial'])
+            saldo_atual = saldo_inicial + lucro_total
+            
+            # HWM deve ser o maior entre saldo_inicial e saldo_atual
+            novo_hwm = max(saldo_inicial, saldo_atual)
+            
+            sb.table("contas_config").update({
+                "hwm": novo_hwm,
+                "pico_previo": novo_hwm
+            }).eq("id", conta['id']).execute()
+            
+    except Exception as e:
+        print(f"Erro ao recalcular HWM: {e}")
+
+# --- 3. TELA PRINCIPAL (GALERIA) ---
+def show(user, role):
+    # CSS
+    st.markdown("""
+        <style>
+        .trade-card {
+            background-color: #161616 !important;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #333;
+            transition: transform 0.2s, border-color 0.2s;
+            height: 300px !important;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .trade-card:hover {
+            transform: translateY(-3px);
+            border-color: #B20000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        
+        .card-img-container {
+            width: 100%; 
+            height: 160px !important;
+            background-color: #111;
+            border-radius: 5px; 
+            overflow: hidden; 
+            display: flex;
+            align-items: center; 
+            justify-content: center; 
+            margin-bottom: 10px; 
+            position: relative;
+            flex-shrink: 0; 
+        }
+        
+        .card-img { 
+            width: 100%; height: 100%; 
+            object-fit: cover;
+            object-position: center; 
+            display: block; 
+        }
+        
+        .card-title { 
+            font-size: 14px; font-weight: 700; color: white; margin-bottom: 4px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .card-sub { 
+            font-size: 11px; color: #888; margin-bottom: 8px; 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .card-res-win { font-size: 18px; font-weight: 800; color: #00FF88; text-align: right; } 
+        .card-res-loss { font-size: 18px; font-weight: 800; color: #FF4B4B; text-align: right; }
+        
+        .filtro-ativo {
+            background-color: #1a0a0a;
+            border: 1px solid #B20000;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .badge-contas {
+            background: #333;
+            color: #fff;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 5px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.title("Galeria de Trades")
+    
+    dfh = load_trades_db()
+    if not dfh.empty: dfh = dfh[dfh['usuario'] == user]
+    
+    # Carrega contas para filtro
+    sb = get_supabase()
+    contas_res = sb.table("contas_config").select("id, conta_identificador, grupo_nome").eq("usuario", user).execute()
+    df_contas = pd.DataFrame(contas_res.data) if contas_res.data else pd.DataFrame()
+    
+    # --- VERIFICA FILTRO VINDO DO PLANO ---
+    filtro_contexto_externo = st.session_state.pop("filtro_contexto_historico", None)
+    
+    if filtro_contexto_externo:
+        st.markdown(f"""
+            <div class="filtro-ativo">
+                <span>Filtro ativo: <b>{filtro_contexto_externo}</b></span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col_clear, _ = st.columns([1, 4])
+        with col_clear:
+            if st.button("Limpar filtro"):
+                st.rerun()
+    
+    if not dfh.empty:
+        with st.expander("Filtros", expanded=not bool(filtro_contexto_externo)):
+            c1, c2, c3, c4, c5 = st.columns(5)
+            all_assets = sorted(list(dfh['ativo'].unique())) if 'ativo' in dfh.columns else ["NQ", "MNQ"]
+            all_contexts = sorted(list(dfh['contexto'].unique())) if 'contexto' in dfh.columns else []
+            all_groups = sorted(list(dfh['grupo_vinculo'].unique())) if 'grupo_vinculo' in dfh.columns else []
+            
+            # Modo de visualizacao
+            modo_view = c1.selectbox("Visualizar", ["Por Operacao", "Por Conta"])
+            
+            fa = c2.multiselect("Ativo", all_assets)
+            fr = c3.selectbox("Resultado", ["Todos", "Wins", "Losses"])
+            
+            # Se veio filtro externo, pre-seleciona
+            default_ctx = [filtro_contexto_externo] if filtro_contexto_externo and filtro_contexto_externo in all_contexts else []
+            fc = c4.multiselect("Contexto", all_contexts, default=default_ctx)
+            
+            # Filtro por grupo ou conta
+            opcoes_vinculo = ["Todos os Grupos"]
+            opcoes_vinculo += [f"Grupo: {g}" for g in all_groups]
+            if not df_contas.empty:
+                opcoes_vinculo += [f"Conta: {c['conta_identificador']}" for _, c in df_contas.iterrows()]
+            
+            fv = c5.selectbox("Grupo/Conta", opcoes_vinculo)
+            
+            # Aplica filtros
+            if fa: dfh = dfh[dfh['ativo'].isin(fa)]
+            if fc: dfh = dfh[dfh['contexto'].isin(fc)]
+            if fr == "Wins": dfh = dfh[dfh['resultado'] > 0]
+            if fr == "Losses": dfh = dfh[dfh['resultado'] < 0]
+            
+            # Filtro de vinculo
+            if fv.startswith("Grupo: "):
+                grupo_nome = fv.replace("Grupo: ", "")
+                dfh = dfh[dfh['grupo_vinculo'] == grupo_nome]
+            elif fv.startswith("Conta: "):
+                conta_nome = fv.replace("Conta: ", "")
+                if not df_contas.empty:
+                    conta_row = df_contas[df_contas['conta_identificador'] == conta_nome]
+                    if not conta_row.empty:
+                        conta_id = conta_row.iloc[0]['id']
+                        dfh = dfh[dfh['conta_id'] == conta_id]
+            
+            dfh = dfh.sort_values('created_at', ascending=False)
+        
+        # MODO: Por Operacao (agrupa trades da mesma operacao)
+        if modo_view == "Por Operacao":
+            # Agrupa por operacao_id (ou por data+ativo+resultado+minuto para trades antigos)
+            def criar_chave_operacao(row):
+                # Se tem operacao_id, usa direto
+                if 'operacao_id' in row and pd.notna(row.get('operacao_id')):
+                    return str(row['operacao_id'])
+                
+                # Para trades antigos, agrupa por data+ativo+resultado+grupo+minuto
+                # Isso assume que trades replicados foram criados no mesmo minuto
+                created = row.get('created_at', '')
+                if pd.notna(created):
+                    # Trunca para o minuto (remove segundos e milissegundos)
+                    minuto = str(created)[:16]  # "2026-01-09 14:30"
+                else:
+                    minuto = str(row.get('data', ''))
+                
+                return f"{row['data']}_{row['ativo']}_{row['resultado']}_{row['grupo_vinculo']}_{minuto}"
+            
+            dfh['grupo_key'] = dfh.apply(criar_chave_operacao, axis=1)
+            
+            # Agrupa e pega info
+            operacoes = []
+            for key, grupo in dfh.groupby('grupo_key'):
+                primeiro = grupo.iloc[0]
+                operacoes.append({
+                    **primeiro.to_dict(),
+                    'n_contas': len(grupo),
+                    'contas_list': grupo['conta_id'].tolist()
+                })
+            
+            df_operacoes = pd.DataFrame(operacoes)
+            df_operacoes = df_operacoes.sort_values('created_at', ascending=False)
+            
+            st.markdown(f"**Exibindo {len(df_operacoes)} operacoes**")
+            st.markdown("---")
+            
+            cols = st.columns(4)
+            for i, (index, row) in enumerate(df_operacoes.iterrows()):
+                with cols[i % 4]:
+                    res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
+                    res_fmt = f"${row['resultado']:,.2f}"
+                    
+                    # Badge de contas
+                    n_contas = row.get('n_contas', 1)
+                    badge_contas = f'<span class="badge-contas">{n_contas} contas</span>' if n_contas > 1 else ''
+                    
+                    # Pega primeiro print
+                    prints_data = row.get('prints', '')
+                    if prints_data:
+                        try:
+                            if isinstance(prints_data, str) and prints_data.startswith('['):
+                                lista_prints = json.loads(prints_data)
+                                img_url = lista_prints[0] if lista_prints else ''
+                            elif isinstance(prints_data, list):
+                                img_url = prints_data[0] if prints_data else ''
+                            else:
+                                img_url = prints_data
+                        except:
+                            img_url = prints_data
+                    else:
+                        img_url = ''
+                    
+                    if img_url:
+                        img_html = f'<img src="{img_url}" class="card-img">' 
+                    else:
+                        img_html = '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
+                    
+                    st.markdown(f"""
+                        <div class="trade-card">
+                            <div class="card-img-container">{img_html}</div>
+                            <div class="card-content">
+                                <div class="card-title">{row['ativo']} - {row['direcao']} {badge_contas}</div>
+                                <div class="card-sub">{row['data']} - {row['grupo_vinculo']}</div>
+                            </div>
+                            <div class="{res_class}">{res_fmt}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("Detalhes", key=f"btn_{row['id']}", use_container_width=True):
+                        show_trade_details(row, user, role)
+        
+        else:
+            # MODO: Por Conta (mostra todos os registros individuais)
+            st.markdown(f"**Exibindo {len(dfh)} registros**")
+            st.markdown("---")
+
+            cols = st.columns(4)
+            for i, (index, row) in enumerate(dfh.iterrows()):
+                with cols[i % 4]:
+                    res_class = "card-res-win" if row['resultado'] >= 0 else "card-res-loss"
+                    res_fmt = f"${row['resultado']:,.2f}"
+                    
+                    # Pega nome da conta
+                    conta_nome = ""
+                    if not df_contas.empty and pd.notna(row.get('conta_id')):
+                        conta_match = df_contas[df_contas['id'] == row['conta_id']]
+                        if not conta_match.empty:
+                            conta_nome = conta_match.iloc[0]['conta_identificador']
+                    
+                    # Pega primeiro print
+                    prints_data = row.get('prints', '')
+                    if prints_data:
+                        try:
+                            if isinstance(prints_data, str) and prints_data.startswith('['):
+                                lista_prints = json.loads(prints_data)
+                                img_url = lista_prints[0] if lista_prints else ''
+                            elif isinstance(prints_data, list):
+                                img_url = prints_data[0] if prints_data else ''
+                            else:
+                                img_url = prints_data
+                        except:
+                            img_url = prints_data
+                    else:
+                        img_url = ''
+                    
+                    if img_url:
+                        img_html = f'<img src="{img_url}" class="card-img">' 
+                    else:
+                        img_html = '<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; font-size:12px;">Sem Foto</div>'
+                    
+                    sub_text = f"{row['data']} - {conta_nome}" if conta_nome else f"{row['data']} - {row['grupo_vinculo']}"
+                    
+                    st.markdown(f"""
+                        <div class="trade-card">
+                            <div class="card-img-container">{img_html}</div>
+                            <div class="card-content">
+                                <div class="card-title">{row['ativo']} - {row['direcao']}</div>
+                                <div class="card-sub">{sub_text}</div>
+                            </div>
+                            <div class="{res_class}">{res_fmt}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("Detalhes", key=f"btn_{row['id']}", use_container_width=True):
+                        show_trade_details(row, user, role)
+    else:
+        st.info("Nenhuma operacao registrada ainda.")
